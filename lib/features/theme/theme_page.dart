@@ -129,7 +129,6 @@ class _ThemePageState extends ConsumerState<ThemePage> {
                   DecorationListItem(
                     leading: const GlyphIcon(KonekoGlyphs.pureBlack),
                     title: const Text('纯黑模式'),
-                    subtitle: const Text('深色模式下启用 OLED 纯黑背景'),
                     trailing: Switch(
                       value: settings.pureBlack,
                       onChanged: (v) =>
@@ -144,9 +143,9 @@ class _ThemePageState extends ConsumerState<ThemePage> {
             ),
             const SizedBox(height: 16),
 
-            // Theme Color Swatches + HCT Custom Palette + ColorStyle
+            // Theme Color Swatches + Custom Palette + ColorStyle
             InfoHeader(
-              info: const Info(label: '主题色与调色盘', glyph: KonekoGlyphs.palette),
+              info: const Info(label: '主题色', glyph: KonekoGlyphs.palette),
               actions: [
                 KonekoCircleButton(
                   size: 32,
@@ -213,7 +212,7 @@ class _ThemePageState extends ConsumerState<ThemePage> {
               choices: [
                 PreviewChoice(
                   value: true,
-                  label: '悬浮液态玻璃 Dock',
+                  label: '悬浮底栏',
                   pictogram: MiniScreenThumb(
                     screen: MiniScreen(
                       colorScheme: colorScheme,
@@ -224,7 +223,7 @@ class _ThemePageState extends ConsumerState<ThemePage> {
                 ),
                 PreviewChoice(
                   value: false,
-                  label: '贴底经典导航栏',
+                  label: '经典底栏',
                   pictogram: MiniScreenThumb(
                     screen: MiniScreen(
                       colorScheme: colorScheme,
@@ -324,9 +323,8 @@ class _ThemePageState extends ConsumerState<ThemePage> {
             ),
             const SizedBox(height: 16),
 
-            // Custom Font Manager (instant hot-swap, NO custom emoji selector — Twemoji default)
             const InfoHeader(
-              info: Info(label: '字体管理（选择即秒切）', glyph: KonekoGlyphs.font),
+              info: Info(label: '字体', glyph: KonekoGlyphs.font),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -352,18 +350,11 @@ class _ThemePageState extends ConsumerState<ThemePage> {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(fontFamily: family),
                         ),
-                        subtitle: const Text('支持导入本地 TTF / OTF，切换后零重启生效'),
                         trailing: const GlyphIcon(Glyphs.chevronForward),
                         onPressed: () => BaseNavigator.push<void>(
                           context,
                           const FontFamilyPage(),
                         ),
-                      ),
-                      const DecorationListItem(
-                        leading: EmojiText('🐱', style: TextStyle(fontSize: 20)),
-                        title: Text('Emoji 字体'),
-                        subtitle: Text('全局固定使用 Twemoji 渲染，无需额外配置'),
-                        trailing: KonekoChip(label: 'Twemoji 默认'),
                       ),
                     ],
                   );
@@ -414,7 +405,7 @@ class _ThemePageState extends ConsumerState<ThemePage> {
                                       style: AppTextStyle.title3.of(context),
                                     ),
                                     Text(
-                                      '选择字体或拖动滑块，全界面实时生效。',
+                                      '拖动滑块预览文字大小',
                                       style: AppTextStyle.subheadline
                                           .of(context)
                                           .copyWith(

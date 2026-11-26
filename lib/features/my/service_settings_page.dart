@@ -141,7 +141,7 @@ class _ServiceSettingsPageState extends ConsumerState<ServiceSettingsPage> {
   Widget build(BuildContext context) {
     final sync = ref.watch(trackingSyncProvider);
     return KonekoScaffold(
-      title: '服务与同步',
+      title: '同步与服务',
       showBack: true,
       actions: [
         IconButtonData(
@@ -201,19 +201,15 @@ class _ServiceSettingsPageState extends ConsumerState<ServiceSettingsPage> {
                           'WebDAV',
                           style: AppTextStyle.headline.of(context),
                         ),
-                        _field(_davUrl, '服务器 URL'),
+                        _field(_davUrl, '服务器地址'),
                         _field(_davUser, '用户名'),
-                        _field(_davPassword, '密码或应用密码', secret: true),
-                        Text(
-                          '同步 Koneko 收藏与历史，并读取该服务器上的 Kazumi 备份。',
-                          style: context.listSubtitleStyle,
-                        ),
+                        _field(_davPassword, '密码', secret: true),
                         const SizedBox(height: 8),
                         FilledButton(
                           onPressed: _busy || sync == null
                               ? null
                               : () => _run(sync.syncWebDav, 'WebDAV'),
-                          child: const Text('同步 WebDAV'),
+                          child: const Text('立即同步'),
                         ),
                       ],
                     ),
@@ -224,24 +220,19 @@ class _ServiceSettingsPageState extends ConsumerState<ServiceSettingsPage> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Text(
-                          '弹幕与屏蔽词（弹弹Play）',
+                          '弹幕与屏蔽词',
                           style: AppTextStyle.headline.of(context),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '已内置 Kazumi 同款弹幕接口，开箱即用。下方 App ID 与密钥留空即可，仅在需要自定义密钥时填写。',
-                          style: context.listSubtitleStyle,
-                        ),
                         const SizedBox(height: 6),
-                        _field(_appId, '自定义 App ID（留空使用内置默认）'),
-                        _field(_appKey, '自定义 App 密钥（留空使用内置默认）', secret: true),
+                        _field(_appId, 'App ID（选填）'),
+                        _field(_appKey, 'App 密钥（选填）', secret: true),
                         const SizedBox(height: 8),
                         TextField(
                           controller: _shield,
                           minLines: 2,
                           maxLines: 4,
                           decoration: const InputDecoration(
-                            hintText: '弹幕屏蔽词，每行一个',
+                            hintText: '屏蔽词，每行一个',
                           ),
                         ),
                       ],

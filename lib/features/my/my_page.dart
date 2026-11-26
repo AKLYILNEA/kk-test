@@ -92,9 +92,8 @@ class MyPage extends ConsumerWidget {
                   ),
                 ),
 
-                // Content & Kazumi Core Modules
                 KonekoSection(
-                  title: '番剧与规则引擎',
+                  title: '常用',
                   items: [
                     DecorationListItem(
                       leading: GlyphIcon(
@@ -102,7 +101,9 @@ class MyPage extends ConsumerWidget {
                         color: colorScheme.primary,
                       ),
                       title: const Text('观看历史'),
-                      subtitle: Text('共 ${history.length} 部番剧进度'),
+                      subtitle: history.isEmpty
+                          ? null
+                          : Text('${history.length} 部'),
                       trailing: const GlyphIcon(Glyphs.chevronForward),
                       onPressed: () => BaseNavigator.push<void>(
                         context,
@@ -114,8 +115,8 @@ class MyPage extends ConsumerWidget {
                         KonekoGlyphs.puzzle,
                         color: colorScheme.primary,
                       ),
-                      title: const Text('Kazumi 规则管理'),
-                      subtitle: Text('$enabledRules / ${rules.length} 条规则已启用'),
+                      title: const Text('规则管理'),
+                      subtitle: Text('$enabledRules / ${rules.length}'),
                       trailing: const GlyphIcon(Glyphs.chevronForward),
                       onPressed: () => BaseNavigator.push<void>(
                         context,
@@ -128,7 +129,6 @@ class MyPage extends ConsumerWidget {
                         color: colorScheme.primary,
                       ),
                       title: const Text('弹幕设置'),
-                      subtitle: const Text('字号、字重描边、半屏区域与多站来源过滤'),
                       trailing: const GlyphIcon(Glyphs.chevronForward),
                       onPressed: () => openKonekoDanmakuSettingsPage(context),
                     ),
@@ -137,8 +137,8 @@ class MyPage extends ConsumerWidget {
                         KonekoGlyphs.cloud,
                         color: colorScheme.primary,
                       ),
-                      title: const Text('服务与同步'),
-                      subtitle: const Text('Bangumi、WebDAV 与弹弹Play'),
+                      title: const Text('同步与服务'),
+                      subtitle: const Text('Bangumi / WebDAV'),
                       trailing: const GlyphIcon(Glyphs.chevronForward),
                       onPressed: () => BaseNavigator.push<void>(
                         context,
@@ -151,7 +151,6 @@ class MyPage extends ConsumerWidget {
                         color: colorScheme.primary,
                       ),
                       title: const Text('离线缓存'),
-                      subtitle: const Text('管理已下载剧集'),
                       trailing: const GlyphIcon(Glyphs.chevronForward),
                       onPressed: () => BaseNavigator.push<void>(
                         context,
@@ -161,9 +160,8 @@ class MyPage extends ConsumerWidget {
                   ],
                 ),
 
-                // FlClash Theme & Instant Font Manager
                 KonekoSection(
-                  title: '外观与排版（FlClash 规范）',
+                  title: '外观',
                   items: [
                     DecorationListItem(
                       leading: GlyphIcon(
@@ -171,7 +169,6 @@ class MyPage extends ConsumerWidget {
                         color: colorScheme.primary,
                       ),
                       title: const Text('外观主题'),
-                      subtitle: const Text('实时预览 · HCT 调色盘 · 液态玻璃 · 深色模式'),
                       trailing: const GlyphIcon(Glyphs.chevronForward),
                       onPressed: () =>
                           BaseNavigator.push<void>(context, const ThemePage()),
@@ -184,10 +181,9 @@ class MyPage extends ConsumerWidget {
                             KonekoGlyphs.font,
                             color: colorScheme.primary,
                           ),
-                          title: const Text('字体管理（选后秒切）'),
+                          title: const Text('字体'),
                           subtitle: Text(
-                            FontManager.selectedName ??
-                                '系统默认（Emoji 固定 Twemoji）',
+                            FontManager.selectedName ?? '系统默认',
                           ),
                           trailing: const GlyphIcon(Glyphs.chevronForward),
                           onPressed: () => BaseNavigator.push<void>(
@@ -200,9 +196,8 @@ class MyPage extends ConsumerWidget {
                   ],
                 ),
 
-                // About MIUIX
                 KonekoSection(
-                  title: '关于应用',
+                  title: '关于',
                   items: [
                     DecorationListItem(
                       leading: GlyphIcon(
@@ -210,7 +205,7 @@ class MyPage extends ConsumerWidget {
                         color: colorScheme.primary,
                       ),
                       title: const Text('关于 Koneko'),
-                      subtitle: const Text('MIUIX 动态流体渐变关于页 · v$kAppVersion'),
+                      subtitle: const Text('v$kAppVersion'),
                       trailing: const GlyphIcon(Glyphs.chevronForward),
                       onPressed: () => BaseNavigator.push<void>(
                         context,

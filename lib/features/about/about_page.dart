@@ -338,52 +338,50 @@ class _AboutPageState extends ConsumerState<AboutPage>
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       MiuixFrostedSection(
-                        title: '项目与架构',
+                        title: '开源致谢',
                         blurEnabled: !routeMoving,
                         items: [
                           _linkRow(
                             glyph: KonekoGlyphs.code,
                             color: colorScheme.primary,
-                            title: 'Koneko 测试仓库',
+                            title: '项目仓库',
                             subtitle: 'github.com/AKLYILNEA/kk-test',
                             url: kRepoUrl,
                           ),
                           _linkRow(
                             glyph: KonekoGlyphs.palette,
                             color: colorScheme.primary,
-                            title: 'UI 设计引擎 · prism_ui',
+                            title: 'prism_ui',
                             subtitle: 'github.com/chen08209/prism_ui',
                             url: kPrismUiUrl,
                           ),
                           _linkRow(
                             glyph: KonekoGlyphs.cpu,
                             color: colorScheme.primary,
-                            title: '核心播放与规则兼容 · Kazumi',
+                            title: 'Kazumi',
                             subtitle: 'github.com/Predidit/Kazumi',
                             url: kKazumiUrl,
                           ),
                           _linkRow(
                             glyph: KonekoGlyphs.heart,
                             color: colorScheme.primary,
-                            title: '多源合并体验参考 · Animeko',
+                            title: 'Animeko',
                             subtitle: 'github.com/open-ani/animeko',
                             url: kAnimekoUrl,
                           ),
                         ],
                       ),
                       MiuixFrostedSection(
-                        title: '构建说明',
+                        title: '版本信息',
                         blurEnabled: !routeMoving,
                         items: const [
                           DecorationListItem(
-                            title: Text('构建版本'),
-                            subtitle: Text(
-                              'v$kAppVersion 使用 Bangumi 目录、Kazumi 规则及本地视频播放服务。',
-                            ),
+                            title: Text('版本'),
+                            subtitle: Text('v$kAppVersion'),
                           ),
                           DecorationListItem(
-                            title: Text('支持平台'),
-                            subtitle: Text('Android arm64-v8a · Windows x64'),
+                            title: Text('平台'),
+                            subtitle: Text('Android · Windows'),
                           ),
                         ],
                       ),

@@ -236,7 +236,6 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
     final applied = await showKonekoSheet<bool>(
       context: context,
       title: '按条件搜索',
-      subtitle: '题材标签、放送时间、评分与排序',
       detents: const [0.78, 0.94],
       bodyBuilder: (sheetContext) {
         return StatefulBuilder(

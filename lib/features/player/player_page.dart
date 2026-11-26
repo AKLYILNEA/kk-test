@@ -86,6 +86,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   Uri? _errorVerifyUrl;
   String? _errorVerifyRuleId;
   String? _errorVerifyRuleName;
+  String? _activeHitUrl;
+  String? _loadingHint;
   String? _danmakuError;
   bool _danmakuLoading = false;
   int _request = 0;
@@ -227,7 +229,11 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           _ruleId = remembered;
         }
         unawaited(_probeAllEnabledRules());
-        await _openEpisode(_episode, strictPreferredRule: remembered.isNotEmpty);
+        await _openEpisode(
+          _episode,
+          strictPreferredRule: remembered.isNotEmpty,
+          autoSelectFastest: remembered.isEmpty,
+        );
       }
     } on Object catch (error) {
       if (!mounted) return;
@@ -345,6 +351,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     }
   }
 
+  static String _normTitle(String value) => value
+      .toLowerCase()
+      .replaceAll(RegExp(r'[\s\p{P}\p{S}]+', unicode: true), '');
+
   Future<void> _openHit(String ruleId, String ruleName, RuleSearchHit hit) async {
     final session = _session;
     final resolver = ref.read(playbackSourcesProvider);
@@ -353,48 +363,62 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     final request = ++_request;
     setState(() {
       _loading = true;
+      _loadingHint = '正在加载 $ruleName...';
       _loaded = false;
       _error = null;
       _errorVerifyUrl = null;
+      _errorVerifyRuleId = null;
+      _errorVerifyRuleName = null;
       _ruleId = ruleId;
       _ruleName = ruleName;
+      _activeHitUrl = hit.sourceUrl;
     });
     try {
       await session.setPlaying(false);
       final options = await resolver.loadEpisodesFromHit(ruleId, hit);
       if (!_isCurrent(request)) return;
       final available = options.where((e) => e.number == _episode).toList();
-      final episodeSource = available.isNotEmpty
-          ? available.first
-          : options.first;
+      final targetLines = available.isNotEmpty ? available : [options.first];
       setState(() {
         _choices = options;
-        _episode = episodeSource.number;
+        _episode = targetLines.first.number;
       });
-      final media = await resolver.resolve(episodeSource);
-      if (!_isCurrent(request)) return;
-      await session.open(media, startAt: _resumeAt(episodeSource.number));
-      if (!_isCurrent(request)) return;
-      if (!_pageActive) await session.setPlaying(false);
-      if (!_isCurrent(request)) return;
-      await resolver.rememberSelectedRule(widget.subjectId, ruleId);
-      setState(() {
-        _source = episodeSource;
-        _ruleId = episodeSource.ruleId;
-        _ruleName = episodeSource.ruleName;
-        _status = session.status;
-        _loading = false;
-        _loaded = true;
-        _lastCheckpoint = -1;
-        _lastCompleted = false;
-      });
-      _armHudAutoHide();
-      unawaited(_loadDanmaku());
+      Object? lastErr;
+      for (final episodeSource in targetLines) {
+        if (!_isCurrent(request)) return;
+        try {
+          final media = await resolver.resolve(episodeSource);
+          if (!_isCurrent(request)) return;
+          await session.open(media, startAt: _resumeAt(episodeSource.number));
+          if (!_isCurrent(request)) return;
+          if (!_pageActive) await session.setPlaying(false);
+          if (!_isCurrent(request)) return;
+          await resolver.rememberSelectedRule(widget.subjectId, ruleId);
+          setState(() {
+            _source = episodeSource;
+            _ruleId = episodeSource.ruleId;
+            _ruleName = episodeSource.ruleName;
+            _status = session.status;
+            _loading = false;
+            _loadingHint = null;
+            _loaded = true;
+            _lastCheckpoint = -1;
+            _lastCompleted = false;
+          });
+          _armHudAutoHide();
+          unawaited(_loadDanmaku());
+          return;
+        } on Object catch (err) {
+          lastErr = err;
+        }
+      }
+      throw lastErr ?? StateError('该结果暂无可用线路');
     } on Object catch (error) {
       if (!_isCurrent(request)) return;
       setState(() {
         _loading = false;
-        _error = featureError(error, '加载该结果失败，请尝试其他线路或数据源');
+        _loadingHint = null;
+        _error = featureError(error, '加载失败');
       });
     }
   }
@@ -432,6 +456,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     String? ruleId,
     SourceEpisode? choice,
     bool strictPreferredRule = false,
+    bool autoSelectFastest = false,
+    String? excludeRuleId,
   }) async {
     final session = _session;
     if (session == null) return;
@@ -445,6 +471,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       _episode = episode;
       _loaded = false;
       _loading = true;
+      _loadingHint = autoSelectFastest ? '正在优选可用播放源...' : null;
       _error = null;
       _errorVerifyUrl = null;
       _errorVerifyRuleId = null;
@@ -456,32 +483,50 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     try {
       await session.setPlaying(false);
       final resolver = ref.read(playbackSourcesProvider);
-      if (resolver == null) throw StateError('规则播放服务不可用');
+      if (resolver == null) throw StateError('播放服务不可用');
       var subject = _subject;
       if (subject == null) {
         await ref.read(onlineCatalogProvider)?.loadSubject(widget.subjectId);
         if (!_isCurrent(request)) return;
         subject = _subject;
       }
-      if (subject == null) throw StateError('未能加载番剧资料');
+      if (subject == null) throw StateError('番剧资料加载失败');
 
       final rules = ref
           .read(rulesProvider)
           .where((rule) => rule.enabled)
           .toList();
-      if (rules.isEmpty) throw StateError('请先在规则仓库安装并启用播放规则');
+      if (rules.isEmpty) throw StateError('请先添加播放规则');
 
-      // Playback selection policy:
-      // - Explicit ruleId or remembered preferred rule: try THAT rule only; if it
-      //   fails, prompt user to verify or manually pick another source instead of
-      //   silently jumping to an unexpected source.
-      // - First play (no remembered rule): auto-pick the first working rule and
-      //   remember it for all future entries.
+      // Smart auto-selection for unwatched anime or when user taps "自动选择":
+      // races all enabled rules in parallel, ranks by speed + title match, and
+      // verifies the resolved stream is actually reachable & playable.
+      if (autoSelectFastest) {
+        await _autoSelectFastestPlayable(
+          request: request,
+          episode: episode,
+          initialPosition: initialPosition,
+          subject: subject,
+          rules: rules,
+          resolver: resolver,
+          session: session,
+          excludeRuleId: excludeRuleId,
+        );
+        return;
+      }
+
+      // If remembered/preferred rule was removed or disabled, immediately
+      // surface the 3 choices (重试 / 自动选择 / 手动切换源).
+      if (strictPreferredRule &&
+          ruleId == null &&
+          _ruleId.isNotEmpty &&
+          !rules.any((r) => r.id == _ruleId)) {
+        final missingName = _ruleName.isNotEmpty ? _ruleName : _ruleId;
+        throw StateError('上次使用的「$missingName」已不可用');
+      }
+
       final hasPreferred =
-          ruleId != null ||
-          (strictPreferredRule &&
-              _ruleId.isNotEmpty &&
-              rules.any((r) => r.id == _ruleId));
+          ruleId != null || (strictPreferredRule && _ruleId.isNotEmpty);
       final ids = ruleId != null
           ? [ruleId]
           : hasPreferred
@@ -493,8 +538,13 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
 
       for (final id in ids) {
         if (!_isCurrent(request)) return;
+        final ruleMeta = rules.where((r) => r.id == id).firstOrNull;
+        if (mounted) {
+          setState(
+            () => _loadingHint = '正在加载 ${ruleMeta?.name ?? id}...',
+          );
+        }
         try {
-          // If we already know this rule requires verification, surface verify action directly.
           final existingProbe = _probes[id];
           if (existingProbe?.state == RuleProbeState.captchaRequired) {
             captchaProbe = existingProbe;
@@ -507,38 +557,51 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           final available = options
               .where((item) => item.number == episode)
               .toList();
-          if (available.isEmpty) throw StateError('该播放源暂无第 $episode 话');
+          if (available.isEmpty) throw StateError('暂无第 $episode 话');
           setState(() {
             _choices = options;
             _ruleId = id;
             _ruleName = options.first.ruleName;
           });
           final currentLine = _source?.line;
-          final episodeSource =
-              choice ??
-              available.where((item) => item.line == currentLine).firstOrNull ??
-              available.first;
-          final media = await resolver.resolve(episodeSource);
-          if (!_isCurrent(request)) return;
-          await session.open(media, startAt: initialPosition);
-          if (!_isCurrent(request)) return;
-          if (!_pageActive) await session.setPlaying(false);
-          if (!_isCurrent(request)) return;
-          await resolver.rememberSelectedRule(widget.subjectId, id);
-          setState(() {
-            _episode = episode;
-            _source = episodeSource;
-            _ruleId = episodeSource.ruleId;
-            _ruleName = episodeSource.ruleName;
-            _status = session.status;
-            _loading = false;
-            _loaded = true;
-            _lastCheckpoint = -1;
-            _lastCompleted = false;
-          });
-          _armHudAutoHide();
-          unawaited(_loadDanmaku());
-          return;
+          final orderedLines = choice != null
+              ? [choice]
+              : [
+                  ...available.where((item) => item.line == currentLine),
+                  ...available.where((item) => item.line != currentLine),
+                ];
+
+          Object? lineProblem;
+          for (final episodeSource in orderedLines) {
+            if (!_isCurrent(request)) return;
+            try {
+              final media = await resolver.resolve(episodeSource);
+              if (!_isCurrent(request)) return;
+              await session.open(media, startAt: initialPosition);
+              if (!_isCurrent(request)) return;
+              if (!_pageActive) await session.setPlaying(false);
+              if (!_isCurrent(request)) return;
+              await resolver.rememberSelectedRule(widget.subjectId, id);
+              setState(() {
+                _episode = episode;
+                _source = episodeSource;
+                _ruleId = episodeSource.ruleId;
+                _ruleName = episodeSource.ruleName;
+                _status = session.status;
+                _loading = false;
+                _loadingHint = null;
+                _loaded = true;
+                _lastCheckpoint = -1;
+                _lastCompleted = false;
+              });
+              _armHudAutoHide();
+              unawaited(_loadDanmaku());
+              return;
+            } on Object catch (err) {
+              lineProblem = err;
+            }
+          }
+          throw lineProblem ?? StateError('线路不可用');
         } on Object catch (error) {
           problem = error;
           final probe = _probes[id];
@@ -552,7 +615,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
         if (!_isCurrent(request)) return;
         setState(() {
           _loading = false;
-          _error = '${captchaProbe!.ruleName} 需要完成人机验证';
+          _loadingHint = null;
+          _error = '${captchaProbe!.ruleName} 需要验证';
           _errorVerifyUrl = captchaProbe.verifyUrl;
           _errorVerifyRuleId = captchaProbe.ruleId;
           _errorVerifyRuleName = captchaProbe.ruleName;
@@ -564,17 +628,275 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
         final preferredName =
             rules.where((r) => r.id == ids.first).firstOrNull?.name ??
             (_ruleName.isNotEmpty ? _ruleName : ids.first);
-        final reason = featureError(problem ?? StateError('线路不可用'), '线路不可用');
-        throw StateError('上次使用的「$preferredName」暂时不可用（$reason），请手动切换其他播放源');
+        throw StateError('「$preferredName」暂时不可用');
       }
-      throw problem ?? StateError('当前启用的规则均未能匹配可播放线路，请手动选择播放源');
+      throw problem ?? StateError('暂无可用播放源');
     } on Object catch (error) {
       if (!_isCurrent(request)) return;
       setState(() {
         _loading = false;
-        _error = featureError(error, '无法播放这一话，请手动切换线路或播放源');
+        _loadingHint = null;
+        _error = featureError(error, '无法播放');
       });
     }
+  }
+
+  Future<void> _autoSelectFastestPlayable({
+    required int request,
+    required int episode,
+    required Duration initialPosition,
+    required AnimeSubject subject,
+    required List<RulePluginMeta> rules,
+    required PlaybackSources resolver,
+    required PlaybackSession session,
+    String? excludeRuleId,
+  }) async {
+    final candidates = rules
+        .where((r) => excludeRuleId == null || r.id != excludeRuleId)
+        .toList();
+    final targetRules = candidates.isNotEmpty ? candidates : rules;
+
+    // Step 1: Race parallel probes across candidate rules with an early-exit
+    // window so fast sources win immediately without waiting on dead rules.
+    final foundPool = <String, RuleProbeResult>{};
+    RuleProbeResult? firstCaptcha;
+    final probeReady = Completer<void>();
+    Timer? graceTimer;
+    var finishedCount = 0;
+
+    void maybeFinishRace() {
+      if (probeReady.isCompleted) return;
+      if (finishedCount >= targetRules.length || foundPool.length >= 3) {
+        graceTimer?.cancel();
+        probeReady.complete();
+      } else if (foundPool.isNotEmpty && graceTimer == null) {
+        graceTimer = Timer(const Duration(milliseconds: 700), () {
+          if (!probeReady.isCompleted) probeReady.complete();
+        });
+      }
+    }
+
+    for (final rule in targetRules) {
+      final cached = _probes[rule.id];
+      if (cached != null && cached.state != RuleProbeState.searching) {
+        finishedCount++;
+        if (cached.state == RuleProbeState.found && cached.hits.isNotEmpty) {
+          foundPool[rule.id] = cached;
+        } else if (cached.state == RuleProbeState.captchaRequired &&
+            firstCaptcha == null) {
+          firstCaptcha = cached;
+        }
+        continue;
+      }
+      unawaited(() async {
+        final result = await resolver.probeRule(subject, rule.id);
+        if (mounted) {
+          setState(() => _probes[rule.id] = result);
+        }
+        finishedCount++;
+        if (result.state == RuleProbeState.found && result.hits.isNotEmpty) {
+          foundPool[rule.id] = result;
+        } else if (result.state == RuleProbeState.captchaRequired &&
+            firstCaptcha == null) {
+          firstCaptcha = result;
+        }
+        maybeFinishRace();
+      }());
+    }
+    maybeFinishRace();
+
+    if (!probeReady.isCompleted) {
+      await probeReady.future.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () {},
+      );
+    }
+    graceTimer?.cancel();
+    if (!_isCurrent(request)) return;
+
+    // Step 2: Sort found candidates by exact title match + connection speed.
+    final titleKeys = {
+      _normTitle(subject.title),
+      if (subject.originalTitle.trim().isNotEmpty)
+        _normTitle(subject.originalTitle),
+    }..remove('');
+    final ruleMetaById = {for (final r in targetRules) r.id: r};
+
+    List<RuleProbeResult> rankCandidates(Iterable<RuleProbeResult> items) {
+      final list = items.toList();
+      list.sort((a, b) {
+        final aExact = titleKeys.contains(_normTitle(a.hits.first.title))
+            ? 0
+            : 1;
+        final bExact = titleKeys.contains(_normTitle(b.hits.first.title))
+            ? 0
+            : 1;
+        if (aExact != bExact) return aExact.compareTo(bExact);
+        final aMs = a.latencyMs > 0
+            ? a.latencyMs
+            : (ruleMetaById[a.ruleId]?.latencyMs ?? 0) > 0
+            ? ruleMetaById[a.ruleId]!.latencyMs
+            : 9999;
+        final bMs = b.latencyMs > 0
+            ? b.latencyMs
+            : (ruleMetaById[b.ruleId]?.latencyMs ?? 0) > 0
+            ? ruleMetaById[b.ruleId]!.latencyMs
+            : 9999;
+        return aMs.compareTo(bMs);
+      });
+      return list;
+    }
+
+    ({
+      List<SourceEpisode> options,
+      SourceEpisode episodeSource,
+      PlayableMedia media,
+      String hitUrl,
+    })?
+    fallbackCandidate;
+
+    final triedIds = <String>{};
+
+    Future<bool> tryProbe(RuleProbeResult probe) async {
+      if (!_isCurrent(request) || !triedIds.add(probe.ruleId)) return false;
+      final bestHit = probe.hits.first;
+      if (mounted) {
+        setState(() => _loadingHint = '正在测速 ${probe.ruleName}...');
+      }
+      try {
+        final options = await resolver.loadEpisodesFromHit(
+          probe.ruleId,
+          bestHit,
+        );
+        if (!_isCurrent(request)) return false;
+        final available = options
+            .where((item) => item.number == episode)
+            .toList();
+        if (available.isEmpty) return false;
+
+        for (final line in available) {
+          if (!_isCurrent(request)) return false;
+          try {
+            final media = await resolver.resolve(line);
+            if (!_isCurrent(request)) return false;
+            final ttfb = await resolver.verifyPlayable(media);
+            if (!_isCurrent(request)) return false;
+            if (ttfb == null) {
+              fallbackCandidate ??= (
+                options: options,
+                episodeSource: line,
+                media: media,
+                hitUrl: bestHit.sourceUrl,
+              );
+              continue;
+            }
+            setState(() {
+              _choices = options;
+              _ruleId = probe.ruleId;
+              _ruleName = probe.ruleName;
+              _activeHitUrl = bestHit.sourceUrl;
+            });
+            await session.open(media, startAt: initialPosition);
+            if (!_isCurrent(request)) return false;
+            if (!_pageActive) await session.setPlaying(false);
+            if (!_isCurrent(request)) return false;
+            await resolver.rememberSelectedRule(widget.subjectId, probe.ruleId);
+            setState(() {
+              _episode = episode;
+              _source = line;
+              _ruleId = line.ruleId;
+              _ruleName = line.ruleName;
+              _status = session.status;
+              _loading = false;
+              _loadingHint = null;
+              _loaded = true;
+              _lastCheckpoint = -1;
+              _lastCompleted = false;
+            });
+            _armHudAutoHide();
+            unawaited(_loadDanmaku());
+            return true;
+          } on Object {
+            continue;
+          }
+        }
+      } on Object {
+        return false;
+      }
+      return false;
+    }
+
+    // Try ranked fast candidates first.
+    for (final probe in rankCandidates(foundPool.values)) {
+      if (await tryProbe(probe)) return;
+      if (!_isCurrent(request)) return;
+    }
+
+    // Also try any late-arriving found probes that completed while we tested.
+    final lateFound = _probes.values
+        .where(
+          (p) =>
+              p.state == RuleProbeState.found &&
+              p.hits.isNotEmpty &&
+              !triedIds.contains(p.ruleId) &&
+              (excludeRuleId == null || p.ruleId != excludeRuleId),
+        )
+        .toList();
+    for (final probe in rankCandidates(lateFound)) {
+      if (await tryProbe(probe)) return;
+      if (!_isCurrent(request)) return;
+    }
+
+    // Fallback to the first resolved stream if all strict HTTP pre-checks
+    // failed (e.g. a CDN that blocks Range requests but plays fine in mpv).
+    if (fallbackCandidate case final fb?) {
+      if (!_isCurrent(request)) return;
+      setState(() {
+        _choices = fb.options;
+        _ruleId = fb.episodeSource.ruleId;
+        _ruleName = fb.episodeSource.ruleName;
+        _activeHitUrl = fb.hitUrl;
+      });
+      await session.open(fb.media, startAt: initialPosition);
+      if (!_isCurrent(request)) return;
+      if (!_pageActive) await session.setPlaying(false);
+      if (!_isCurrent(request)) return;
+      await resolver.rememberSelectedRule(
+        widget.subjectId,
+        fb.episodeSource.ruleId,
+      );
+      setState(() {
+        _episode = episode;
+        _source = fb.episodeSource;
+        _ruleId = fb.episodeSource.ruleId;
+        _ruleName = fb.episodeSource.ruleName;
+        _status = session.status;
+        _loading = false;
+        _loadingHint = null;
+        _loaded = true;
+        _lastCheckpoint = -1;
+        _lastCompleted = false;
+      });
+      _armHudAutoHide();
+      unawaited(_loadDanmaku());
+      return;
+    }
+
+    final captcha = firstCaptcha;
+    if (captcha != null && captcha.verifyUrl != null) {
+      if (!_isCurrent(request)) return;
+      setState(() {
+        _loading = false;
+        _loadingHint = null;
+        _error = '${captcha.ruleName} 需要验证';
+        _errorVerifyUrl = captcha.verifyUrl;
+        _errorVerifyRuleId = captcha.ruleId;
+        _errorVerifyRuleName = captcha.ruleName;
+      });
+      return;
+    }
+
+    throw StateError('未找到可播放的源');
   }
 
   void _checkpoint() {
@@ -932,7 +1254,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     final error =
         _error ??
         (_loaded && status.duration == Duration.zero && status.error != null
-            ? '媒体播放失败，请手动切换线路或播放源'
+            ? '播放失败'
             : null);
     final offline = widget.offline != null;
 
@@ -1091,7 +1413,26 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           ),
         ),
         if (_loading || (_loaded && status.buffering))
-          const Center(child: ActivityIndicator(color: Colors.white)),
+          Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              spacing: 8,
+              children: [
+                const ActivityIndicator(color: Colors.white),
+                if (_loading && (_loadingHint?.isNotEmpty ?? false))
+                  _GlassPill(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    child: Text(
+                      _loadingHint!,
+                      style: _style(context, small: true),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         if (error != null)
           Center(
             child: Padding(
@@ -1120,7 +1461,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                         if (_errorVerifyUrl != null &&
                             _errorVerifyRuleId != null)
                           _HudAction(
-                            label: '完成网页验证',
+                            label: '去验证',
                             active: true,
                             onTap: () => _verifyRule(
                               _errorVerifyRuleId!,
@@ -1133,8 +1474,20 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                           onTap: () => _openEpisode(
                             _episode,
                             ruleId: _ruleId.isEmpty ? null : _ruleId,
+                            strictPreferredRule: _ruleId.isNotEmpty,
+                            autoSelectFastest: _ruleId.isEmpty,
                           ),
                         ),
+                        if (!offline && rules.any((rule) => rule.enabled))
+                          _HudAction(
+                            label: '自动选择',
+                            active: _errorVerifyUrl == null,
+                            onTap: () => _openEpisode(
+                              _episode,
+                              autoSelectFastest: true,
+                              excludeRuleId: _ruleId.isEmpty ? null : _ruleId,
+                            ),
+                          ),
                         if (!offline)
                           _HudAction(
                             label: rules.any((rule) => rule.enabled)
@@ -1451,13 +1804,13 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                       line.line == _source?.line && line.page == _source?.page
                       ? colorScheme.primary
                       : SurfaceLevel.card.colorOf(colorScheme),
-                  onPressed: _loading
-                      ? null
-                      : () => _openEpisode(
-                          _episode,
-                          ruleId: line.ruleId,
-                          choice: line,
-                        ),
+                  onPressed: () => unawaited(
+                    _openEpisode(
+                      _episode,
+                      ruleId: line.ruleId,
+                      choice: line,
+                    ),
+                  ),
                 ),
             ],
           ),
@@ -1531,9 +1884,15 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                         watched:
                             (collection?.watchedEpisodes ?? 0) >= number &&
                             number != _episode,
-                        onPressed: _loading || offline
+                        onPressed: offline
                             ? null
-                            : () => _openEpisode(number, ruleId: _ruleId),
+                            : () => unawaited(
+                                _openEpisode(
+                                  number,
+                                  ruleId: _ruleId.isEmpty ? null : _ruleId,
+                                  autoSelectFastest: _ruleId.isEmpty,
+                                ),
+                              ),
                       ),
                   ],
                 ),
@@ -1673,7 +2032,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                   children: [
                     Expanded(
                       child: Text(
-                        '播放源检索结果',
+                        '播放源',
                         style: AppTextStyle.headline
                             .of(context, emphasized: true)
                             .copyWith(color: colorScheme.onSurface),
@@ -1694,7 +2053,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                     ),
                     const SizedBox(width: 6),
                     KonekoChip(
-                      label: '规则管理',
+                      label: '规则',
                       height: 28,
                       fontSize: 12,
                       onPressed: () async {
@@ -1719,7 +2078,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                         autocorrect: false,
                         decoration: InputDecoration(
                           hintText:
-                              '自定义检索关键词（默认：${_subject?.title ?? ''}）',
+                              '自定义搜索词（默认：${_subject?.title ?? ''}）',
                         ),
                         onSubmitted: (v) => unawaited(
                           _probeAllEnabledRules(
@@ -1740,7 +2099,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                       );
                       if (mounted) await _start();
                     },
-                    child: const Text('去规则仓库安装 Kazumi 播放规则'),
+                    child: const Text('添加播放规则'),
                   )
                 else
                   Column(
@@ -1753,7 +2112,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                 if (lines.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   Text(
-                    '当前规则可用线路',
+                    '播放线路',
                     style: AppTextStyle.caption1
                         .of(context, emphasized: true)
                         .copyWith(color: colorScheme.onSurfaceVariant),
@@ -1771,13 +2130,13 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                           selected:
                               line.line == _source?.line &&
                               line.page == _source?.page,
-                          onPressed: _loading
-                              ? null
-                              : () => _openEpisode(
-                                  _episode,
-                                  ruleId: line.ruleId,
-                                  choice: line,
-                                ),
+                          onPressed: () => unawaited(
+                            _openEpisode(
+                              _episode,
+                              ruleId: line.ruleId,
+                              choice: line,
+                            ),
+                          ),
                         ),
                     ],
                   ),
@@ -1802,7 +2161,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
         colorScheme.onSurfaceVariant,
       ),
       RuleProbeState.found => (
-        '${probe!.hits.length} 条结果',
+        probe!.latencyMs > 0
+            ? '${probe.latencyMs}ms · ${probe.hits.length} 条'
+            : '${probe.hits.length} 条',
         colorScheme.successContainer,
         colorScheme.onSuccessContainer,
       ),
@@ -1812,16 +2173,29 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
         colorScheme.onSurfaceVariant,
       ),
       RuleProbeState.captchaRequired => (
-        '需要验证',
+        '需验证',
         colorScheme.warningContainer,
         colorScheme.onWarningContainer,
       ),
       RuleProbeState.error => (
-        '访问失败',
+        '失败',
         colorScheme.errorContainer,
         colorScheme.onErrorContainer,
       ),
     };
+
+    void handleSelectRule() {
+      if (state == RuleProbeState.captchaRequired &&
+          probe?.verifyUrl != null) {
+        unawaited(_verifyRule(rule.id, rule.name, probe!.verifyUrl!));
+      } else if (state == RuleProbeState.found &&
+          probe != null &&
+          probe.hits.isNotEmpty) {
+        unawaited(_openHit(rule.id, rule.name, probe.hits.first));
+      } else {
+        unawaited(_openEpisode(_episode, ruleId: rule.id));
+      }
+    }
 
     return KonekoBlock(
       selected: isCurrent,
@@ -1830,35 +2204,43 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
         crossAxisAlignment: CrossAxisAlignment.stretch,
         spacing: 8,
         children: [
-          Row(
-            spacing: 8,
-            children: [
-              Expanded(
-                child: Text(
-                  rule.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTextStyle.subheadline
-                      .of(context, emphasized: true)
-                      .copyWith(color: colorScheme.onSurface),
-                ),
+          PressSurface(
+            fill: Colors.transparent,
+            shape: AppShape.sm,
+            onPressed: handleSelectRule,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                spacing: 8,
+                children: [
+                  Expanded(
+                    child: Text(
+                      rule.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyle.subheadline
+                          .of(context, emphasized: true)
+                          .copyWith(color: colorScheme.onSurface),
+                    ),
+                  ),
+                  if (isCurrent)
+                    KonekoChip(
+                      label: '当前',
+                      height: 22,
+                      fontSize: 10.5,
+                      backgroundColor: colorScheme.primary,
+                      foregroundColor: colorScheme.onPrimary,
+                    ),
+                  KonekoChip(
+                    label: badgeText,
+                    height: 22,
+                    fontSize: 10.5,
+                    backgroundColor: badgeBg,
+                    foregroundColor: badgeFg,
+                  ),
+                ],
               ),
-              if (isCurrent)
-                KonekoChip(
-                  label: '当前',
-                  height: 22,
-                  fontSize: 10.5,
-                  backgroundColor: colorScheme.primary,
-                  foregroundColor: colorScheme.onPrimary,
-                ),
-              KonekoChip(
-                label: badgeText,
-                height: 22,
-                fontSize: 10.5,
-                backgroundColor: badgeBg,
-                foregroundColor: badgeFg,
-              ),
-            ],
+            ),
           ),
           if (state == RuleProbeState.found && probe != null)
             Wrap(
@@ -1870,11 +2252,17 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                     label: hit.title,
                     height: 28,
                     fontSize: 12,
-                    backgroundColor: SurfaceLevel.card.colorOf(colorScheme),
-                    foregroundColor: colorScheme.onSurface,
-                    onPressed: _loading
-                        ? null
-                        : () => unawaited(_openHit(rule.id, rule.name, hit)),
+                    selected: isCurrent && _activeHitUrl == hit.sourceUrl,
+                    backgroundColor:
+                        isCurrent && _activeHitUrl == hit.sourceUrl
+                        ? colorScheme.primary
+                        : SurfaceLevel.card.colorOf(colorScheme),
+                    foregroundColor:
+                        isCurrent && _activeHitUrl == hit.sourceUrl
+                        ? colorScheme.onPrimary
+                        : colorScheme.onSurface,
+                    onPressed: () =>
+                        unawaited(_openHit(rule.id, rule.name, hit)),
                   ),
               ],
             )
@@ -1892,7 +2280,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                 ),
                 const SizedBox(width: 8),
                 KonekoChip(
-                  label: '前往验证',
+                  label: '去验证',
                   height: 28,
                   fontSize: 12,
                   backgroundColor: colorScheme.primary,
@@ -2188,21 +2576,25 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                           return _HudAction(
                             label: '$number',
                             active: number == _episode,
-                            onTap: _loading
-                                ? null
-                                : () => _openEpisode(number, ruleId: _ruleId),
+                            onTap: () => unawaited(
+                              _openEpisode(
+                                number,
+                                ruleId: _ruleId.isEmpty ? null : _ruleId,
+                                autoSelectFastest: _ruleId.isEmpty,
+                              ),
+                            ),
                           );
                         },
                       ),
               _DrawerTab.sources => ListView(
                 children: [
                   if (offline)
-                    Text('当前正在离线播放', style: _style(context))
+                    Text('离线播放中', style: _style(context))
                   else ...[
                     Padding(
                       padding: const EdgeInsets.only(left: 4, bottom: 6),
                       child: Text(
-                        '播放源（规则）',
+                        '播放源',
                         style: _style(context, small: true).copyWith(
                           color: Colors.white.withValues(alpha: 0.62),
                         ),
@@ -2225,26 +2617,30 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                             return '${rule.name}$suffix';
                           }(),
                           active: _ruleId == rule.id,
-                          onTap: _loading
-                              ? null
-                              : () {
-                                  final probe = _probes[rule.id];
-                                  if (probe?.state ==
-                                          RuleProbeState.captchaRequired &&
-                                      probe?.verifyUrl != null) {
-                                    unawaited(
-                                      _verifyRule(
-                                        rule.id,
-                                        rule.name,
-                                        probe!.verifyUrl!,
-                                      ),
-                                    );
-                                  } else {
-                                    unawaited(
-                                      _openEpisode(_episode, ruleId: rule.id),
-                                    );
-                                  }
-                                },
+                          onTap: () {
+                            final probe = _probes[rule.id];
+                            if (probe?.state ==
+                                    RuleProbeState.captchaRequired &&
+                                probe?.verifyUrl != null) {
+                              unawaited(
+                                _verifyRule(
+                                  rule.id,
+                                  rule.name,
+                                  probe!.verifyUrl!,
+                                ),
+                              );
+                            } else if (probe?.state == RuleProbeState.found &&
+                                probe != null &&
+                                probe.hits.isNotEmpty) {
+                              unawaited(
+                                _openHit(rule.id, rule.name, probe.hits.first),
+                              );
+                            } else {
+                              unawaited(
+                                _openEpisode(_episode, ruleId: rule.id),
+                              );
+                            }
+                          },
                         ),
                       ),
                     if (lines.isNotEmpty) ...[
@@ -2257,8 +2653,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                         padding: const EdgeInsets.only(left: 4, bottom: 6),
                         child: Text(
                           _ruleName.isNotEmpty
-                              ? '当前源线路 · $_ruleName'
-                              : '当前源线路',
+                              ? '播放线路 · $_ruleName'
+                              : '播放线路',
                           style: _style(context, small: true).copyWith(
                             color: Colors.white.withValues(alpha: 0.62),
                           ),
@@ -2272,13 +2668,13 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                             active:
                                 line.line == _source?.line &&
                                 line.page == _source?.page,
-                            onTap: _loading
-                                ? null
-                                : () => _openEpisode(
-                                    _episode,
-                                    ruleId: line.ruleId,
-                                    choice: line,
-                                  ),
+                            onTap: () => unawaited(
+                              _openEpisode(
+                                _episode,
+                                ruleId: line.ruleId,
+                                choice: line,
+                              ),
+                            ),
                           ),
                         ),
                     ],

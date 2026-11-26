@@ -116,7 +116,7 @@ class _RulesPageState extends ConsumerState<RulesPage> {
                       KonekoGlyphs.resources,
                       color: colorScheme.primary,
                     ),
-                    title: const Text('浏览在线规则仓库'),
+                    title: const Text('在线规则仓库'),
                     trailing: const GlyphIcon(Glyphs.chevronForward),
                     onPressed: () => BaseNavigator.push<void>(
                       context,
@@ -128,7 +128,7 @@ class _RulesPageState extends ConsumerState<RulesPage> {
                       KonekoGlyphs.addCircle,
                       color: colorScheme.primary,
                     ),
-                    title: const Text('粘贴 JSON 或规则链接导入'),
+                    title: const Text('粘贴导入'),
                     trailing: const GlyphIcon(Glyphs.chevronForward),
                     onPressed: () => BaseNavigator.push<void>(
                       context,
@@ -318,8 +318,8 @@ class _RuleStorePageState extends ConsumerState<_RuleStorePage> {
     final controller = TextEditingController(text: _customRepoUrl);
     final applied = await showKonekoSheet<String>(
       context: context,
-      title: '自定义规则仓库',
-      subtitle: '填入兼容 KazumiRules 的 Raw 目录地址，留空恢复官方自动优选',
+      title: '自定义仓库',
+      subtitle: '留空恢复默认',
       detents: const [0.46, 0.72],
       bodyBuilder: (sheetContext) {
         final colorScheme = sheetContext.colorScheme;
@@ -812,7 +812,7 @@ class _RuleEditorPageState extends ConsumerState<_RuleEditorPage> {
               autocorrect: false,
               enableSuggestions: false,
               decoration: const InputDecoration(
-                hintText: '粘贴 Kazumi JSON 或 kazumi:// 链接',
+                hintText: '粘贴规则 JSON 或链接',
               ),
             ),
           ),

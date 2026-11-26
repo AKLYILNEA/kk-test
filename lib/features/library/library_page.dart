@@ -107,8 +107,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
 
     await showKonekoSheet<void>(
       context: context,
-      title: '追番管理与同步',
-      subtitle: '排序方式、Bangumi 与 WebDAV 云端同步',
+      title: '追番设置',
       detents: const [0.64, 0.86],
       bodyBuilder: (sheetContext) {
         return StatefulBuilder(
@@ -118,7 +117,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
               shrinkWrap: true,
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
               children: [
-                const ListHeader(title: '排序方式'),
+                const ListHeader(title: '排序'),
                 KonekoCard(
                   corner: 22,
                   padding: const EdgeInsets.all(14),
@@ -143,15 +142,13 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                     ],
                   ),
                 ),
-                const ListHeader(title: '同步服务（对齐 Kazumi）'),
+                const ListHeader(title: '同步'),
                 KonekoGroup(
                   items: [
                     DecorationListItem(
                       leading: const GlyphIcon(KonekoGlyphs.sync),
-                      title: const Text('同步 Bangumi 收藏与进度'),
-                      subtitle: Text(
-                        hasBangumi ? '已配置访问令牌，点击立即双向同步' : '尚未配置 Access Token，点击去设置',
-                      ),
+                      title: const Text('Bangumi 同步'),
+                      subtitle: Text(hasBangumi ? '点击同步' : '未配置'),
                       trailing: _syncing
                           ? const ActivityIndicator()
                           : const GlyphIcon(Glyphs.chevronForward),
@@ -171,12 +168,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                     ),
                     DecorationListItem(
                       leading: const GlyphIcon(KonekoGlyphs.cloud),
-                      title: const Text('同步 WebDAV 云端备份'),
-                      subtitle: Text(
-                        hasWebDav
-                            ? '已配置服务器，兼容 Kazumi 备份格式'
-                            : '尚未配置 WebDAV 服务器，点击去设置',
-                      ),
+                      title: const Text('WebDAV 同步'),
+                      subtitle: Text(hasWebDav ? '点击同步' : '未配置'),
                       trailing: _syncing
                           ? const ActivityIndicator()
                           : const GlyphIcon(Glyphs.chevronForward),
@@ -196,8 +189,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                     ),
                     DecorationListItem(
                       leading: const GlyphIcon(KonekoGlyphs.user),
-                      title: const Text('账号与同步设置'),
-                      subtitle: const Text('管理 Bangumi Token、WebDAV 与屏蔽词'),
+                      title: const Text('同步设置'),
                       trailing: const GlyphIcon(Glyphs.chevronForward),
                       onPressed: () {
                         Navigator.of(sheetContext).pop();

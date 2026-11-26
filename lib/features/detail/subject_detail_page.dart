@@ -1130,15 +1130,15 @@ class _RuleSourcesCard extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             selectedRuleId.isNotEmpty
-                ? '已指定「$selectedRuleName」，再次点击可取消指定'
-                : '未指定时自动沿用上次线路；点击任意源可指定或取消',
+                ? '已指定「$selectedRuleName」，再次点击取消'
+                : '点击可指定播放源，再次点击取消',
             style: AppTextStyle.caption1
                 .of(context)
                 .copyWith(color: colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 12),
           if (!hasAny)
-            TextButton(onPressed: onManage, child: const Text('去导入 Kazumi 播放规则'))
+            TextButton(onPressed: onManage, child: const Text('添加播放规则'))
           else if (hasLiveResolver)
             Column(
               spacing: 8,
@@ -1195,14 +1195,14 @@ class _RuleSourcesCard extends StatelessWidget {
     };
 
     final subtitle = switch (state) {
-      RuleProbeState.searching => '正在搜索匹配资源...',
+      RuleProbeState.searching => '检测中...',
       RuleProbeState.found =>
         probe != null && probe.hits.isNotEmpty
-            ? '匹配：${probe.hits.first.title}'
-            : '找到可用线路',
-      RuleProbeState.noResult => '该源未收录此番剧',
-      RuleProbeState.captchaRequired => '点击完成站点验证后即可检索',
-      RuleProbeState.error => probe?.message ?? '连接超时或解析失败',
+            ? probe.hits.first.title
+            : '可用',
+      RuleProbeState.noResult => '未收录',
+      RuleProbeState.captchaRequired => '需要验证',
+      RuleProbeState.error => probe?.message ?? '不可用',
     };
 
     return KonekoBlock(

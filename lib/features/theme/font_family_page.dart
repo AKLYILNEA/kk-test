@@ -22,7 +22,7 @@ class _FontFamilyPageState extends State<FontFamilyPage> {
       setState(() {});
       showKonekoBanner(
         context,
-        '已导入并秒切字体：${FontManager.selectedName ?? ""}',
+        '已切换字体：${FontManager.selectedName ?? ""}',
         level: BannerLevel.success,
       );
     }
@@ -73,20 +73,14 @@ class _FontFamilyPageState extends State<FontFamilyPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         spacing: 6,
                         children: [
-                          Row(
-                            children: [
-                              KonekoChip(
-                                label: selected == null
-                                    ? '当前：系统默认'
-                                    : '当前：${selected.name}',
-                                backgroundColor: colorScheme.primary.withValues(
-                                  alpha: 0.14,
-                                ),
-                                foregroundColor: colorScheme.primary,
-                              ),
-                              const SizedBox(width: 8),
-                              const KonekoChip(label: 'Twemoji 🐱✨'),
-                            ],
+                          KonekoChip(
+                            label: selected == null
+                                ? '当前：系统默认'
+                                : '当前：${selected.name}',
+                            backgroundColor: colorScheme.primary.withValues(
+                              alpha: 0.14,
+                            ),
+                            foregroundColor: colorScheme.primary,
                           ),
                           const SizedBox(height: 6),
                           Text(
@@ -96,7 +90,7 @@ class _FontFamilyPageState extends State<FontFamilyPage> {
                                 .copyWith(fontFamily: activeFamily),
                           ),
                           Text(
-                            'Hoshiumi no Tabibito · 0123456789 · 切换后零重启秒级生效 🎬🌸',
+                            'AaBbCc 0123456789',
                             style: AppTextStyle.subheadline
                                 .of(context)
                                 .copyWith(
@@ -109,11 +103,10 @@ class _FontFamilyPageState extends State<FontFamilyPage> {
                     ),
 
                     KonekoSection(
-                      title: '默认字体',
+                      title: '默认',
                       items: [
                         DecorationListItem(
                           title: const Text('系统默认'),
-                          subtitle: const Text('跟随设备系统字体 + Twemoji'),
                           isSelected: selected == null,
                           trailing: selected == null
                               ? const SelectionCheck()
@@ -127,10 +120,7 @@ class _FontFamilyPageState extends State<FontFamilyPage> {
                     ),
 
                     KonekoSection(
-                      title: '已导入字体 (${fonts.length})',
-                      footer: fonts.isEmpty
-                          ? '点击右上角「导入字体」选择设备中的 .ttf 或 .otf 文件，导入后支持实时预览与一键秒切。'
-                          : '点击任意字体即可零重启切换全局排版；点击右侧垃圾桶图标可移除。',
+                      title: '已导入 (${fonts.length})',
                       items: [
                         if (fonts.isEmpty)
                           DecorationListItem(
@@ -138,8 +128,8 @@ class _FontFamilyPageState extends State<FontFamilyPage> {
                               KonekoGlyphs.addCircle,
                               color: colorScheme.primary,
                             ),
-                            title: const Text('立即导入本地 TTF / OTF 字体'),
-                            subtitle: const Text('与 FlClash 一致，自动修正静态粗体字重'),
+                            title: const Text('导入字体'),
+                            subtitle: const Text('支持 .ttf / .otf'),
                             onPressed: _handleImport,
                           )
                         else

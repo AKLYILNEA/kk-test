@@ -191,6 +191,7 @@ class RuleProbeResult {
     this.hits = const [],
     this.message = '',
     this.verifyUrl,
+    this.latencyMs = 0,
   });
 
   final String ruleId;
@@ -199,6 +200,7 @@ class RuleProbeResult {
   final List<RuleSearchHit> hits;
   final String message;
   final Uri? verifyUrl;
+  final int latencyMs;
 }
 
 class DanmakuAnimeMatch {
@@ -230,6 +232,7 @@ class DanmakuEpisodeMatch {
 abstract interface class PlaybackSources {
   Future<List<SourceEpisode>> lookup(AnimeSubject subject, String ruleId);
   Future<PlayableMedia> resolve(SourceEpisode episode);
+  Future<int?> verifyPlayable(PlayableMedia media);
   Future<RuleProbeResult> probeRule(
     AnimeSubject subject,
     String ruleId, {

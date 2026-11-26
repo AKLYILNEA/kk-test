@@ -87,6 +87,7 @@ class KazumiSources implements PlaybackSources {
     String ruleId, {
     String? keyword,
   }) async {
+    final sw = Stopwatch()..start();
     final rule = _rules.enabledPlugin(ruleId);
     if (rule == null) {
       return RuleProbeResult(
@@ -127,6 +128,7 @@ class KazumiSources implements PlaybackSources {
                 RuleSearchHit(title: item.name, sourceUrl: item.src),
             ],
             message: '找到 ${sorted.length} 条结果',
+            latencyMs: math.max(1, sw.elapsedMilliseconds),
           );
         }
       } on NoResultException {
@@ -144,8 +146,9 @@ class KazumiSources implements PlaybackSources {
         ruleId: ruleId,
         ruleName: rule.name,
         state: RuleProbeState.captchaRequired,
-        message: '该站点需要完成网页验证，点击进入网页验证后即可继续搜索',
+        message: '需要站点验证',
         verifyUrl: _buildVerifyUri(rule, primaryKeyword),
+        latencyMs: sw.elapsedMilliseconds,
       );
     }
     if (lastError != null) {
@@ -153,14 +156,16 @@ class KazumiSources implements PlaybackSources {
         ruleId: ruleId,
         ruleName: rule.name,
         state: RuleProbeState.error,
-        message: '搜索请求失败，请检查网络或稍后重试',
+        message: '连接失败',
+        latencyMs: sw.elapsedMilliseconds,
       );
     }
     return RuleProbeResult(
       ruleId: ruleId,
       ruleName: rule.name,
       state: RuleProbeState.noResult,
-      message: '未找到相关番剧',
+      message: '未找到',
+      latencyMs: sw.elapsedMilliseconds,
     );
   }
 
@@ -316,6 +321,91 @@ class KazumiSources implements PlaybackSources {
       }
     }
     return _sniff(page, headers);
+  }
+
+  @override
+  Future<int?> verifyPlayable(PlayableMedia media) async {
+    final uri = media.uri;
+    if (uri.scheme != 'http' && uri.scheme != 'https') {
+      return 1;
+    }
+    final sw = Stopwatch()..start();
+    final cancelToken = CancelToken();
+    try {
+      final response = await _client.getUri<ResponseBody>(
+        uri,
+        cancelToken: cancelToken,
+        options: Options(
+          headers: <String, String>{
+            'user-agent': _browserUserAgent,
+            ...media.headers,
+            'range': 'bytes=0-1023',
+          },
+          responseType: ResponseType.stream,
+          followRedirects: true,
+          maxRedirects: 5,
+          sendTimeout: const Duration(seconds: 4),
+          receiveTimeout: const Duration(seconds: 4),
+          validateStatus: (_) => true,
+        ),
+      );
+      final status = response.statusCode ?? 0;
+      if (status < 200 || status >= 400) {
+        cancelToken.cancel('status_$status');
+        return null;
+      }
+      final contentType =
+          (response.headers.value(Headers.contentTypeHeader) ?? '')
+              .toLowerCase();
+      if (contentType.contains('text/html')) {
+        cancelToken.cancel('html_response');
+        return null;
+      }
+      final stream = response.data?.stream;
+      if (stream != null) {
+        final bytes = <int>[];
+        final completer = Completer<void>();
+        late final StreamSubscription<List<int>> sub;
+        sub = stream.listen(
+          (chunk) {
+            bytes.addAll(chunk);
+            if (bytes.length >= 256 && !completer.isCompleted) {
+              completer.complete();
+              unawaited(sub.cancel());
+            }
+          },
+          onDone: () {
+            if (!completer.isCompleted) completer.complete();
+          },
+          onError: (Object err) {
+            if (!completer.isCompleted) completer.completeError(err);
+          },
+          cancelOnError: true,
+        );
+        try {
+          await completer.future.timeout(const Duration(seconds: 3));
+        } finally {
+          await sub.cancel();
+          if (!cancelToken.isCancelled) cancelToken.cancel('verified');
+        }
+        if (bytes.isEmpty) return null;
+        final isHls =
+            uri.path.toLowerCase().endsWith('.m3u8') ||
+            contentType.contains('mpegurl');
+        if (isHls) {
+          final preview = utf8
+              .decode(bytes.take(256).toList(), allowMalformed: true)
+              .trimLeft();
+          if (!preview.startsWith('#EXTM3U')) {
+            return null;
+          }
+        }
+      }
+      return math.max(1, sw.elapsedMilliseconds);
+    } on Object {
+      if (!cancelToken.isCancelled) cancelToken.cancel('failed');
+      return null;
+    }
   }
 
   Future<PlayableMedia> _sniff(Uri page, Map<String, String> headers) async {

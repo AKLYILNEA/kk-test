@@ -107,7 +107,7 @@ class DanmakuSettingsPage extends ConsumerWidget {
                     ],
                   ),
                 ),
-                const ListHeader(title: '字体、粗细与样式'),
+                const ListHeader(title: '样式'),
                 KonekoCard(
                   corner: 24,
                   padding: const EdgeInsets.all(14),
@@ -116,7 +116,7 @@ class DanmakuSettingsPage extends ConsumerWidget {
                     spacing: 10,
                     children: [
                       _SliderRow(
-                        label: '字体大小',
+                        label: '字号',
                         valueText: '${settings.fontSize.round()} px',
                         value: settings.fontSize,
                         min: 10,
@@ -126,7 +126,7 @@ class DanmakuSettingsPage extends ConsumerWidget {
                         ),
                       ),
                       _SliderRow(
-                        label: '字体字重（粗细）',
+                        label: '字重',
                         valueText: _weightLabel(settings.fontWeight),
                         value: settings.fontWeight.toDouble(),
                         min: 1,
@@ -136,10 +136,10 @@ class DanmakuSettingsPage extends ConsumerWidget {
                         ),
                       ),
                       _SliderRow(
-                        label: '描边粗细',
+                        label: '描边',
                         valueText: settings.strokeEnabled
                             ? settings.strokeWidth.toStringAsFixed(1)
-                            : '已关闭',
+                            : '关',
                         value: settings.strokeWidth,
                         min: 0.2,
                         max: 3.0,
@@ -154,7 +154,7 @@ class DanmakuSettingsPage extends ConsumerWidget {
                             : null,
                       ),
                       _SliderRow(
-                        label: '不透明度',
+                        label: '透明度',
                         valueText: '${(settings.opacity * 100).round()}%',
                         value: settings.opacity,
                         min: 0.1,
@@ -166,7 +166,7 @@ class DanmakuSettingsPage extends ConsumerWidget {
                         ),
                       ),
                       _SliderRow(
-                        label: '停留时间（越大越慢）',
+                        label: '滚动时长',
                         valueText: '${settings.duration.round()} 秒',
                         value: settings.duration,
                         min: 3,
@@ -176,7 +176,7 @@ class DanmakuSettingsPage extends ConsumerWidget {
                         ),
                       ),
                       _SliderRow(
-                        label: '行间距',
+                        label: '行距',
                         valueText: settings.lineHeight.toStringAsFixed(1),
                         value: settings.lineHeight,
                         min: 0.8,
@@ -190,7 +190,7 @@ class DanmakuSettingsPage extends ConsumerWidget {
                     ],
                   ),
                 ),
-                const ListHeader(title: '弹幕类型与绘制'),
+                const ListHeader(title: '显示'),
                 KonekoGroup(
                   items: [
                     DecorationListItem(
@@ -227,7 +227,7 @@ class DanmakuSettingsPage extends ConsumerWidget {
                       ),
                     ),
                     DecorationListItem(
-                      title: const Text('弹幕描边'),
+                      title: const Text('描边'),
                       trailing: Switch(
                         value: settings.strokeEnabled,
                         onChanged: (v) => notifier.update(
@@ -250,7 +250,7 @@ class DanmakuSettingsPage extends ConsumerWidget {
                       ),
                     ),
                     DecorationListItem(
-                      title: const Text('海量弹幕模式'),
+                      title: const Text('海量模式'),
                       trailing: Switch(
                         value: settings.massiveMode,
                         onChanged: (v) =>
@@ -262,14 +262,11 @@ class DanmakuSettingsPage extends ConsumerWidget {
                     ),
                   ],
                 ),
-                const ListHeader(
-                  title: '弹幕来源过滤',
-                  caption: '弹弹Play 聚合接口自动拉取多站弹幕，可按需开关',
-                ),
+                const ListHeader(title: '来源'),
                 KonekoGroup(
                   items: [
                     DecorationListItem(
-                      title: const Text('BiliBili（B站）'),
+                      title: const Text('B站'),
                       trailing: Switch(
                         value: settings.sourceBilibili,
                         onChanged: (v) => notifier.update(
@@ -281,7 +278,7 @@ class DanmakuSettingsPage extends ConsumerWidget {
                       ),
                     ),
                     DecorationListItem(
-                      title: const Text('Gamer（巴哈姆特动画疯）'),
+                      title: const Text('巴哈姆特'),
                       trailing: Switch(
                         value: settings.sourceGamer,
                         onChanged: (v) =>
@@ -292,7 +289,7 @@ class DanmakuSettingsPage extends ConsumerWidget {
                       ),
                     ),
                     DecorationListItem(
-                      title: const Text('弹弹Play 及其他'),
+                      title: const Text('弹弹Play'),
                       trailing: Switch(
                         value: settings.sourceDandan,
                         onChanged: (v) =>

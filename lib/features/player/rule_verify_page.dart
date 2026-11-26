@@ -18,7 +18,7 @@ Future<bool?> showRuleVerifySheet({
   return showKonekoSheet<bool>(
     context: context,
     title: '站点验证 · $ruleName',
-    subtitle: '完成下方验证后点击底部按钮，将自动保存状态并继续检索',
+    subtitle: '验证完成后点击底部确认',
     detents: const [0.78, 0.94],
     bodyBuilder: (sheetContext) => _RuleVerifySheetBody(
       ruleId: ruleId,
@@ -142,7 +142,7 @@ class _RuleVerifySheetBodyState extends ConsumerState<_RuleVerifySheetBody> {
                             color: colorScheme.onPrimary,
                           ),
                         Text(
-                          _saving ? '正在保存验证状态...' : '我已完成验证，继续检索',
+                          _saving ? '保存中...' : '已完成验证',
                           style: AppTextStyle.subheadline
                               .of(context, emphasized: true)
                               .copyWith(color: colorScheme.onPrimary),

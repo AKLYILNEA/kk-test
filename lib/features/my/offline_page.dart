@@ -32,7 +32,7 @@ class OfflinePage extends ConsumerWidget {
           ),
           children: [
             if (entries.isEmpty)
-              const KonekoCard(child: Text('暂无已缓存剧集。可从播放页添加缓存任务。')),
+              const KonekoCard(child: Text('暂无离线缓存')),
             for (final entry in entries)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),

@@ -162,8 +162,7 @@ class _SchedulePageState extends ConsumerState<SchedulePage> {
                 KonekoGroup(
                   items: [
                     DecorationListItem(
-                      title: const Text('只看正在追的番剧'),
-                      subtitle: const Text('仅显示追番状态为「在看」的条目'),
+                      title: const Text('只看在看'),
                       trailing: Switch(
                         value: _onlyWatching,
                         onChanged: (value) {
