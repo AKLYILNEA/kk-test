@@ -1,31 +1,22 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/widgets.dart';
-import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:prism_ui/prism_ui.dart';
 
-/// Persistent disk cache manager dedicated to anime posters and user avatars.
-/// Mirrors Kazumi's instant cover loading by retaining up to 1000 images for 30 days.
-class KonekoImageCache {
-  KonekoImageCache._();
-
-  static const String cacheKey = 'koneko_cover_cache_v1';
-
-  static final CacheManager instance = CacheManager(
-    Config(
-      cacheKey,
-      stalePeriod: const Duration(days: 30),
-      maxNrOfCacheObjects: 1000,
-    ),
-  );
-
-  static const Map<String, String> defaultHeaders = {
-    'User-Agent':
-        'AKLYILNEA/Koneko/0.0.4 (https://github.com/AKLYILNEA/kk-test)',
-    'Referer': 'https://bgm.tv/',
-  };
+/// Normalizes Bangumi & external cover URLs exactly like Kazumi:
+/// upgrades protocol-relative or `http://` URLs to `https://`.
+String normalizeKonekoImageUrl(String raw) {
+  final trimmed = raw.trim();
+  if (trimmed.isEmpty) return '';
+  if (trimmed.startsWith('//')) return 'https:$trimmed';
+  if (trimmed.startsWith('http://')) {
+    return 'https://${trimmed.substring('http://'.length)}';
+  }
+  return trimmed;
 }
 
-/// Disk- and memory-cached network image with DPR-aware downsampled decoding.
+/// Disk- and memory-cached network image aligned 1:1 with Kazumi's `NetworkImgLayer`.
+/// Uses `CachedNetworkImage`'s default cache manager without custom headers so
+/// Bangumi CDN (`lain.bgm.tv`) never rejects requests with 403/timeout.
 class KonekoNetworkImage extends StatelessWidget {
   const KonekoNetworkImage({
     super.key,
@@ -44,15 +35,17 @@ class KonekoNetworkImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final normalized = normalizeKonekoImageUrl(url);
+    if (normalized.isEmpty || !normalized.startsWith('http')) {
+      return placeholder;
+    }
     return CachedNetworkImage(
-      imageUrl: url,
-      cacheManager: KonekoImageCache.instance,
-      httpHeaders: KonekoImageCache.defaultHeaders,
+      imageUrl: normalized,
       fit: fit,
       memCacheWidth: memCacheWidth,
       memCacheHeight: memCacheHeight,
       fadeInDuration: const Duration(milliseconds: 120),
-      fadeOutDuration: const Duration(milliseconds: 80),
+      fadeOutDuration: const Duration(milliseconds: 120),
       useOldImageOnUrlChange: true,
       filterQuality: FilterQuality.medium,
       placeholder: (_, _) => placeholder,
@@ -89,20 +82,19 @@ class KonekoAvatar extends StatelessWidget {
         ),
       ),
     );
-    final url = avatarUrl;
+    final url = avatarUrl == null ? '' : normalizeKonekoImageUrl(avatarUrl!);
     final dpr = MediaQuery.devicePixelRatioOf(context);
     final decodePx = (size * dpr).round().clamp(48, 160);
 
     return ClipOval(
       child: SizedBox.square(
         dimension: size,
-        child: url == null || url.isEmpty || !url.startsWith('http')
+        child: url.isEmpty || !url.startsWith('http')
             ? fallback
             : KonekoNetworkImage(
                 url: url,
                 placeholder: fallback,
                 memCacheWidth: decodePx,
-                memCacheHeight: decodePx,
               ),
       ),
     );

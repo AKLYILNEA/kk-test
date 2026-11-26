@@ -597,24 +597,18 @@ class _EpisodeMatrixCardState extends State<_EpisodeMatrixCard> {
           ),
           if (totalPages > 1) ...[
             const SizedBox(height: 10),
-            SizedBox(
-              height: 30,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: totalPages,
-                separatorBuilder: (_, _) => const SizedBox(width: 6),
-                itemBuilder: (_, idx) {
-                  final from = idx * _pageSize + 1;
-                  final to = ((idx + 1) * _pageSize).clamp(1, episodes.length);
-                  return KonekoChip(
-                    label: '$from-$to',
-                    height: 28,
-                    fontSize: 11.5,
-                    selected: idx == safePage,
-                    onPressed: () => setState(() => _pageIndex = idx),
-                  );
-                },
-              ),
+            KonekoAutoScrollChipBar(
+              height: 32,
+              chipHeight: 28,
+              fontSize: 11.5,
+              padding: EdgeInsets.zero,
+              unselectedColor: SurfaceLevel.block.colorOf(colorScheme),
+              labels: [
+                for (var idx = 0; idx < totalPages; idx++)
+                  '${idx * _pageSize + 1}-${((idx + 1) * _pageSize).clamp(1, episodes.length)}',
+              ],
+              selectedIndex: safePage,
+              onSelected: (idx) => setState(() => _pageIndex = idx),
             ),
           ],
           const SizedBox(height: 12),
@@ -635,7 +629,7 @@ class _EpisodeMatrixCardState extends State<_EpisodeMatrixCard> {
       EpisodeWatchState.current => (
         colorScheme.primary,
         colorScheme.onPrimary,
-        '▶ ${ep.episodeNumber}',
+        '${ep.episodeNumber}',
       ),
       EpisodeWatchState.watched => (
         colorScheme.primary.withValues(alpha: 0.14),

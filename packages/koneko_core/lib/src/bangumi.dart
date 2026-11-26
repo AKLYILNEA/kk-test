@@ -13,7 +13,7 @@ Dio networkClient() => Dio(
     sendTimeout: const Duration(seconds: 12),
     headers: {
       'user-agent':
-          'AKLYILNEA/Koneko/0.0.4 (https://github.com/AKLYILNEA/kk-test)',
+          'AKLYILNEA/Koneko/0.0.5 (https://github.com/AKLYILNEA/kk-test)',
     },
   ),
 );
@@ -138,18 +138,12 @@ class BangumiCatalog implements OnlineCatalog {
           .then<void>((response) {
             _trending = _readSubjects(jsonObject(response.data)['data']);
           }),
-      get('/calendar').then<void>((data) {
-        final days = <int, List<int>>{};
-        for (final value in jsonList(data)) {
-          final day = jsonObject(value);
-          final index = jsonInt(jsonObject(day['weekday'])['id']);
-          if (index >= 1 && index <= 7) {
-            days[index] = _readSubjects(day['items']);
-          }
+      _fetchCurrentCalendar().then<void>((days) {
+        if (days.isNotEmpty) {
+          _week
+            ..clear()
+            ..addAll(days);
         }
-        _week
-          ..clear()
-          ..addAll(days);
       }),
     ];
     final errors = <Object>[];
@@ -165,6 +159,49 @@ class BangumiCatalog implements OnlineCatalog {
         (_trending.isEmpty && _week.isEmpty && errors.isNotEmpty)) {
       throw errors.first;
     }
+  }
+
+  Future<Map<int, List<int>>> _fetchCurrentCalendar() async {
+    // Primary: Kazumi's next.bgm.tv /p1/calendar (returns full HTTPS covers & scores).
+    try {
+      final response = await _client.get<dynamic>('$_nextBase/p1/calendar');
+      final payload = jsonObject(response.data);
+      final days = <int, List<int>>{};
+      for (var day = 1; day <= 7; day++) {
+        final entries = jsonList(payload['$day']);
+        final rawSubjects = <Object?>[
+          for (final item in entries)
+            if (jsonObject(item)['subject'] is Map) jsonObject(item)['subject'],
+        ];
+        if (rawSubjects.isNotEmpty) {
+          days[day] = _readSubjects(rawSubjects);
+        }
+      }
+      if (days.isNotEmpty) return days;
+    } on Object {
+      // Fallback to v0 /calendar below.
+    }
+
+    final data = await get('/calendar');
+    final days = <int, List<int>>{};
+    for (final value in jsonList(data)) {
+      final day = jsonObject(value);
+      final index = jsonInt(jsonObject(day['weekday'])['id']);
+      if (index >= 1 && index <= 7) {
+        days[index] = _readSubjects(day['items']);
+      }
+    }
+    return days;
+  }
+
+  static String _normalizeImageUrl(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return '';
+    if (trimmed.startsWith('//')) return 'https:$trimmed';
+    if (trimmed.startsWith('http://')) {
+      return 'https://${trimmed.substring('http://'.length)}';
+    }
+    return trimmed.startsWith('https://') ? trimmed : '';
   }
 
   @override
@@ -424,11 +461,13 @@ class BangumiCatalog implements OnlineCatalog {
     if (data == null) return null;
     final rating = jsonObject(data['rating']);
     final cover = jsonObject(data['images']);
-    // Prefer Bangumi `common` (400-600px, ~1/5 size of `large`) for Kazumi-speed loading,
-    // falling back to `large` / `medium` / `small`.
-    final url = const ['common', 'large', 'medium', 'small']
-        .map((key) => jsonString(cover[key]))
-        .firstWhere((url) => url.startsWith('https://'), orElse: () => '');
+    // Exact Kazumi cover resolution: normalize http:// -> https://, prefer
+    // `large` -> `common` -> `medium` -> `small`, and fall back to top-level `image`.
+    final url = <String>[
+      for (final key in const ['large', 'common', 'medium', 'small'])
+        _normalizeImageUrl(jsonString(cover[key])),
+      _normalizeImageUrl(jsonString(data['image'])),
+    ].firstWhere((candidate) => candidate.isNotEmpty, orElse: () => '');
     var studio = '';
     for (final entry in jsonList(data['infobox'])) {
       final map = jsonObject(entry);
@@ -449,13 +488,18 @@ class BangumiCatalog implements OnlineCatalog {
         }
       }
     }
+    final airtime = jsonObject(data['airtime']);
     final date = DateTime.tryParse(
       jsonString(data['date']).isNotEmpty
           ? jsonString(data['date'])
-          : jsonString(data['air_date']),
+          : jsonString(data['air_date']).isNotEmpty
+          ? jsonString(data['air_date'])
+          : jsonString(airtime['date']),
     );
     final original = jsonString(data['name']);
-    final chinese = jsonString(data['name_cn']);
+    final chinese = jsonString(data['name_cn']).isNotEmpty
+        ? jsonString(data['name_cn'])
+        : jsonString(data['nameCN']);
     final total = jsonInt(data['total_episodes']) > 0
         ? jsonInt(data['total_episodes'])
         : math.max(jsonInt(data['eps']), jsonInt(data['episodes']));

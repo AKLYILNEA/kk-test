@@ -64,7 +64,6 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = context.colorScheme;
     ref.watch(catalogUpdatesProvider);
     final catalog = ref.watch(catalogRepositoryProvider);
     final loading = ref.watch(loadHomeCatalogProvider);
@@ -135,27 +134,21 @@ class _HomePageState extends ConsumerState<HomePage> {
                   ),
                 ),
               SliverToBoxAdapter(
-                child: SizedBox(
-                  height: 36,
-                  child: ListView.separated(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    scrollDirection: Axis.horizontal,
-                    itemCount: _tags.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 8),
-                    itemBuilder: (_, index) {
-                      final tag = _tags[index];
-                      return KonekoChip(
-                        label: tag,
-                        height: 34,
-                        fontSize: 13,
-                        selected: tag == _selectedTag,
-                        backgroundColor: tag == _selectedTag
-                            ? colorScheme.primary
-                            : SurfaceLevel.card.colorOf(colorScheme),
-                        onPressed: () => setState(() => _selectedTag = tag),
-                      );
-                    },
+                child: KonekoAutoScrollChipBar(
+                  height: 40,
+                  chipHeight: 34,
+                  fontSize: 13,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 2,
                   ),
+                  labels: _tags,
+                  selectedIndex: _tags
+                      .indexOf(_selectedTag)
+                      .clamp(0, _tags.length - 1)
+                      .toInt(),
+                  onSelected: (index) =>
+                      setState(() => _selectedTag = _tags[index]),
                 ),
               ),
               if (subjects.isEmpty)
@@ -224,10 +217,12 @@ class _TopSummaryDeck extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
     final ep = history?.lastEpisode ?? 1;
-    final pct = ((history?.progressRatio ?? 0.62) * 100).round();
+    final ratio = (history?.progressRatio ?? 0.0).clamp(0.0, 1.0);
+    final pct = (ratio * 100).round();
     final timeLabel = history != null
         ? '${formatDurationShort(history!.lastPositionSeconds)} / ${formatDurationShort(history!.lastDurationSeconds)}'
-        : '00:00 / 23:45';
+        : '尚未观看';
+    final ruleLabel = history?.lastRuleName.trim() ?? '';
 
     return KonekoCard(
       corner: 28,
@@ -256,7 +251,7 @@ class _TopSummaryDeck extends StatelessWidget {
                       runSpacing: 4,
                       children: [
                         KonekoChip(
-                          label: '继续观看',
+                          label: history != null ? '继续观看' : '推荐观看',
                           height: 22,
                           fontSize: 10.5,
                           backgroundColor: colorScheme.primary.withValues(
@@ -264,10 +259,9 @@ class _TopSummaryDeck extends StatelessWidget {
                           ),
                           foregroundColor: colorScheme.primary,
                         ),
-                        if (history != null &&
-                            history!.lastRuleName.trim().isNotEmpty)
+                        if (ruleLabel.isNotEmpty)
                           KonekoChip(
-                            label: history!.lastRuleName,
+                            label: ruleLabel,
                             height: 22,
                             fontSize: 10.5,
                           ),
@@ -284,7 +278,9 @@ class _TopSummaryDeck extends StatelessWidget {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      '第 $ep 话 · $timeLabel · ${history?.lastRuleName ?? '樱花源'}',
+                      history != null
+                          ? '第 $ep 话 · $timeLabel ($pct%)'
+                          : subjectMetaCaption(subject),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: AppTextStyle.footnote
@@ -306,7 +302,22 @@ class _TopSummaryDeck extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          if (history != null) ...[
+            const SizedBox(height: 11),
+            ClipRRect(
+              borderRadius: AppRadius.full,
+              child: Container(
+                height: 5,
+                color: colorScheme.primary.withValues(alpha: 0.14),
+                alignment: Alignment.centerLeft,
+                child: FractionallySizedBox(
+                  widthFactor: ratio,
+                  child: Container(color: colorScheme.primary),
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 11),
           IntrinsicHeight(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -317,8 +328,8 @@ class _TopSummaryDeck extends StatelessWidget {
                 ),
                 Expanded(
                   child: _SummaryStat(
-                    label: '规则',
-                    value: '$enabledRulesCount 源 · $pct%',
+                    label: '已启用规则',
+                    value: '$enabledRulesCount 个源',
                     color: colorScheme.primary,
                   ),
                 ),

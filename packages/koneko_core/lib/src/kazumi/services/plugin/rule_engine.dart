@@ -284,12 +284,56 @@ class RuleEngine {
   }
 }
 
+/// In-memory session cookie & UA store per rule plugin (aligned with Kazumi's
+/// `PluginCookieManager`) so user-verified sites share cookies with Dio requests.
+class PluginCookieStore {
+  PluginCookieStore._();
+  static final PluginCookieStore instance = PluginCookieStore._();
+
+  final Map<String, Map<String, String>> _cookiesByPlugin = {};
+  final Map<String, String> _userAgentByPlugin = {};
+
+  String _key(String pluginName) => pluginName.trim().toLowerCase();
+
+  void save({
+    required String pluginName,
+    required String cookieString,
+    String? userAgent,
+  }) {
+    final key = _key(pluginName);
+    if (userAgent != null && userAgent.trim().isNotEmpty) {
+      _userAgentByPlugin[key] = userAgent.trim();
+    }
+    final map = _cookiesByPlugin.putIfAbsent(key, () => {});
+    for (final part in cookieString.split(';')) {
+      final trimmed = part.trim();
+      final eq = trimmed.indexOf('=');
+      if (eq <= 0) continue;
+      final name = trimmed.substring(0, eq).trim();
+      final value = trimmed.substring(eq + 1).trim();
+      if (name.isNotEmpty) map[name] = value;
+    }
+  }
+
+  String? cookieHeaderFor(String pluginName) {
+    final map = _cookiesByPlugin[_key(pluginName)];
+    if (map == null || map.isEmpty) return null;
+    return map.entries.map((e) => '${e.key}=${e.value}').join('; ');
+  }
+
+  String? userAgentFor(String pluginName) => _userAgentByPlugin[_key(pluginName)];
+}
+
 class _DefaultRuleRequestExecutor implements RuleRequestExecutor {
   final _dio = Dio(
     BaseOptions(
       connectTimeout: const Duration(seconds: 8),
       receiveTimeout: const Duration(seconds: 12),
-      headers: {'user-agent': 'Mozilla/5.0 (Koneko)'},
+      headers: {
+        'user-agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+            '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      },
     ),
   );
 
@@ -305,6 +349,19 @@ class _DefaultRuleRequestExecutor implements RuleRequestExecutor {
         uri.userInfo.isNotEmpty) {
       throw const FormatException('规则请求地址必须使用 HTTP 或 HTTPS');
     }
+    final cookies = PluginCookieStore.instance.cookieHeaderFor(
+      config.pluginName,
+    );
+    final verifiedUa = PluginCookieStore.instance.userAgentFor(
+      config.pluginName,
+    );
+    final headers = <String, dynamic>{
+      'referer': Uri.parse(config.baseUrl).toString(),
+      if (verifiedUa != null) 'user-agent': verifiedUa,
+      if (cookies != null) 'cookie': cookies,
+      for (final entry in request.headers.entries)
+        entry.key.toLowerCase(): entry.value,
+    };
     final response = await _dio.request<String>(
       request.url,
       queryParameters: request.query,
@@ -312,11 +369,7 @@ class _DefaultRuleRequestExecutor implements RuleRequestExecutor {
       options: Options(
         method: request.method,
         responseType: ResponseType.plain,
-        headers: {
-          'referer': Uri.parse(config.baseUrl).toString(),
-          for (final entry in request.headers.entries)
-            entry.key.toLowerCase(): entry.value,
-        },
+        headers: headers,
         contentType: switch (request.bodyType) {
           ApiBodyType.json => 'application/json',
           ApiBodyType.form => 'application/x-www-form-urlencoded',

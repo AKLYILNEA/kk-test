@@ -501,6 +501,129 @@ class _PosterPainter extends CustomPainter {
       oldDelegate.palette != palette;
 }
 
+/// Builds a concise metadata line for cards without ever showing "更至第 0 话".
+String subjectMetaCaption(AnimeSubject subject) {
+  final primaryTag = subject.tags.isNotEmpty ? subject.tags.first : '';
+  final parts = <String>[
+    if (subject.airedEpisodes > 0)
+      '更至第 ${subject.airedEpisodes} 话'
+    else if (subject.totalEpisodes > 0)
+      '共 ${subject.totalEpisodes} 话'
+    else if (subject.seasonLabel.isNotEmpty)
+      subject.seasonLabel
+    else if (subject.year > 0)
+      '${subject.year} 年',
+    if (primaryTag.isNotEmpty) primaryTag,
+  ];
+  return parts.isEmpty ? '动画' : parts.join(' · ');
+}
+
+/// Horizontal chip bar that smoothly scrolls the active item toward the center
+/// on initial build and whenever [selectedIndex] changes (matching Kazumi).
+class KonekoAutoScrollChipBar extends StatefulWidget {
+  const KonekoAutoScrollChipBar({
+    super.key,
+    required this.labels,
+    required this.selectedIndex,
+    required this.onSelected,
+    this.height = 44,
+    this.chipHeight = 36,
+    this.fontSize = 13,
+    this.padding = const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+    this.unselectedColor,
+  });
+
+  final List<String> labels;
+  final int selectedIndex;
+  final ValueChanged<int> onSelected;
+  final double height;
+  final double chipHeight;
+  final double fontSize;
+  final EdgeInsetsGeometry padding;
+  final Color? unselectedColor;
+
+  @override
+  State<KonekoAutoScrollChipBar> createState() =>
+      _KonekoAutoScrollChipBarState();
+}
+
+class _KonekoAutoScrollChipBarState extends State<KonekoAutoScrollChipBar> {
+  late List<GlobalKey> _keys = List.generate(
+    widget.labels.length,
+    (_) => GlobalKey(),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollToSelected(animated: false);
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant KonekoAutoScrollChipBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.labels.length != widget.labels.length) {
+      _keys = List.generate(widget.labels.length, (_) => GlobalKey());
+    }
+    if (oldWidget.selectedIndex != widget.selectedIndex) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToSelected(animated: true);
+      });
+    }
+  }
+
+  void _scrollToSelected({required bool animated}) {
+    if (!mounted) return;
+    final idx = widget.selectedIndex;
+    if (idx < 0 || idx >= _keys.length) return;
+    final ctx = _keys[idx].currentContext;
+    if (ctx == null) return;
+    Scrollable.ensureVisible(
+      ctx,
+      alignment: 0.5,
+      duration: animated
+          ? context.motionDuration(const Duration(milliseconds: 260))
+          : Duration.zero,
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = context.colorScheme;
+    final idleColor =
+        widget.unselectedColor ?? SurfaceLevel.card.colorOf(colorScheme);
+    return SizedBox(
+      height: widget.height,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: widget.padding,
+        child: Row(
+          spacing: 8,
+          children: [
+            for (var i = 0; i < widget.labels.length; i++)
+              KeyedSubtree(
+                key: _keys[i],
+                child: KonekoChip(
+                  label: widget.labels[i],
+                  height: widget.chipHeight,
+                  fontSize: widget.fontSize,
+                  selected: i == widget.selectedIndex,
+                  backgroundColor: i == widget.selectedIndex
+                      ? colorScheme.primary
+                      : idleColor,
+                  onPressed: () => widget.onSelected(i),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Unified Anime Card (user-approved v3 design):
 /// Full-bleed poster cover fused together with the bottom text footer inside ONE
 /// borderless elevated `22dp` superellipse card — no detached floating captions.
@@ -511,12 +634,18 @@ class UnifiedAnimeCard extends StatelessWidget {
     required this.onTap,
     this.isTracking = false,
     this.showTopRank = false,
+    this.statusBadgeLabel,
+    this.onStatusTap,
+    this.showMetaLine = true,
   });
 
   final AnimeSubject subject;
   final VoidCallback onTap;
   final bool isTracking;
   final bool showTopRank;
+  final String? statusBadgeLabel;
+  final VoidCallback? onStatusTap;
+  final bool showMetaLine;
 
   @override
   Widget build(BuildContext context) {
@@ -539,7 +668,7 @@ class UnifiedAnimeCard extends StatelessWidget {
               child: KonekoPosterArt(
                 subject: subject,
                 overlayBadges: [
-                  if (showTopRank && subject.rank <= 3)
+                  if (showTopRank && subject.rank > 0 && subject.rank <= 3)
                     Positioned(
                       top: 8,
                       left: 8,
@@ -553,7 +682,27 @@ class UnifiedAnimeCard extends StatelessWidget {
                         foregroundColor: colorScheme.onPrimary,
                       ),
                     ),
-                  if (isTracking)
+                  if (statusBadgeLabel != null)
+                    Positioned(
+                      top: 7,
+                      right: 7,
+                      child: KonekoChip(
+                        label: statusBadgeLabel!,
+                        height: 22,
+                        fontSize: 10.5,
+                        backgroundColor: Colors.black.withValues(alpha: 0.62),
+                        foregroundColor: Colors.white,
+                        trailing: onStatusTap != null
+                            ? const GlyphIcon(
+                                Glyphs.chevronDown,
+                                size: 10,
+                                color: Colors.white,
+                              )
+                            : null,
+                        onPressed: onStatusTap,
+                      ),
+                    )
+                  else if (isTracking)
                     Positioned(
                       top: 8,
                       right: 8,
@@ -570,53 +719,58 @@ class UnifiedAnimeCard extends StatelessWidget {
                         foregroundColor: Colors.white,
                       ),
                     ),
-                  Positioned(
-                    right: 8,
-                    bottom: 8,
-                    child: KonekoChip(
-                      label: subject.score.toStringAsFixed(1),
-                      height: 22,
-                      fontSize: 11,
-                      leading: const GlyphIcon(
-                        KonekoGlyphs.star,
-                        size: 11,
-                        color: Color(0xFFFFC145),
+                  if (subject.score > 0)
+                    Positioned(
+                      right: 8,
+                      bottom: 8,
+                      child: KonekoChip(
+                        label: subject.score.toStringAsFixed(1),
+                        height: 22,
+                        fontSize: 11,
+                        leading: const GlyphIcon(
+                          KonekoGlyphs.star,
+                          size: 11,
+                          color: Color(0xFFFFC145),
+                        ),
+                        backgroundColor: Colors.black.withValues(alpha: 0.58),
+                        foregroundColor: Colors.white,
                       ),
-                      backgroundColor: Colors.black.withValues(alpha: 0.58),
-                      foregroundColor: Colors.white,
                     ),
-                  ),
                 ],
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(11, 10, 11, 11),
+              padding: EdgeInsets.fromLTRB(
+                10,
+                showMetaLine ? 9 : 8,
+                10,
+                showMetaLine ? 10 : 9,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     subject.title,
-                    maxLines: 1,
+                    maxLines: showMetaLine ? 1 : 2,
                     overflow: TextOverflow.ellipsis,
                     style: AppTextStyle.subheadline
                         .of(context, emphasized: true)
-                        .copyWith(color: colorScheme.onSurface),
-                  ),
-                  const SizedBox(height: 5),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          '更至第 ${subject.airedEpisodes} 话 · ${subject.tags.first}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTextStyle.caption1
-                              .of(context)
-                              .copyWith(color: colorScheme.onSurfaceVariant),
+                        .copyWith(
+                          color: colorScheme.onSurface,
+                          fontSize: showMetaLine ? 14 : 13,
                         ),
-                      ),
-                    ],
                   ),
+                  if (showMetaLine) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      subjectMetaCaption(subject),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyle.caption1
+                          .of(context)
+                          .copyWith(color: colorScheme.onSurfaceVariant),
+                    ),
+                  ],
                 ],
               ),
             ),

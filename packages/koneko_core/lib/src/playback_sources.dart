@@ -7,10 +7,12 @@ import 'package:dio/dio.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:html/parser.dart' as html;
 import 'package:koneko_contract/koneko_contract.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'bangumi.dart';
 import 'kazumi/modules/search/plugin_search_module.dart';
 import 'kazumi/plugins/plugins.dart';
+import 'kazumi/services/plugin/rule_engine.dart';
 import 'rules.dart';
 
 String _titleKey(String value) => value.toLowerCase().replaceAll(
@@ -19,12 +21,176 @@ String _titleKey(String value) => value.toLowerCase().replaceAll(
 );
 
 class KazumiSources implements PlaybackSources {
-  KazumiSources(this._rules, {Dio? client})
-    : _client = client ?? networkClient();
+  KazumiSources(
+    this._rules, {
+    Dio? client,
+    SharedPreferences? preferences,
+  }) : _client = client ?? networkClient(),
+       _preferences = preferences {
+    _loadRememberedRules();
+  }
+
+  static const _lastRuleKey = 'koneko_last_selected_rules_v1';
 
   final KazumiRules _rules;
   final Dio _client;
+  final SharedPreferences? _preferences;
   final _lookups = <(int, Plugin), Future<List<SourceEpisode>>>{};
+  final _lastRules = <int, String>{};
+
+  void _loadRememberedRules() {
+    final raw = _preferences?.getString(_lastRuleKey);
+    if (raw == null || raw.isEmpty) return;
+    try {
+      final decoded = jsonObject(jsonDecode(raw));
+      for (final entry in decoded.entries) {
+        final id = int.tryParse(entry.key);
+        final ruleId = jsonString(entry.value).trim();
+        if (id != null && id > 0 && ruleId.isNotEmpty) {
+          _lastRules[id] = ruleId;
+        }
+      }
+    } on FormatException {
+      // Ignore corrupt preference.
+    }
+  }
+
+  @override
+  String? lastSelectedRuleId(int subjectId) => _lastRules[subjectId];
+
+  @override
+  Future<void> rememberSelectedRule(int subjectId, String ruleId) async {
+    final cleaned = ruleId.trim();
+    if (subjectId <= 0 || cleaned.isEmpty) return;
+    _lastRules[subjectId] = cleaned;
+    final prefs = _preferences;
+    if (prefs == null) return;
+    final encoded = jsonEncode({
+      for (final entry in _lastRules.entries) '${entry.key}': entry.value,
+    });
+    await prefs.setString(_lastRuleKey, encoded);
+  }
+
+  Uri? _buildVerifyUri(Plugin rule, String keyword) {
+    final candidate = rule.usesApiSearch
+        ? rule.baseUrl
+        : rule.searchURL.replaceAll(
+            '@keyword',
+            Uri.encodeQueryComponent(keyword),
+          );
+    return Uri.tryParse(candidate.isNotEmpty ? candidate : rule.baseUrl);
+  }
+
+  @override
+  Future<RuleProbeResult> probeRule(
+    AnimeSubject subject,
+    String ruleId, {
+    String? keyword,
+  }) async {
+    final rule = _rules.enabledPlugin(ruleId);
+    if (rule == null) {
+      return RuleProbeResult(
+        ruleId: ruleId,
+        ruleName: ruleId,
+        state: RuleProbeState.error,
+        message: '该规则未启用',
+      );
+    }
+    final custom = keyword?.trim() ?? '';
+    final names = <String>{
+      if (custom.isNotEmpty) custom,
+      if (custom.isEmpty) subject.title.trim(),
+      if (custom.isEmpty) subject.originalTitle.trim(),
+    }..remove('');
+
+    var sawCaptcha = false;
+    Object? lastError;
+    final primaryKeyword = names.isNotEmpty ? names.first : subject.title;
+
+    for (final name in names) {
+      try {
+        final response = await rule.queryBangumi(name, shouldRethrow: true);
+        if (response.data.isNotEmpty) {
+          final targetKeys = names.map(_titleKey).toSet();
+          final sorted = List<SearchItem>.from(response.data)
+            ..sort((a, b) {
+              final aExact = targetKeys.contains(_titleKey(a.name)) ? 0 : 1;
+              final bExact = targetKeys.contains(_titleKey(b.name)) ? 0 : 1;
+              return aExact.compareTo(bExact);
+            });
+          return RuleProbeResult(
+            ruleId: ruleId,
+            ruleName: rule.name,
+            state: RuleProbeState.found,
+            hits: [
+              for (final item in sorted)
+                RuleSearchHit(title: item.name, sourceUrl: item.src),
+            ],
+            message: '找到 ${sorted.length} 条结果',
+          );
+        }
+      } on NoResultException {
+        continue;
+      } on CaptchaRequiredException {
+        sawCaptcha = true;
+        break;
+      } on Object catch (error) {
+        lastError = error;
+      }
+    }
+
+    if (sawCaptcha) {
+      return RuleProbeResult(
+        ruleId: ruleId,
+        ruleName: rule.name,
+        state: RuleProbeState.captchaRequired,
+        message: '该站点需要完成网页验证，点击进入网页验证后即可继续搜索',
+        verifyUrl: _buildVerifyUri(rule, primaryKeyword),
+      );
+    }
+    if (lastError != null) {
+      return RuleProbeResult(
+        ruleId: ruleId,
+        ruleName: rule.name,
+        state: RuleProbeState.error,
+        message: '搜索请求失败，请检查网络或稍后重试',
+      );
+    }
+    return RuleProbeResult(
+      ruleId: ruleId,
+      ruleName: rule.name,
+      state: RuleProbeState.noResult,
+      message: '未找到相关番剧',
+    );
+  }
+
+  @override
+  Future<List<SourceEpisode>> loadEpisodesFromHit(
+    String ruleId,
+    RuleSearchHit hit,
+  ) async {
+    final rule = _rules.enabledPlugin(ruleId);
+    if (rule == null) throw StateError('请先启用该规则');
+    return _episodesFromSource(ruleId, rule, hit.sourceUrl);
+  }
+
+  @override
+  Future<void> saveVerificationCookies(
+    String ruleId,
+    Uri pageUrl,
+    String cookieString, {
+    String? userAgent,
+  }) async {
+    final rule = _rules.enabledPlugin(ruleId);
+    final pluginName = rule?.name ?? ruleId;
+    PluginCookieStore.instance.save(
+      pluginName: pluginName,
+      cookieString: cookieString,
+      userAgent: userAgent,
+    );
+    // Clear cached lookup failures for this rule so subsequent searches retry fresh.
+    _lookups.removeWhere((key, _) => key.$2.name == pluginName);
+  }
 
   @override
   Future<List<SourceEpisode>> lookup(
@@ -54,27 +220,30 @@ class KazumiSources implements PlaybackSources {
     String ruleId,
     Plugin rule,
   ) async {
-    final names = {subject.title.trim(), subject.originalTitle.trim()}
-      ..remove('');
-    var results = const <SearchItem>[];
-    for (final name in names) {
-      try {
-        results = (await rule.queryBangumi(name, shouldRethrow: true)).data;
-        if (results.isNotEmpty) break;
-      } on NoResultException {
-        continue;
-      } on CaptchaRequiredException {
-        throw StateError('${rule.name} 要求人机验证，请选用其他可用规则');
-      }
+    final probe = await probeRule(subject, ruleId);
+    switch (probe.state) {
+      case RuleProbeState.captchaRequired:
+        throw StateError('${rule.name} 需要完成人机验证，请点此打开网页验证');
+      case RuleProbeState.noResult:
+        throw StateError('${rule.name} 未找到这部番剧');
+      case RuleProbeState.error:
+      case RuleProbeState.searching:
+        throw StateError('${rule.name} ${probe.message}');
+      case RuleProbeState.found:
+        return _episodesFromSource(ruleId, rule, probe.hits.first.sourceUrl);
     }
-    if (results.isEmpty) throw StateError('${rule.name} 未找到这部番剧');
-    final targetKeys = names.map(_titleKey).toSet();
-    final exact = results
-        .where((result) => targetKeys.contains(_titleKey(result.name)))
-        .firstOrNull;
-    final match = exact ?? results.first;
-    final roads = await rule.queryChapterRoads(match.src);
+  }
+
+  Future<List<SourceEpisode>> _episodesFromSource(
+    String ruleId,
+    Plugin rule,
+    String sourceUrl,
+  ) async {
+    final roads = await rule.queryChapterRoads(sourceUrl);
     final episodes = <SourceEpisode>[];
+    final cookies = PluginCookieStore.instance.cookieHeaderFor(rule.name);
+    final verifiedUa = PluginCookieStore.instance.userAgentFor(rule.name);
+
     for (final (lineIndex, road) in roads.indexed) {
       final line = road.name.trim().isNotEmpty
           ? road.name
@@ -101,7 +270,11 @@ class KazumiSources implements PlaybackSources {
             line: line,
             number: number,
             page: page,
-            headers: rule.buildHttpHeaders(),
+            headers: {
+              ...rule.buildHttpHeaders(),
+              if (verifiedUa != null) 'user-agent': verifiedUa,
+              if (cookies != null) 'cookie': cookies,
+            },
             legacy: rule.useLegacyParser,
           ),
         );
@@ -114,9 +287,16 @@ class KazumiSources implements PlaybackSources {
   @override
   Future<PlayableMedia> resolve(SourceEpisode episode) async {
     final page = networkUri(episode.page.toString());
+    final cookies = PluginCookieStore.instance.cookieHeaderFor(
+      episode.ruleName,
+    );
+    final verifiedUa = PluginCookieStore.instance.userAgentFor(
+      episode.ruleName,
+    );
     final headers = <String, String>{
-      'user-agent': _browserUserAgent,
+      'user-agent': verifiedUa ?? _browserUserAgent,
       'referer': page.toString(),
+      if (cookies != null) 'cookie': cookies,
       ...episode.headers,
     };
     if (_isMedia(page)) return PlayableMedia(page, headers: headers);

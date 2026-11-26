@@ -15,6 +15,7 @@ import 'src/tracking.dart';
 
 export 'src/app_release.dart' show findKonekoUpdate;
 export 'src/player.dart' show NativePlayback, NativeDanmaku;
+export 'src/verify_webview.dart' show InteractiveVerifyWebView;
 
 class KonekoCore {
   KonekoCore._({
@@ -42,7 +43,7 @@ class KonekoCore {
     final support = await getApplicationSupportDirectory();
     final catalog = BangumiCatalog(preferences);
     final rules = KazumiRules(preferences);
-    final sources = KazumiSources(rules);
+    final sources = KazumiSources(rules, preferences: preferences);
     final tracking = LocalTracking(preferences);
     const settings = SecureSettings();
     return KonekoCore._(

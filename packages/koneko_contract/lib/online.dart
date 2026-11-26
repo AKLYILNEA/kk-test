@@ -174,9 +174,79 @@ class PlayableMedia {
   final String? mimeType;
 }
 
+enum RuleProbeState { searching, found, noResult, captchaRequired, error }
+
+class RuleSearchHit {
+  const RuleSearchHit({required this.title, required this.sourceUrl});
+
+  final String title;
+  final String sourceUrl;
+}
+
+class RuleProbeResult {
+  const RuleProbeResult({
+    required this.ruleId,
+    required this.ruleName,
+    required this.state,
+    this.hits = const [],
+    this.message = '',
+    this.verifyUrl,
+  });
+
+  final String ruleId;
+  final String ruleName;
+  final RuleProbeState state;
+  final List<RuleSearchHit> hits;
+  final String message;
+  final Uri? verifyUrl;
+}
+
+class DanmakuAnimeMatch {
+  const DanmakuAnimeMatch({
+    required this.animeId,
+    required this.title,
+    this.typeDescription = '',
+    this.episodes = const [],
+  });
+
+  final int animeId;
+  final String title;
+  final String typeDescription;
+  final List<DanmakuEpisodeMatch> episodes;
+}
+
+class DanmakuEpisodeMatch {
+  const DanmakuEpisodeMatch({
+    required this.episodeId,
+    required this.episodeNumber,
+    required this.title,
+  });
+
+  final int episodeId;
+  final int episodeNumber;
+  final String title;
+}
+
 abstract interface class PlaybackSources {
   Future<List<SourceEpisode>> lookup(AnimeSubject subject, String ruleId);
   Future<PlayableMedia> resolve(SourceEpisode episode);
+  Future<RuleProbeResult> probeRule(
+    AnimeSubject subject,
+    String ruleId, {
+    String? keyword,
+  });
+  Future<List<SourceEpisode>> loadEpisodesFromHit(
+    String ruleId,
+    RuleSearchHit hit,
+  );
+  Future<void> saveVerificationCookies(
+    String ruleId,
+    Uri pageUrl,
+    String cookieString, {
+    String? userAgent,
+  });
+  String? lastSelectedRuleId(int subjectId);
+  Future<void> rememberSelectedRule(int subjectId, String ruleId);
 }
 
 class PlaybackStatus {
@@ -235,6 +305,8 @@ abstract interface class SettingsVault {
 
 abstract interface class DanmakuSource {
   Future<List<DanmakuItem>> load(AnimeSubject subject, int episode);
+  Future<List<DanmakuAnimeMatch>> searchAnimes(String keyword);
+  Future<List<DanmakuItem>> loadByEpisodeId(int episodeId);
 }
 
 /// A tombstone protects deliberate local removals from being revived by sync.

@@ -27,6 +27,14 @@ final videoViewportProvider = Provider<Widget Function(PlaybackSession)?>(
 );
 final danmakuViewportProvider =
     Provider<Widget Function(List<DanmakuItem>, PlaybackStatus)?>((_) => null);
+final verifyWebViewBuilderProvider =
+    Provider<
+      Widget Function(
+        Uri initialUrl,
+        ValueChanged<Future<({String cookies, String userAgent})> Function()>
+        onReady,
+      )?
+    >((_) => null);
 
 final onlineCatalogProvider = Provider<OnlineCatalog?>((ref) {
   final catalog = ref.watch(catalogRepositoryProvider);

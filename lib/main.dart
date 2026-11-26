@@ -43,6 +43,12 @@ Future<void> main() async {
         danmakuViewportProvider.overrideWithValue(
           (items, status) => NativeDanmaku(items: items, status: status),
         ),
+        verifyWebViewBuilderProvider.overrideWithValue(
+          (initialUrl, onReady) => InteractiveVerifyWebView(
+            initialUrl: initialUrl,
+            onControllerReady: onReady,
+          ),
+        ),
       ],
       child: const KonekoApp(),
     ),

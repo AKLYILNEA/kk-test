@@ -409,6 +409,32 @@ class _DirectSource implements PlaybackSources {
   @override
   Future<PlayableMedia> resolve(SourceEpisode episode) async =>
       PlayableMedia(episode.page);
+  @override
+  Future<RuleProbeResult> probeRule(
+    AnimeSubject subject,
+    String ruleId, {
+    String? keyword,
+  }) async => RuleProbeResult(
+    ruleId: ruleId,
+    ruleName: ruleId,
+    state: RuleProbeState.noResult,
+  );
+  @override
+  Future<List<SourceEpisode>> loadEpisodesFromHit(
+    String ruleId,
+    RuleSearchHit hit,
+  ) async => const [];
+  @override
+  Future<void> saveVerificationCookies(
+    String ruleId,
+    Uri pageUrl,
+    String cookieString, {
+    String? userAgent,
+  }) async {}
+  @override
+  String? lastSelectedRuleId(int subjectId) => null;
+  @override
+  Future<void> rememberSelectedRule(int subjectId, String ruleId) async {}
 }
 
 class _RuleMirrorAdapter implements HttpClientAdapter {

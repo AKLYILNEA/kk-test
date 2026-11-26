@@ -147,18 +147,38 @@ class NativeDanmaku extends StatefulWidget {
 
 class _NativeDanmakuState extends State<NativeDanmaku> {
   canvas.DanmakuController<void>? _controller;
+  Timer? _ticker;
   double _previous = -1;
   int _next = 0;
+  bool _scheduled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Periodic fallback ticker ensures danmaku stays smooth even when position
+    // stream ticks are coarse or resume right after buffering.
+    _ticker = Timer.periodic(
+      const Duration(milliseconds: 400),
+      (_) => _render(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
 
   @override
   void didUpdateWidget(covariant NativeDanmaku oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.items != widget.items) _previous = -1;
-    // The controller owns a child state. Update it after this frame's build.
+    if (!identical(oldWidget.items, widget.items)) {
+      _previous = -1;
+      _next = 0;
+    }
     _scheduleUpdate();
   }
 
-  bool _scheduled = false;
   void _scheduleUpdate() {
     if (_scheduled) return;
     _scheduled = true;
@@ -168,19 +188,33 @@ class _NativeDanmakuState extends State<NativeDanmaku> {
     });
   }
 
+  canvas.DanmakuItemType _typeOf(DanmakuItem item) => switch (item.lane) {
+    -1 => canvas.DanmakuItemType.top,
+    -2 => canvas.DanmakuItemType.bottom,
+    _ => canvas.DanmakuItemType.scroll,
+  };
+
   void _render() {
     final controller = _controller;
-    if (controller == null) return;
+    if (controller == null || !mounted) return;
     final status = widget.status;
-    final now = status.position.inMilliseconds / 1000;
     final items = widget.items;
-    if (_previous < 0 || now < _previous || now - _previous > 2) {
+    final playing = status.playing && !status.buffering;
+
+    if (playing != controller.running) {
+      playing ? controller.resume() : controller.pause();
+    }
+    if (!playing || items.isEmpty) return;
+
+    final now = status.position.inMilliseconds / 1000.0;
+    if (_previous < 0 || now < _previous - 0.5 || now - _previous > 3.0) {
       controller.clear();
       var start = 0;
       var end = items.length;
+      final floor = now > 0.6 ? now - 0.6 : 0.0;
       while (start < end) {
         final mid = (start + end) ~/ 2;
-        if (items[mid].timeSeconds < now - 0.25) {
+        if (items[mid].timeSeconds < floor) {
           start = mid + 1;
         } else {
           end = mid;
@@ -188,32 +222,36 @@ class _NativeDanmakuState extends State<NativeDanmaku> {
       }
       _next = start;
     }
-    final playing = status.playing && !status.buffering;
-    if (playing != controller.running) {
-      playing ? controller.resume() : controller.pause();
-    }
-    if (playing) {
-      var emitted = 0;
-      while (_next < items.length && items[_next].timeSeconds <= now) {
-        final item = items[_next++];
-        if (emitted++ >= 18) continue;
-        controller.addDanmaku(
-          canvas.DanmakuContentItem<void>(
-            item.text,
-            color: Color(item.colorHex),
-          ),
-        );
-      }
+
+    var emitted = 0;
+    while (_next < items.length && items[_next].timeSeconds <= now) {
+      final item = items[_next++];
+      if (emitted++ >= 16) continue;
+      controller.addDanmaku(
+        canvas.DanmakuContentItem<void>(
+          item.text,
+          color: Color(item.colorHex),
+          type: _typeOf(item),
+        ),
+      );
     }
     _previous = now;
   }
 
   @override
-  Widget build(BuildContext context) => canvas.DanmakuScreen<void>(
-    option: const canvas.DanmakuOption(area: .62, fontSize: 18, opacity: .85),
-    createdController: (controller) {
-      _controller = controller;
-      _scheduleUpdate();
-    },
+  Widget build(BuildContext context) => SizedBox.expand(
+    child: canvas.DanmakuScreen<void>(
+      option: const canvas.DanmakuOption(
+        area: 0.68,
+        fontSize: 16,
+        opacity: 0.9,
+        duration: 8,
+        strokeWidth: 1.5,
+      ),
+      createdController: (controller) {
+        _controller = controller;
+        _scheduleUpdate();
+      },
+    ),
   );
 }

@@ -156,7 +156,7 @@ void main() {
       await tester.tap(_barAction('关闭'));
       await tester.pumpAndSettle();
 
-      // Library page has clean 2-button toolbar and opens Status Picker Sheet
+      // Library page has FlClash inline expanding search & clean 2-button toolbar
       await tester.tap(dockItem('追番'));
       await tester.pumpAndSettle();
       expect(_barAction('搜索追番库'), findsOneWidget);
@@ -165,6 +165,13 @@ void main() {
         tester.widget<AppBarActionButton>(_barAction('排序与同步设置')).data.glyph,
         KonekoGlyphs.tune,
       );
+
+      // Verify FlClash inline AppBar search expands and closes cleanly
+      await tester.tap(_barAction('搜索追番库'));
+      await tester.pumpAndSettle();
+      expect(_barAction('关闭搜索'), findsOneWidget);
+      await tester.tap(_barAction('关闭搜索'));
+      await tester.pumpAndSettle();
 
       await tester.tap(find.text('在看').first);
       await tester.pumpAndSettle();

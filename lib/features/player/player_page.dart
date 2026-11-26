@@ -12,6 +12,7 @@ import 'package:koneko/common/constants.dart';
 import 'package:koneko/common/feature_feedback.dart';
 import 'package:koneko/common/providers.dart';
 import 'package:koneko/features/my/service_settings_page.dart';
+import 'package:koneko/features/player/rule_verify_page.dart';
 import 'package:koneko/features/rules/rules_page.dart';
 import 'package:koneko/ui/koneko_comments.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
@@ -57,9 +58,14 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   StreamSubscription<PlaybackStatus>? _subscription;
   Timer? _saveTimer;
   Timer? _brightnessTimer;
+  Timer? _hudTimer;
   SourceEpisode? _source;
   List<SourceEpisode> _choices = const [];
   List<DanmakuItem> _danmaku = const [];
+  final Map<String, RuleProbeResult> _probes = {};
+  final TextEditingController _sourceKeywordController =
+      TextEditingController();
+
   bool _loading = true;
   bool _loaded = false;
   bool _pageActive = true;
@@ -76,9 +82,14 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   _DrawerTab _drawer = _DrawerTab.episodes;
   int _epPageIndex = 0;
   String? _error;
+  Uri? _errorVerifyUrl;
+  String? _errorVerifyRuleId;
+  String? _errorVerifyRuleName;
   String? _danmakuError;
+  bool _danmakuLoading = false;
   int _request = 0;
   int _danmakuRequest = 0;
+  int _probeGeneration = 0;
   int _lastCheckpoint = -1;
   bool _lastCompleted = false;
 
@@ -122,11 +133,35 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     WidgetsBinding.instance.removeObserver(this);
     _request++;
     _danmakuRequest++;
+    _probeGeneration++;
     _saveTimer?.cancel();
     _brightnessTimer?.cancel();
+    _hudTimer?.cancel();
+    _sourceKeywordController.dispose();
     unawaited(_subscription?.cancel());
     unawaited(_session?.dispose());
     super.dispose();
+  }
+
+  void _armHudAutoHide() {
+    _hudTimer?.cancel();
+    if (!_showHud || !_status.playing || _drawerOpen) return;
+    _hudTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted && _status.playing && !_drawerOpen) {
+        setState(() => _showHud = false);
+      }
+    });
+  }
+
+  void _toggleHud() {
+    setState(() {
+      if (_drawerOpen) {
+        _drawerOpen = false;
+      } else {
+        _showHud = !_showHud;
+      }
+    });
+    if (_showHud) _armHudAutoHide();
   }
 
   Future<void> _setFullscreen(bool enabled) async {
@@ -176,7 +211,22 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       if (offline?.media case final uri?) {
         await _startOffline(uri);
       } else {
-        await _openEpisode(_episode);
+        // Resolve remembered rule before opening (from explicit arg, history, or store).
+        final sources = ref.read(playbackSourcesProvider);
+        final historyRule = ref
+            .read(historyProvider.notifier)
+            .entryFor(widget.subjectId)
+            ?.lastRuleId;
+        final remembered = _ruleId.isNotEmpty
+            ? _ruleId
+            : (sources?.lastSelectedRuleId(widget.subjectId) ??
+                  historyRule ??
+                  '');
+        if (remembered.isNotEmpty) {
+          _ruleId = remembered;
+        }
+        unawaited(_probeAllEnabledRules());
+        await _openEpisode(_episode, strictPreferredRule: remembered.isNotEmpty);
       }
     } on Object catch (error) {
       if (!mounted) return;
@@ -190,8 +240,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   void _onStatus(PlaybackStatus status) {
     if (!mounted) return;
     final completed = status.completed && !_status.completed;
+    final startedPlaying = status.playing && !_status.playing;
     setState(() => _status = status);
     if (completed) _checkpoint();
+    if (startedPlaying) _armHudAutoHide();
   }
 
   bool _isCurrent(int request) => mounted && request == _request;
@@ -204,12 +256,149 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     return Duration(seconds: history.positionSeconds);
   }
 
+  /// Probes ALL enabled rules in parallel so the user can see exact search hits
+  /// for every source (aligned with Kazumi's SourceSheet).
+  Future<void> _probeAllEnabledRules({String? customKeyword}) async {
+    final resolver = ref.read(playbackSourcesProvider);
+    if (resolver == null) return;
+    var subject = _subject;
+    if (subject == null) {
+      await ref.read(onlineCatalogProvider)?.loadSubject(widget.subjectId);
+      subject = _subject;
+    }
+    if (!mounted || subject == null) return;
+
+    final enabledRules = ref
+        .read(rulesProvider)
+        .where((r) => r.enabled)
+        .toList();
+    if (enabledRules.isEmpty) return;
+
+    final gen = ++_probeGeneration;
+    setState(() {
+      for (final rule in enabledRules) {
+        _probes[rule.id] = RuleProbeResult(
+          ruleId: rule.id,
+          ruleName: rule.name,
+          state: RuleProbeState.searching,
+          message: '正在搜索...',
+        );
+      }
+    });
+
+    final targetSubject = subject;
+    await Future.wait(
+      enabledRules.map((rule) async {
+        final result = await resolver.probeRule(
+          targetSubject,
+          rule.id,
+          keyword: customKeyword,
+        );
+        if (!mounted || gen != _probeGeneration) return;
+        setState(() => _probes[rule.id] = result);
+      }),
+    );
+  }
+
+  Future<void> _verifyRule(String ruleId, String ruleName, Uri verifyUrl) async {
+    final verified = await BaseNavigator.push<bool>(
+      context,
+      RuleVerifyPage(ruleId: ruleId, ruleName: ruleName, verifyUrl: verifyUrl),
+    );
+    if (!mounted || verified != true) return;
+    showKonekoBanner(
+      context,
+      '$ruleName 验证已保存，正在重新搜索',
+      level: BannerLevel.success,
+    );
+    final resolver = ref.read(playbackSourcesProvider);
+    final subject = _subject;
+    if (resolver != null && subject != null) {
+      setState(() {
+        _probes[ruleId] = RuleProbeResult(
+          ruleId: ruleId,
+          ruleName: ruleName,
+          state: RuleProbeState.searching,
+          message: '验证通过，重新搜索中...',
+        );
+      });
+      final result = await resolver.probeRule(
+        subject,
+        ruleId,
+        keyword: _sourceKeywordController.text.trim().isEmpty
+            ? null
+            : _sourceKeywordController.text.trim(),
+      );
+      if (mounted) {
+        setState(() => _probes[ruleId] = result);
+        if (result.state == RuleProbeState.found) {
+          await _openEpisode(_episode, ruleId: ruleId);
+        }
+      }
+    }
+  }
+
+  Future<void> _openHit(String ruleId, String ruleName, RuleSearchHit hit) async {
+    final session = _session;
+    final resolver = ref.read(playbackSourcesProvider);
+    if (session == null || resolver == null) return;
+    _checkpoint();
+    final request = ++_request;
+    setState(() {
+      _loading = true;
+      _loaded = false;
+      _error = null;
+      _errorVerifyUrl = null;
+      _ruleId = ruleId;
+      _ruleName = ruleName;
+    });
+    try {
+      await session.setPlaying(false);
+      final options = await resolver.loadEpisodesFromHit(ruleId, hit);
+      if (!_isCurrent(request)) return;
+      final available = options.where((e) => e.number == _episode).toList();
+      final episodeSource = available.isNotEmpty
+          ? available.first
+          : options.first;
+      setState(() {
+        _choices = options;
+        _episode = episodeSource.number;
+      });
+      final media = await resolver.resolve(episodeSource);
+      if (!_isCurrent(request)) return;
+      await session.open(media, startAt: _resumeAt(episodeSource.number));
+      if (!_isCurrent(request)) return;
+      if (!_pageActive) await session.setPlaying(false);
+      if (!_isCurrent(request)) return;
+      await resolver.rememberSelectedRule(widget.subjectId, ruleId);
+      setState(() {
+        _source = episodeSource;
+        _ruleId = episodeSource.ruleId;
+        _ruleName = episodeSource.ruleName;
+        _status = session.status;
+        _loading = false;
+        _loaded = true;
+        _lastCheckpoint = -1;
+        _lastCompleted = false;
+      });
+      _armHudAutoHide();
+      unawaited(_loadDanmaku());
+    } on Object catch (error) {
+      if (!_isCurrent(request)) return;
+      setState(() {
+        _loading = false;
+        _error = featureError(error, '加载该结果失败，请尝试其他线路或数据源');
+      });
+    }
+  }
+
   Future<void> _startOffline(Uri uri) async {
     final request = ++_request;
     final session = _session!;
     setState(() {
       _loading = true;
       _error = null;
+      _errorVerifyUrl = null;
     });
     try {
       await session.open(PlayableMedia(uri), startAt: _resumeAt(_episode));
@@ -220,7 +409,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
         _loaded = true;
         _loading = false;
       });
-      _loadDanmaku();
+      _armHudAutoHide();
+      unawaited(_loadDanmaku());
     } on Object catch (error) {
       if (!_isCurrent(request)) return;
       setState(() {
@@ -234,6 +424,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     int episode, {
     String? ruleId,
     SourceEpisode? choice,
+    bool strictPreferredRule = false,
   }) async {
     final session = _session;
     if (session == null) return;
@@ -248,6 +439,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       _loaded = false;
       _loading = true;
       _error = null;
+      _errorVerifyUrl = null;
+      _errorVerifyRuleId = null;
+      _errorVerifyRuleName = null;
       _scrub = null;
       _danmaku = const [];
       _danmakuError = null;
@@ -268,24 +462,45 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           .read(rulesProvider)
           .where((rule) => rule.enabled)
           .toList();
-      if (rules.isEmpty) throw StateError('请先添加并启用一条 Kazumi 规则');
-      final ids = (ruleId != null
+      if (rules.isEmpty) throw StateError('请先在规则仓库安装并启用播放规则');
+
+      // Playback selection policy:
+      // - Explicit ruleId or remembered preferred rule: try THAT rule only; if it
+      //   fails, prompt user to verify or manually pick another source instead of
+      //   silently jumping to an unexpected source.
+      // - First play (no remembered rule): auto-pick the first working rule and
+      //   remember it for all future entries.
+      final hasPreferred =
+          ruleId != null ||
+          (strictPreferredRule &&
+              _ruleId.isNotEmpty &&
+              rules.any((r) => r.id == _ruleId));
+      final ids = ruleId != null
           ? [ruleId]
-          : {
-              if (_ruleId.isNotEmpty && rules.any((rule) => rule.id == _ruleId))
-                _ruleId,
-              ...rules.map((rule) => rule.id),
-            }.toList());
+          : hasPreferred
+          ? [_ruleId]
+          : [for (final r in rules) r.id];
+
       Object? problem;
-      for (final id in ids.take(4)) {
+      RuleProbeResult? captchaProbe;
+
+      for (final id in ids) {
         if (!_isCurrent(request)) return;
         try {
+          // If we already know this rule requires verification, surface verify action directly.
+          final existingProbe = _probes[id];
+          if (existingProbe?.state == RuleProbeState.captchaRequired) {
+            captchaProbe = existingProbe;
+            if (hasPreferred) break;
+            continue;
+          }
+
           final options = await resolver.lookup(subject, id);
           if (!_isCurrent(request)) return;
           final available = options
               .where((item) => item.number == episode)
               .toList();
-          if (available.isEmpty) throw StateError('这条规则没有第 $episode 话');
+          if (available.isEmpty) throw StateError('该播放源暂无第 $episode 话');
           setState(() {
             _choices = options;
             _ruleId = id;
@@ -302,6 +517,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           if (!_isCurrent(request)) return;
           if (!_pageActive) await session.setPlaying(false);
           if (!_isCurrent(request)) return;
+          await resolver.rememberSelectedRule(widget.subjectId, id);
           setState(() {
             _episode = episode;
             _source = episodeSource;
@@ -313,18 +529,43 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
             _lastCheckpoint = -1;
             _lastCompleted = false;
           });
-          _loadDanmaku();
+          _armHudAutoHide();
+          unawaited(_loadDanmaku());
           return;
         } on Object catch (error) {
           problem = error;
+          final probe = _probes[id];
+          if (probe?.state == RuleProbeState.captchaRequired) {
+            captchaProbe = probe;
+          }
         }
       }
-      throw problem ?? StateError('暂时没有可播放的线路');
+
+      if (captchaProbe != null && captchaProbe.verifyUrl != null) {
+        if (!_isCurrent(request)) return;
+        setState(() {
+          _loading = false;
+          _error = '${captchaProbe!.ruleName} 需要完成人机验证';
+          _errorVerifyUrl = captchaProbe.verifyUrl;
+          _errorVerifyRuleId = captchaProbe.ruleId;
+          _errorVerifyRuleName = captchaProbe.ruleName;
+        });
+        return;
+      }
+
+      if (hasPreferred) {
+        final preferredName =
+            rules.where((r) => r.id == ids.first).firstOrNull?.name ??
+            (_ruleName.isNotEmpty ? _ruleName : ids.first);
+        final reason = featureError(problem ?? StateError('线路不可用'), '线路不可用');
+        throw StateError('上次使用的「$preferredName」暂时不可用（$reason），请手动切换其他播放源');
+      }
+      throw problem ?? StateError('当前启用的规则均未能匹配可播放线路，请手动选择播放源');
     } on Object catch (error) {
       if (!_isCurrent(request)) return;
       setState(() {
         _loading = false;
-        _error = featureError(error, '无法播放这一话，请切换线路或规则');
+        _error = featureError(error, '无法播放这一话，请手动切换线路或播放源');
       });
     }
   }
@@ -360,25 +601,198 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     }
   }
 
-  Future<void> _loadDanmaku() async {
+  Future<void> _loadDanmaku({int? overrideEpisodeId}) async {
     final token = ++_danmakuRequest;
     if (!_showDanmaku) return;
     final subject = _subject;
     final source = ref.read(danmakuProvider);
-    if (source == null || subject == null) return;
+    if (source == null || (subject == null && overrideEpisodeId == null)) {
+      return;
+    }
+    setState(() {
+      _danmakuLoading = true;
+      _danmakuError = null;
+    });
     try {
-      final items = await source.load(subject, _episode);
+      final items = overrideEpisodeId != null
+          ? await source.loadByEpisodeId(overrideEpisodeId)
+          : await source.load(subject!, _episode);
       if (mounted && token == _danmakuRequest) {
         setState(() {
           _danmaku = items;
-          _danmakuError = null;
+          _danmakuLoading = false;
+          _danmakuError = items.isEmpty ? '当前话暂未匹配到弹幕，可点击下方手动匹配' : null;
         });
       }
     } on Object catch (error) {
       if (mounted && token == _danmakuRequest) {
-        setState(() => _danmakuError = featureError(error, '暂时取不到弹幕'));
+        setState(() {
+          _danmakuLoading = false;
+          _danmakuError = featureError(error, '弹幕加载失败，请重试或手动匹配');
+        });
       }
     }
+  }
+
+  Future<void> _openDanmakuSearchSheet() async {
+    final source = ref.read(danmakuProvider);
+    if (source == null) return;
+    final searchController = TextEditingController(
+      text: _subject?.title ?? '',
+    );
+    List<DanmakuAnimeMatch> matches = const [];
+    DanmakuAnimeMatch? selectedAnime;
+    bool searching = false;
+    String? error;
+
+    await showKonekoSheet<void>(
+      context: context,
+      title: '手动匹配弹幕',
+      subtitle: '搜索弹弹Play 番剧并选择对应集数',
+      detents: const [0.72, 0.92],
+      bodyBuilder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            final colorScheme = sheetContext.colorScheme;
+            Future<void> doSearch() async {
+              final q = searchController.text.trim();
+              if (q.isEmpty) return;
+              setSheetState(() {
+                searching = true;
+                error = null;
+                selectedAnime = null;
+              });
+              try {
+                final res = await source.searchAnimes(q);
+                setSheetState(() {
+                  matches = res;
+                  searching = false;
+                  if (res.isEmpty) error = '未找到匹配的弹幕番剧';
+                });
+              } on Object {
+                setSheetState(() {
+                  searching = false;
+                  error = '弹幕库搜索失败，请检查网络';
+                });
+              }
+            }
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+                  child: Row(
+                    spacing: 8,
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: searchController,
+                          decoration: const InputDecoration(
+                            hintText: '输入番剧名称搜索弹幕...',
+                          ),
+                          onSubmitted: (_) => unawaited(doSearch()),
+                        ),
+                      ),
+                      FilledButton(
+                        onPressed: searching ? null : () => unawaited(doSearch()),
+                        child: const Text('搜索'),
+                      ),
+                    ],
+                  ),
+                ),
+                if (selectedAnime != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Row(
+                      children: [
+                        KonekoChip(
+                          label: '← 返回番剧列表',
+                          height: 28,
+                          fontSize: 12,
+                          onPressed: () =>
+                              setSheetState(() => selectedAnime = null),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            selectedAnime!.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTextStyle.footnote
+                                .of(sheetContext, emphasized: true)
+                                .copyWith(color: colorScheme.onSurface),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                Expanded(
+                  child: searching
+                      ? const Center(child: ActivityIndicator())
+                      : error != null
+                      ? Center(child: Text(error!))
+                      : selectedAnime != null
+                      ? ListView(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                          children: [
+                            generateGroup([
+                              for (final ep in selectedAnime!.episodes)
+                                DecorationListItem(
+                                  title: Text(ep.title),
+                                  subtitle: Text('第 ${ep.episodeNumber} 话'),
+                                  trailing: const GlyphIcon(
+                                    Glyphs.chevronForward,
+                                  ),
+                                  onPressed: () {
+                                    Navigator.of(sheetContext).pop();
+                                    setState(() => _showDanmaku = true);
+                                    unawaited(
+                                      _loadDanmaku(
+                                        overrideEpisodeId: ep.episodeId,
+                                      ),
+                                    );
+                                  },
+                                ),
+                            ]),
+                          ],
+                        )
+                      : matches.isEmpty
+                      ? Center(
+                          child: Text(
+                            '点击「搜索」从弹弹Play 匹配对应番剧',
+                            style: AppTextStyle.footnote
+                                .of(sheetContext)
+                                .copyWith(color: colorScheme.onSurfaceVariant),
+                          ),
+                        )
+                      : ListView(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                          children: [
+                            generateGroup([
+                              for (final anime in matches)
+                                DecorationListItem(
+                                  title: Text(anime.title),
+                                  subtitle: Text(
+                                    '${anime.typeDescription.isNotEmpty ? '${anime.typeDescription} · ' : ''}共 ${anime.episodes.length} 集',
+                                  ),
+                                  trailing: const GlyphIcon(
+                                    Glyphs.chevronForward,
+                                  ),
+                                  onPressed: () =>
+                                      setSheetState(() => selectedAnime = anime),
+                                ),
+                            ]),
+                          ],
+                        ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    searchController.dispose();
   }
 
   Future<void> _setUpscale(bool enabled) async {
@@ -432,7 +846,11 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       showKonekoBanner(context, '已移出追番列表');
     } else if (choice.status case final status?) {
       ref.read(libraryProvider.notifier).setStatus(widget.subjectId, status);
-      showKonekoBanner(context, '已标记为「${status.label}」', level: BannerLevel.success);
+      showKonekoBanner(
+        context,
+        '已标记为「${status.label}」',
+        level: BannerLevel.success,
+      );
     }
   }
 
@@ -447,18 +865,14 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     });
   }
 
-  void _drawerTo(_DrawerTab tab) {
+  void _switchToSources() {
     if (_fullscreen) {
       setState(() {
-        _drawer = tab;
+        _drawer = _DrawerTab.sources;
         _drawerOpen = true;
       });
     } else {
-      setState(() {
-        _panelTab = tab == _DrawerTab.episodes
-            ? _PanelTab.episodes
-            : _PanelTab.sources;
-      });
+      setState(() => _panelTab = _PanelTab.sources);
     }
   }
 
@@ -481,7 +895,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     final error =
         _error ??
         (_loaded && status.duration == Duration.zero && status.error != null
-            ? '媒体播放失败，请切换线路'
+            ? '媒体播放失败，请手动切换线路或播放源'
             : null);
     final offline = widget.offline != null;
 
@@ -536,10 +950,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                           Expanded(
                             child: ColoredBox(
                               color: Colors.black,
-                              child: SafeArea(
-                                right: false,
-                                child: videoStage,
-                              ),
+                              child: SafeArea(right: false, child: videoStage),
                             ),
                           ),
                           Container(
@@ -562,8 +973,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                   );
                 }
 
-                // Portrait mode (Kazumi-style split): 16:9 video on top,
-                // episodes / sources / comments tabs below.
+                // Portrait split layout: crisp 16:9 video on top, tabs below.
                 return SurfaceScope(
                   level: SurfaceLevel.page,
                   child: ColoredBox(
@@ -612,13 +1022,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       children: [
         GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: () => setState(() {
-            if (_drawerOpen) {
-              _drawerOpen = false;
-            } else {
-              _showHud = !_showHud;
-            }
-          }),
+          onTap: _toggleHud,
           onDoubleTap: !_loaded
               ? null
               : () => session?.setPlaying(!status.playing),
@@ -638,7 +1042,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                   ),
                 ),
               if (_showDanmaku && _danmaku.isNotEmpty && overlay != null)
-                IgnorePointer(child: overlay(_danmaku, status)),
+                Positioned.fill(
+                  child: IgnorePointer(child: overlay(_danmaku, status)),
+                ),
             ],
           ),
         ),
@@ -647,11 +1053,11 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
         if (error != null)
           Center(
             child: Padding(
-              padding: const EdgeInsets.all(14),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               child: _GlassPill(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 14,
-                  vertical: 12,
+                  vertical: 10,
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -661,7 +1067,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                       textAlign: TextAlign.center,
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
-                      style: _style(context),
+                      style: _style(context, small: !_fullscreen),
                     ),
                     const SizedBox(height: 8),
                     Wrap(
@@ -669,15 +1075,32 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                       runSpacing: 6,
                       alignment: WrapAlignment.center,
                       children: [
-                        _HudAction(label: '重试', onTap: _start),
+                        if (_errorVerifyUrl != null &&
+                            _errorVerifyRuleId != null)
+                          _HudAction(
+                            label: '完成网页验证',
+                            active: true,
+                            onTap: () => _verifyRule(
+                              _errorVerifyRuleId!,
+                              _errorVerifyRuleName ?? _errorVerifyRuleId!,
+                              _errorVerifyUrl!,
+                            ),
+                          ),
+                        _HudAction(
+                          label: '重试',
+                          onTap: () => _openEpisode(
+                            _episode,
+                            ruleId: _ruleId.isEmpty ? null : _ruleId,
+                          ),
+                        ),
                         if (!offline)
                           _HudAction(
                             label: rules.any((rule) => rule.enabled)
-                                ? '切换播放源'
+                                ? '手动切换源'
                                 : '添加规则',
                             onTap: () async {
                               if (rules.any((rule) => rule.enabled)) {
-                                _drawerTo(_DrawerTab.sources);
+                                _switchToSources();
                               } else {
                                 await BaseNavigator.push<void>(
                                   context,
@@ -696,33 +1119,49 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           ),
         if (_changingBrightness)
           Positioned(
-            top: safe.top + (_fullscreen ? 68 : 48),
+            top: safe.top + (_fullscreen ? 64 : 40),
             left: 16,
             right: 16,
             child: Center(
               child: _GlassPill(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 7,
+                  horizontal: 12,
+                  vertical: 5,
                 ),
                 child: Text(
                   '亮度 ${(_brightness * 100).round()}%',
-                  style: _style(context),
+                  style: _style(context, small: true),
                 ),
               ),
             ),
           ),
+        // Top HUD bar — ultra-slim gradient scrim in compact portrait mode
         if (_showHud)
           Positioned(
-            top: safe.top + 8,
-            left: safe.left + 8,
-            right: safe.right + 8,
-            child: _GlassPill(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            top: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              padding: EdgeInsets.fromLTRB(
+                safe.left + (_fullscreen ? 12 : 4),
+                safe.top + (_fullscreen ? 8 : 2),
+                safe.right + (_fullscreen ? 12 : 4),
+                _fullscreen ? 14 : 10,
+              ),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withValues(alpha: 0.72),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
               child: Row(
-                spacing: 4,
+                spacing: 2,
                 children: [
-                  _round(
+                  _bareIcon(
                     glyph: Glyphs.backFor(Theme.of(context).platform),
                     tooltip: _fullscreen ? '退出全屏' : '返回',
                     onPressed: () {
@@ -734,39 +1173,25 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                     },
                   ),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          '$title · 第 $_episode 话',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: _style(context),
-                        ),
-                        if (_fullscreen)
-                          Text(
-                            offline
-                                ? '离线缓存'
-                                : (_ruleName.isEmpty ? '等待匹配线路' : _ruleName),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: _style(context, small: true),
-                          ),
-                      ],
+                    child: Text(
+                      '$title · 第 $_episode 话',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: _style(context, small: !_fullscreen),
                     ),
                   ),
-                  _round(
+                  _bareIcon(
                     glyph: KonekoGlyphs.danmaku,
                     tooltip: _showDanmaku ? '关闭弹幕' : '开启弹幕',
                     active: _showDanmaku,
                     onPressed: () {
                       setState(() => _showDanmaku = !_showDanmaku);
-                      _loadDanmaku();
+                      if (_showDanmaku) unawaited(_loadDanmaku());
+                      _armHudAutoHide();
                     },
                   ),
                   if (_fullscreen)
-                    _round(
+                    _bareIcon(
                       glyph: KonekoGlyphs.layers,
                       tooltip: '选集与播放源',
                       onPressed: () =>
@@ -776,12 +1201,13 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
               ),
             ),
           ),
+        // Bottom HUD bar — single compact slim row in portrait, rich bar in fullscreen
         if (_showHud)
           Positioned(
-            left: safe.left + 8,
-            right: safe.right + 8,
-            bottom: safe.bottom + 8,
-            child: _controls(context, status, session, offline),
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: _controls(context, status, session, offline, safe),
           ),
         if (_fullscreen)
           AnimatedPositioned(
@@ -821,9 +1247,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Compact FlClash title & action bar
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
           child: Row(
             spacing: 10,
             children: [
@@ -1019,27 +1444,18 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
               ),
               if (totalPages > 1) ...[
                 const SizedBox(height: 10),
-                SizedBox(
-                  height: 30,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: totalPages,
-                    separatorBuilder: (_, _) => const SizedBox(width: 6),
-                    itemBuilder: (_, idx) {
-                      final from = idx * _pageSize + 1;
-                      final to = ((idx + 1) * _pageSize).clamp(
-                        1,
-                        epNumbers.length,
-                      );
-                      return KonekoChip(
-                        label: '$from-$to',
-                        height: 28,
-                        fontSize: 11.5,
-                        selected: idx == safePage,
-                        onPressed: () => setState(() => _epPageIndex = idx),
-                      );
-                    },
-                  ),
+                KonekoAutoScrollChipBar(
+                  height: 32,
+                  chipHeight: 28,
+                  fontSize: 11.5,
+                  padding: EdgeInsets.zero,
+                  unselectedColor: SurfaceLevel.block.colorOf(colorScheme),
+                  labels: [
+                    for (var idx = 0; idx < totalPages; idx++)
+                      '${idx * _pageSize + 1}-${((idx + 1) * _pageSize).clamp(1, epNumbers.length)}',
+                  ],
+                  selectedIndex: safePage,
+                  onSelected: (idx) => setState(() => _epPageIndex = idx),
                 ),
               ],
               const SizedBox(height: 12),
@@ -1095,7 +1511,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     return ListView(
       padding: EdgeInsets.fromLTRB(16, 6, 16, bottomPadding),
       children: [
-        // Danmaku status card
+        // Danmaku status & manual matcher card
         KonekoCard(
           corner: 24,
           padding: const EdgeInsets.all(14),
@@ -1118,12 +1534,14 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                               .copyWith(color: colorScheme.onSurface),
                         ),
                         Text(
-                          _danmakuError ??
-                              (_showDanmaku
-                                  ? (_danmaku.isNotEmpty
-                                      ? '已加载 ${_danmaku.length} 条弹幕'
-                                      : '等待弹幕加载或当前话暂无弹幕')
-                                  : '弹幕已关闭'),
+                          _danmakuLoading
+                              ? '正在拉取弹幕...'
+                              : _danmakuError ??
+                                    (_showDanmaku
+                                        ? (_danmaku.isNotEmpty
+                                            ? '已加载 ${_danmaku.length} 条弹幕'
+                                            : '暂无弹幕')
+                                        : '弹幕已关闭'),
                           style: AppTextStyle.caption1
                               .of(context)
                               .copyWith(color: colorScheme.onSurfaceVariant),
@@ -1135,7 +1553,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                     value: _showDanmaku,
                     onChanged: (value) {
                       setState(() => _showDanmaku = value);
-                      if (value) _loadDanmaku();
+                      if (value) unawaited(_loadDanmaku());
                     },
                   ),
                 ],
@@ -1145,7 +1563,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                 runSpacing: 8,
                 children: [
                   KonekoChip(
-                    label: '重新拉取弹幕',
+                    label: '重新拉取',
                     height: 30,
                     fontSize: 12,
                     leading: GlyphIcon(
@@ -1153,10 +1571,20 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                       size: 13,
                       color: colorScheme.primary,
                     ),
-                    onPressed: _loadDanmaku,
+                    onPressed: _danmakuLoading ? null : () => _loadDanmaku(),
                   ),
                   KonekoChip(
-                    label: '屏蔽词与高级设置',
+                    label: '手动匹配弹幕',
+                    height: 30,
+                    fontSize: 12,
+                    backgroundColor: colorScheme.primary.withValues(
+                      alpha: 0.14,
+                    ),
+                    foregroundColor: colorScheme.primary,
+                    onPressed: _openDanmakuSearchSheet,
+                  ),
+                  KonekoChip(
+                    label: '屏蔽词设置',
                     height: 30,
                     fontSize: 12,
                     onPressed: () => BaseNavigator.push<void>(
@@ -1181,12 +1609,26 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                   children: [
                     Expanded(
                       child: Text(
-                        '切换规则与线路',
+                        '播放源检索结果',
                         style: AppTextStyle.headline
                             .of(context, emphasized: true)
                             .copyWith(color: colorScheme.onSurface),
                       ),
                     ),
+                    KonekoChip(
+                      label: '重新检索',
+                      height: 28,
+                      fontSize: 12,
+                      onPressed: () => unawaited(
+                        _probeAllEnabledRules(
+                          customKeyword:
+                              _sourceKeywordController.text.trim().isEmpty
+                              ? null
+                              : _sourceKeywordController.text.trim(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
                     KonekoChip(
                       label: '规则管理',
                       height: 28,
@@ -1196,8 +1638,31 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                           context,
                           const RulesPage(showBack: true),
                         );
-                        if (mounted && !_loaded) await _start();
+                        if (mounted) {
+                          unawaited(_probeAllEnabledRules());
+                        }
                       },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  spacing: 8,
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _sourceKeywordController,
+                        autocorrect: false,
+                        decoration: InputDecoration(
+                          hintText:
+                              '自定义检索关键词（默认：${_subject?.title ?? ''}）',
+                        ),
+                        onSubmitted: (v) => unawaited(
+                          _probeAllEnabledRules(
+                            customKeyword: v.trim().isEmpty ? null : v.trim(),
+                          ),
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -1218,45 +1683,13 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                     spacing: 8,
                     children: [
                       for (final rule in enabledRules)
-                        KonekoBlock(
-                          selected: _ruleId == rule.id,
-                          onPressed: _loading
-                              ? null
-                              : () => _openEpisode(_episode, ruleId: rule.id),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  rule.name,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: AppTextStyle.subheadline
-                                      .of(context, emphasized: true)
-                                      .copyWith(color: colorScheme.onSurface),
-                                ),
-                              ),
-                              KonekoChip(
-                                label: rule.apiType,
-                                height: 22,
-                                fontSize: 10.5,
-                              ),
-                              if (_ruleId == rule.id) ...[
-                                const SizedBox(width: 6),
-                                GlyphIcon(
-                                  Glyphs.check,
-                                  size: 16,
-                                  color: colorScheme.primary,
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
+                        _buildRuleProbeCard(context, rule),
                     ],
                   ),
                 if (lines.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   Text(
-                    '当前规则线路',
+                    '当前规则可用线路',
                     style: AppTextStyle.caption1
                         .of(context, emphasized: true)
                         .copyWith(color: colorScheme.onSurfaceVariant),
@@ -1290,11 +1723,138 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     );
   }
 
+  Widget _buildRuleProbeCard(BuildContext context, RulePluginMeta rule) {
+    final colorScheme = context.colorScheme;
+    final probe = _probes[rule.id];
+    final state = probe?.state ?? RuleProbeState.searching;
+    final isCurrent = _ruleId == rule.id;
+
+    final (badgeText, badgeBg, badgeFg) = switch (state) {
+      RuleProbeState.searching => (
+        '搜索中',
+        SurfaceLevel.card.colorOf(colorScheme),
+        colorScheme.onSurfaceVariant,
+      ),
+      RuleProbeState.found => (
+        '${probe!.hits.length} 条结果',
+        colorScheme.successContainer,
+        colorScheme.onSuccessContainer,
+      ),
+      RuleProbeState.noResult => (
+        '无结果',
+        SurfaceLevel.card.colorOf(colorScheme),
+        colorScheme.onSurfaceVariant,
+      ),
+      RuleProbeState.captchaRequired => (
+        '需要验证',
+        colorScheme.warningContainer,
+        colorScheme.onWarningContainer,
+      ),
+      RuleProbeState.error => (
+        '访问失败',
+        colorScheme.errorContainer,
+        colorScheme.onErrorContainer,
+      ),
+    };
+
+    return KonekoBlock(
+      selected: isCurrent,
+      padding: const EdgeInsets.all(11),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: 8,
+        children: [
+          Row(
+            spacing: 8,
+            children: [
+              Expanded(
+                child: Text(
+                  rule.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyle.subheadline
+                      .of(context, emphasized: true)
+                      .copyWith(color: colorScheme.onSurface),
+                ),
+              ),
+              if (isCurrent)
+                KonekoChip(
+                  label: '当前',
+                  height: 22,
+                  fontSize: 10.5,
+                  backgroundColor: colorScheme.primary,
+                  foregroundColor: colorScheme.onPrimary,
+                ),
+              KonekoChip(
+                label: badgeText,
+                height: 22,
+                fontSize: 10.5,
+                backgroundColor: badgeBg,
+                foregroundColor: badgeFg,
+              ),
+            ],
+          ),
+          if (state == RuleProbeState.found && probe != null)
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final hit in probe.hits.take(6))
+                  KonekoChip(
+                    label: hit.title,
+                    height: 28,
+                    fontSize: 12,
+                    backgroundColor: SurfaceLevel.card.colorOf(colorScheme),
+                    foregroundColor: colorScheme.onSurface,
+                    onPressed: _loading
+                        ? null
+                        : () => unawaited(_openHit(rule.id, rule.name, hit)),
+                  ),
+              ],
+            )
+          else if (state == RuleProbeState.captchaRequired &&
+              probe?.verifyUrl != null)
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    probe!.message,
+                    style: AppTextStyle.caption1
+                        .of(context)
+                        .copyWith(color: colorScheme.onSurfaceVariant),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                KonekoChip(
+                  label: '前往验证',
+                  height: 28,
+                  fontSize: 12,
+                  backgroundColor: colorScheme.primary,
+                  foregroundColor: colorScheme.onPrimary,
+                  onPressed: () =>
+                      _verifyRule(rule.id, rule.name, probe.verifyUrl!),
+                ),
+              ],
+            )
+          else if (state == RuleProbeState.error ||
+              state == RuleProbeState.noResult)
+            Text(
+              probe?.message ?? '',
+              style: AppTextStyle.caption1
+                  .of(context)
+                  .copyWith(color: colorScheme.onSurfaceVariant),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _controls(
     BuildContext context,
     PlaybackStatus status,
     PlaybackSession? session,
     bool offline,
+    EdgeInsets safe,
   ) {
     final duration = status.duration.inSeconds;
     final position = status.position.inSeconds;
@@ -1303,12 +1863,111 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     final canAdvance = _choices.any(
       (episode) => episode.number == _episode + 1,
     );
-    return _GlassPill(
+
+    // Compact portrait non-fullscreen bottom bar: single ultra-slim row over soft gradient
+    if (!_fullscreen) {
+      return Container(
+        padding: const EdgeInsets.fromLTRB(4, 14, 4, 4),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.bottomCenter,
+            end: Alignment.topCenter,
+            colors: [
+              Colors.black.withValues(alpha: 0.76),
+              Colors.transparent,
+            ],
+          ),
+        ),
+        child: Row(
+          children: [
+            _bareIcon(
+              glyph: status.playing ? KonekoGlyphs.pause : KonekoGlyphs.play,
+              tooltip: status.playing ? '暂停' : '播放',
+              onPressed: !_loaded
+                  ? null
+                  : () {
+                      session?.setPlaying(!status.playing);
+                      _armHudAutoHide();
+                    },
+            ),
+            Text(
+              formatDurationShort(value.round()),
+              style: _style(context, small: true),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Slider(
+                  min: 0,
+                  max: max,
+                  value: value,
+                  onChanged: duration > 0 && _loaded
+                      ? (v) {
+                          _hudTimer?.cancel();
+                          setState(() => _scrub = v);
+                        }
+                      : null,
+                  onChangeEnd: (v) {
+                    setState(() => _scrub = null);
+                    unawaited(session?.seek(Duration(seconds: v.round())));
+                    _armHudAutoHide();
+                  },
+                ),
+              ),
+            ),
+            Text(
+              formatDurationShort(duration),
+              style: _style(context, small: true),
+            ),
+            const SizedBox(width: 4),
+            PressSurface(
+              fill: Colors.transparent,
+              shape: AppShape.full,
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              onPressed: !_loaded
+                  ? null
+                  : () {
+                      const speeds = [1.0, 1.25, 1.5, 2.0, 0.75];
+                      setState(
+                        () => _speed =
+                            speeds[(speeds.indexOf(_speed) + 1) %
+                                speeds.length],
+                      );
+                      unawaited(session?.setRate(_speed));
+                      _armHudAutoHide();
+                    },
+              child: Text(
+                '${_speed == _speed.roundToDouble() ? _speed.toStringAsFixed(0) : _speed}x',
+                style: _style(context, small: true),
+              ),
+            ),
+            _bareIcon(
+              glyph: KonekoGlyphs.fullscreen,
+              tooltip: '全屏播放',
+              onPressed: () => unawaited(_setFullscreen(true)),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Rich fullscreen bottom bar
+    return Container(
       padding: EdgeInsets.fromLTRB(
-        10,
-        _fullscreen ? 8 : 4,
-        10,
-        _fullscreen ? 10 : 6,
+        safe.left + 14,
+        18,
+        safe.right + 14,
+        safe.bottom + 10,
+      ),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.bottomCenter,
+          end: Alignment.topCenter,
+          colors: [
+            Colors.black.withValues(alpha: 0.78),
+            Colors.transparent,
+          ],
+        ),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -1321,19 +1980,21 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
               ),
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
                   child: Slider(
                     min: 0,
                     max: max,
                     value: value,
                     onChanged: duration > 0 && _loaded
-                        ? (value) => setState(() => _scrub = value)
+                        ? (v) {
+                            _hudTimer?.cancel();
+                            setState(() => _scrub = v);
+                          }
                         : null,
-                    onChangeEnd: (value) {
+                    onChangeEnd: (v) {
                       setState(() => _scrub = null);
-                      unawaited(
-                        session?.seek(Duration(seconds: value.round())),
-                      );
+                      unawaited(session?.seek(Duration(seconds: v.round())));
+                      _armHudAutoHide();
                     },
                   ),
                 ),
@@ -1347,19 +2008,22 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           Row(
             spacing: 4,
             children: [
-              _round(
+              _bareIcon(
                 glyph: status.playing ? KonekoGlyphs.pause : KonekoGlyphs.play,
                 tooltip: status.playing ? '暂停' : '播放',
                 onPressed: !_loaded
                     ? null
-                    : () => session?.setPlaying(!status.playing),
+                    : () {
+                        session?.setPlaying(!status.playing);
+                        _armHudAutoHide();
+                      },
               ),
               if (!offline)
-                _round(
+                _bareIcon(
                   glyph: KonekoGlyphs.skipNext,
                   tooltip: '下一话',
                   onPressed: canAdvance && !_loading
-                      ? () => _openEpisode(_episode + 1)
+                      ? () => _openEpisode(_episode + 1, ruleId: _ruleId)
                       : null,
                 ),
               const Spacer(),
@@ -1376,20 +2040,18 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                                   speeds.length],
                         );
                         unawaited(session?.setRate(_speed));
+                        _armHudAutoHide();
                       },
               ),
-              if (_fullscreen)
-                _HudAction(
-                  label: '超分',
-                  active: _upscale,
-                  onTap: !_loaded ? null : () => _setUpscale(!_upscale),
-                ),
-              _round(
-                glyph: _fullscreen
-                    ? KonekoGlyphs.fullscreenExit
-                    : KonekoGlyphs.fullscreen,
-                tooltip: _fullscreen ? '退出全屏' : '全屏播放',
-                onPressed: () => unawaited(_setFullscreen(!_fullscreen)),
+              _HudAction(
+                label: '超分',
+                active: _upscale,
+                onTap: !_loaded ? null : () => _setUpscale(!_upscale),
+              ),
+              _bareIcon(
+                glyph: KonekoGlyphs.fullscreenExit,
+                tooltip: '退出全屏',
+                onPressed: () => unawaited(_setFullscreen(false)),
               ),
             ],
           ),
@@ -1428,7 +2090,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                   onChanged: (tab) => setState(() => _drawer = tab),
                 ),
               ),
-              _round(
+              _bareIcon(
                 glyph: Glyphs.close,
                 tooltip: '关闭面板',
                 onPressed: () => setState(() => _drawerOpen = false),
@@ -1475,11 +2137,39 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                       Padding(
                         padding: const EdgeInsets.only(bottom: 5),
                         child: _HudAction(
-                          label: rule.name,
+                          label: () {
+                            final probe = _probes[rule.id];
+                            final suffix = switch (probe?.state) {
+                              RuleProbeState.found =>
+                                ' (${probe!.hits.length})',
+                              RuleProbeState.noResult => ' (无)',
+                              RuleProbeState.captchaRequired => ' (需验证)',
+                              RuleProbeState.error => ' (失败)',
+                              _ => '',
+                            };
+                            return '${rule.name}$suffix';
+                          }(),
                           active: _ruleId == rule.id,
                           onTap: _loading
                               ? null
-                              : () => _openEpisode(_episode, ruleId: rule.id),
+                              : () {
+                                  final probe = _probes[rule.id];
+                                  if (probe?.state ==
+                                          RuleProbeState.captchaRequired &&
+                                      probe?.verifyUrl != null) {
+                                    unawaited(
+                                      _verifyRule(
+                                        rule.id,
+                                        rule.name,
+                                        probe!.verifyUrl!,
+                                      ),
+                                    );
+                                  } else {
+                                    unawaited(
+                                      _openEpisode(_episode, ruleId: rule.id),
+                                    );
+                                  }
+                                },
                         ),
                       ),
                     for (final line in lines)
@@ -1523,16 +2213,16 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                     active: _showDanmaku,
                     onTap: () {
                       setState(() => _showDanmaku = !_showDanmaku);
-                      _loadDanmaku();
+                      if (_showDanmaku) unawaited(_loadDanmaku());
                     },
                   ),
                   _HudAction(label: '重新加载弹幕', onTap: _loadDanmaku),
                   _HudAction(
-                    label: '弹幕屏蔽词设置',
-                    onTap: () => BaseNavigator.push<void>(
-                      context,
-                      const ServiceSettingsPage(),
-                    ),
+                    label: '手动匹配弹幕',
+                    onTap: () {
+                      setState(() => _drawerOpen = false);
+                      unawaited(_openDanmakuSearchSheet());
+                    },
                   ),
                 ],
               ),
@@ -1548,11 +2238,12 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           .of(context, emphasized: !small)
           .copyWith(
             color: small
-                ? Colors.white.withValues(alpha: 0.72)
+                ? Colors.white.withValues(alpha: 0.85)
                 : Colors.white,
+            fontFeatures: const [FontFeature.tabularFigures()],
           );
 
-  Widget _round({
+  Widget _bareIcon({
     required Glyph glyph,
     required String tooltip,
     VoidCallback? onPressed,
@@ -1564,16 +2255,16 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       height: 34,
       child: PressSurface(
         fill: active
-            ? context.colorScheme.primary.withValues(alpha: .85)
-            : Colors.white.withValues(alpha: .14),
+            ? context.colorScheme.primary.withValues(alpha: 0.78)
+            : Colors.transparent,
         shape: AppShape.full,
         onPressed: onPressed,
         child: Center(
           child: GlyphIcon(
             glyph,
-            size: 16,
+            size: 17,
             color: onPressed == null
-                ? Colors.white.withValues(alpha: 0.38)
+                ? Colors.white.withValues(alpha: 0.36)
                 : Colors.white,
           ),
         ),
@@ -1609,7 +2300,7 @@ class _EpisodeChipButton extends StatelessWidget {
         ? colorScheme.primary
         : colorScheme.onSurface;
     return SizedBox(
-      width: 58,
+      width: 56,
       height: 38,
       child: PressSurface(
         fill: bg,
@@ -1618,7 +2309,7 @@ class _EpisodeChipButton extends StatelessWidget {
         onPressed: onPressed,
         child: Center(
           child: Text(
-            current ? '▶ $number' : '$number',
+            '$number',
             style: AppTextStyle.footnote
                 .of(context, emphasized: true)
                 .copyWith(
@@ -1642,7 +2333,7 @@ class _HudAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final fill = active
-        ? context.colorScheme.primary.withValues(alpha: .85)
+        ? context.colorScheme.primary.withValues(alpha: .88)
         : Colors.white.withValues(alpha: .16);
     return PressSurface(
       fill: fill,

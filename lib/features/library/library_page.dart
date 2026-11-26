@@ -1,13 +1,11 @@
 import 'dart:async';
 
-import 'package:collection/collection.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:koneko/common/feature_feedback.dart';
 import 'package:koneko/common/providers.dart';
 import 'package:koneko/features/detail/subject_detail_page.dart';
 import 'package:koneko/features/my/service_settings_page.dart';
-import 'package:koneko/features/player/player_page.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
 import 'package:koneko/ui/koneko_scaffold.dart';
 import 'package:koneko/ui/koneko_sheet.dart';
@@ -19,14 +17,15 @@ import 'package:prism_ui/prism_ui.dart';
 enum _LibrarySort {
   recent('最近更新'),
   score('评分优先'),
-  progress('观看进度');
+  title('标题排序');
 
   const _LibrarySort(this.label);
   final String label;
 }
 
-/// Pure FlClash responsive Library page with Kazumi sync parity
-/// (Bangumi + WebDAV) and explicit Status Picker Sheet.
+/// Pure FlClash compact poster-grid Library page (no bloated progress bars),
+/// with FlClash inline expanding AppBar search, auto-centering category tabs,
+/// Status Picker Sheet, and Kazumi Bangumi/WebDAV sync sheet.
 class LibraryPage extends ConsumerStatefulWidget {
   const LibraryPage({super.key, this.bottomPadding = 0});
 
@@ -37,8 +36,7 @@ class LibraryPage extends ConsumerStatefulWidget {
 }
 
 class _LibraryPageState extends ConsumerState<LibraryPage> {
-  CollectionStatus? _filter = CollectionStatus.watching;
-  bool _showSearch = false;
+  int _selectedTabIndex = 0;
   _LibrarySort _sort = _LibrarySort.recent;
   String _query = '';
   bool _syncing = false;
@@ -51,6 +49,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
     (CollectionStatus.dropped, '抛弃'),
     (null, '全部'),
   ];
+
+  CollectionStatus? get _filter => _tabs[_selectedTabIndex].$1;
 
   Future<void> _pickStatus(AnimeSubject subject, CollectionEntry entry) async {
     final choice = await showKonekoStatusSheet(
@@ -74,10 +74,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
     }
   }
 
-  Future<void> _runSync(
-    Future<int> Function() action,
-    String label,
-  ) async {
+  Future<void> _runSync(Future<int> Function() action, String label) async {
     if (_syncing) return;
     setState(() => _syncing = true);
     try {
@@ -105,8 +102,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
     final sync = ref.read(trackingSyncProvider);
     final secrets = await ref.read(secretsProvider)?.read();
     if (!mounted) return;
-    final hasBangumi = (secrets?.bangumiToken.trim().isNotEmpty ?? false);
-    final hasWebDav = (secrets?.webdavUrl.trim().isNotEmpty ?? false);
+    final hasBangumi = secrets?.bangumiToken.trim().isNotEmpty ?? false;
+    final hasWebDav = secrets?.webdavUrl.trim().isNotEmpty ?? false;
 
     await showKonekoSheet<void>(
       context: context,
@@ -224,7 +221,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
     ref.watch(catalogUpdatesProvider);
     final catalog = ref.watch(catalogRepositoryProvider);
     final entries = ref.watch(libraryProvider);
-    final history = ref.watch(historyProvider);
 
     int countOf(CollectionStatus? status) => status == null
         ? entries.length
@@ -249,21 +245,22 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
           final sb = catalog.getSubjectById(b.subjectId)?.score ?? 0;
           return sb.compareTo(sa);
         });
-      case _LibrarySort.progress:
-        filtered.sort((a, b) => b.watchedEpisodes.compareTo(a.watchedEpisodes));
+      case _LibrarySort.title:
+        filtered.sort((a, b) {
+          final ta = catalog.getSubjectById(a.subjectId)?.title ?? '';
+          final tb = catalog.getSubjectById(b.subjectId)?.title ?? '';
+          return ta.compareTo(tb);
+        });
     }
 
     return KonekoScaffold(
       title: '追番',
+      searchConfig: KonekoSearchConfig(
+        tooltip: '搜索追番库',
+        hintText: '搜索追过的番剧...',
+        onChanged: (v) => setState(() => _query = v),
+      ),
       actions: [
-        IconButtonData(
-          glyph: Glyphs.search,
-          tooltip: '搜索追番库',
-          onPressed: () => setState(() {
-            _showSearch = !_showSearch;
-            if (!_showSearch) _query = '';
-          }),
-        ),
         IconButtonData(
           glyph: KonekoGlyphs.tune,
           tooltip: '排序与同步设置',
@@ -274,53 +271,34 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
       body: LayoutBuilder(
         builder: (context, constraints) {
           final width = constraints.maxWidth;
-          final columns = width >= 1080
-              ? 3
-              : width >= 700
-              ? 2
-              : 1;
+          final columns = width >= 1180
+              ? 6
+              : width >= 880
+              ? 5
+              : width >= 580
+              ? 4
+              : 3;
 
           return CustomScrollView(
             scrollCacheExtent: const ScrollCacheExtent.pixels(600),
             slivers: [
               const KonekoScrollStart(),
-              if (_showSearch)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-                    child: SearchField(
-                      fill: SurfaceLevel.card.colorOf(colorScheme),
-                      hintText: '筛选追番库...',
-                      onChanged: (v) => setState(() => _query = v),
-                    ),
-                  ),
-                ),
               SliverToBoxAdapter(
-                child: SizedBox(
+                child: KonekoAutoScrollChipBar(
                   height: 40,
-                  child: ListView.separated(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 2,
-                    ),
-                    scrollDirection: Axis.horizontal,
-                    itemCount: _tabs.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 8),
-                    itemBuilder: (_, index) {
-                      final (status, label) = _tabs[index];
-                      final selected = status == _filter;
-                      return KonekoChip(
-                        label: '$label  ${countOf(status)}',
-                        height: 36,
-                        fontSize: 13,
-                        selected: selected,
-                        backgroundColor: selected
-                            ? colorScheme.primary
-                            : SurfaceLevel.card.colorOf(colorScheme),
-                        onPressed: () => setState(() => _filter = status),
-                      );
-                    },
+                  chipHeight: 34,
+                  fontSize: 13,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 2,
                   ),
+                  labels: [
+                    for (final (status, label) in _tabs)
+                      '$label  ${countOf(status)}',
+                  ],
+                  selectedIndex: _selectedTabIndex,
+                  onSelected: (index) =>
+                      setState(() => _selectedTabIndex = index),
                 ),
               ),
               if (filtered.isEmpty)
@@ -328,7 +306,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                   hasScrollBody: false,
                   child: Center(
                     child: Text(
-                      '该分类下暂无番剧',
+                      _query.trim().isNotEmpty ? '没有匹配的追番记录' : '该分类下暂无番剧',
                       style: AppTextStyle.subheadline
                           .of(context)
                           .copyWith(color: colorScheme.onSurfaceVariant),
@@ -338,312 +316,37 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
               else
                 SliverPadding(
                   padding: EdgeInsets.fromLTRB(
-                    16,
                     14,
-                    16,
+                    12,
+                    14,
                     24 + widget.bottomPadding,
                   ),
-                  sliver: columns == 1
-                      ? SliverList.separated(
-                          itemCount: filtered.length,
-                          separatorBuilder: (_, _) =>
-                              const SizedBox(height: 12),
-                          itemBuilder: (context, index) {
-                            final entry = filtered[index];
-                            final subject = catalog.getSubjectById(
-                              entry.subjectId,
-                            )!;
-                            final hist = history
-                                .where((h) => h.subjectId == entry.subjectId)
-                                .firstOrNull;
-                            return _FlClashWatchCard(
-                              subject: subject,
-                              entry: entry,
-                              history: hist,
-                              onOpenDetail: () => _openDetail(subject),
-                              onQuickPlay: () => _openPlayer(
-                                subject,
-                                hist?.lastEpisode ??
-                                    (entry.watchedEpisodes > 0
-                                        ? entry.watchedEpisodes
-                                        : 1),
-                                hist?.lastRuleId ?? '',
-                                hist?.lastRuleName ?? '',
-                              ),
-                              onPickStatus: () => _pickStatus(subject, entry),
-                            );
-                          },
-                        )
-                      : SliverGrid(
-                          gridDelegate:
-                              SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: columns,
-                                crossAxisSpacing: 14,
-                                mainAxisSpacing: 14,
-                                mainAxisExtent: 186,
-                              ),
-                          delegate: SliverChildBuilderDelegate((
-                            context,
-                            index,
-                          ) {
-                            final entry = filtered[index];
-                            final subject = catalog.getSubjectById(
-                              entry.subjectId,
-                            )!;
-                            final hist = history
-                                .where((h) => h.subjectId == entry.subjectId)
-                                .firstOrNull;
-                            return _FlClashWatchCard(
-                              subject: subject,
-                              entry: entry,
-                              history: hist,
-                              onOpenDetail: () => _openDetail(subject),
-                              onQuickPlay: () => _openPlayer(
-                                subject,
-                                hist?.lastEpisode ??
-                                    (entry.watchedEpisodes > 0
-                                        ? entry.watchedEpisodes
-                                        : 1),
-                                hist?.lastRuleId ?? '',
-                                hist?.lastRuleName ?? '',
-                              ),
-                              onPickStatus: () => _pickStatus(subject, entry),
-                            );
-                          }, childCount: filtered.length),
+                  sliver: SliverGrid(
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: columns,
+                      crossAxisSpacing: 10,
+                      mainAxisSpacing: 12,
+                      childAspectRatio: 0.58,
+                    ),
+                    delegate: SliverChildBuilderDelegate((context, index) {
+                      final entry = filtered[index];
+                      final subject = catalog.getSubjectById(entry.subjectId)!;
+                      return UnifiedAnimeCard(
+                        subject: subject,
+                        showMetaLine: false,
+                        statusBadgeLabel: entry.status.label,
+                        onStatusTap: () => _pickStatus(subject, entry),
+                        onTap: () => BaseNavigator.push<void>(
+                          context,
+                          SubjectDetailPage(subjectId: subject.subjectId),
                         ),
+                      );
+                    }, childCount: filtered.length),
+                  ),
                 ),
             ],
           );
         },
-      ),
-    );
-  }
-
-  void _openDetail(AnimeSubject subject) {
-    BaseNavigator.push<void>(
-      context,
-      SubjectDetailPage(subjectId: subject.subjectId),
-    );
-  }
-
-  void _openPlayer(
-    AnimeSubject subject,
-    int episode,
-    String ruleId,
-    String ruleName,
-  ) {
-    BaseNavigator.push<void>(
-      context,
-      PlayerPage(
-        subjectId: subject.subjectId,
-        initialEpisode: episode,
-        initialRuleId: ruleId,
-        initialRuleName: ruleName,
-      ),
-    );
-  }
-}
-
-class _FlClashWatchCard extends StatelessWidget {
-  const _FlClashWatchCard({
-    required this.subject,
-    required this.entry,
-    required this.history,
-    required this.onOpenDetail,
-    required this.onQuickPlay,
-    required this.onPickStatus,
-  });
-
-  final AnimeSubject subject;
-  final CollectionEntry entry;
-  final MergedHistoryEntry? history;
-  final VoidCallback onOpenDetail;
-  final VoidCallback onQuickPlay;
-  final VoidCallback onPickStatus;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = context.colorScheme;
-    final total = subject.totalEpisodes > 0 ? subject.totalEpisodes : 12;
-    final ratio = (entry.watchedEpisodes / total).clamp(0.0, 1.0);
-    final pct = (ratio * 100).round();
-
-    final String progressText;
-    if (entry.watchedEpisodes <= 0) {
-      progressText = subject.airedEpisodes > 0
-          ? '尚未开始 · 更新至第 ${subject.airedEpisodes} 话'
-          : '尚未开始观看';
-    } else if (entry.watchedEpisodes >= total) {
-      progressText = '已看完 · 共 $total 话';
-    } else {
-      progressText = '看到 第 ${entry.watchedEpisodes} 话 · 共 $total 话';
-    }
-
-    return KonekoCard(
-      corner: 26,
-      padding: const EdgeInsets.all(14),
-      onPressed: onOpenDetail,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
-            children: [
-              SizedBox(
-                width: 64,
-                height: 90,
-                child: KonekoPosterArt(
-                  subject: subject,
-                  borderRadius: AppRadius.all(16),
-                  overlayBadges: [
-                    if (subject.score > 0)
-                      Positioned(
-                        right: 4,
-                        bottom: 4,
-                        child: KonekoChip(
-                          label: subject.score.toStringAsFixed(1),
-                          height: 18,
-                          fontSize: 9.5,
-                          backgroundColor: Colors.black.withValues(alpha: 0.62),
-                          foregroundColor: Colors.white,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      subject.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyle.callout
-                          .of(context, emphasized: true)
-                          .copyWith(color: colorScheme.onSurface),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      subject.originalTitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyle.caption1
-                          .of(context)
-                          .copyWith(color: colorScheme.onSurfaceVariant),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 4,
-                      children: [
-                        KonekoChip(
-                          label: entry.status.label,
-                          height: 24,
-                          fontSize: 11,
-                          backgroundColor: colorScheme.primary.withValues(
-                            alpha: 0.14,
-                          ),
-                          foregroundColor: colorScheme.primary,
-                          trailing: GlyphIcon(
-                            Glyphs.chevronDown,
-                            size: 12,
-                            color: colorScheme.primary,
-                          ),
-                          onPressed: onPickStatus,
-                        ),
-                        if (subject.isCompleted && subject.year > 0)
-                          KonekoChip(
-                            label: '${subject.year} 年',
-                            height: 24,
-                            fontSize: 11,
-                          )
-                        else if (subject.airedEpisodes > 0)
-                          KonekoChip(
-                            label: '更至 ${subject.airedEpisodes} 话',
-                            height: 24,
-                            fontSize: 11,
-                          ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 11),
-          KonekoBlock(
-            corner: 18,
-            padding: const EdgeInsets.fromLTRB(12, 8, 9, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              progressText,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppTextStyle.caption1
-                                  .of(context, emphasized: true)
-                                  .copyWith(
-                                    color: entry.watchedEpisodes > 0
-                                        ? colorScheme.onSurface
-                                        : colorScheme.onSurfaceVariant,
-                                  ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            '$pct%',
-                            style: AppTextStyle.caption1
-                                .of(context, emphasized: true)
-                                .copyWith(
-                                  color: entry.watchedEpisodes > 0
-                                      ? colorScheme.primary
-                                      : colorScheme.onSurfaceVariant,
-                                  fontFeatures: const [
-                                    FontFeature.tabularFigures(),
-                                  ],
-                                ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      ClipRRect(
-                        borderRadius: AppRadius.full,
-                        child: Container(
-                          height: 4.5,
-                          color: colorScheme.primary.withValues(alpha: 0.12),
-                          alignment: Alignment.centerLeft,
-                          child: FractionallySizedBox(
-                            widthFactor: ratio,
-                            child: Container(color: colorScheme.primary),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 10),
-                KonekoCircleButton(
-                  size: 34,
-                  iconSize: 15,
-                  glyph: KonekoGlyphs.play,
-                  fillColor: colorScheme.primary,
-                  foregroundColor: colorScheme.onPrimary,
-                  tooltip: '续播',
-                  onPressed: onQuickPlay,
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }

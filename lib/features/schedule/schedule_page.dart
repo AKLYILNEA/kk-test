@@ -389,36 +389,21 @@ class _SchedulePageState extends ConsumerState<SchedulePage> {
             slivers: [
               const KonekoScrollStart(),
               SliverToBoxAdapter(
-                child: SizedBox(
+                child: KonekoAutoScrollChipBar(
                   height: 44,
-                  child: ListView.separated(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 4,
-                    ),
-                    scrollDirection: Axis.horizontal,
-                    itemCount: _weekdays.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 8),
-                    itemBuilder: (_, index) {
-                      final (dayNum, jp, cn) = _weekdays[index];
-                      final count = _subjectsForDay(
-                        catalog,
-                        dayNum,
-                        statusMap,
-                      ).length;
-                      final selected = dayNum == _selectedDay;
-                      return KonekoChip(
-                        label: '$jp · $cn  $count',
-                        height: 36,
-                        fontSize: 13,
-                        selected: selected,
-                        backgroundColor: selected
-                            ? colorScheme.primary
-                            : SurfaceLevel.card.colorOf(colorScheme),
-                        onPressed: () => setState(() => _selectedDay = dayNum),
-                      );
-                    },
+                  chipHeight: 36,
+                  fontSize: 13,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 4,
                   ),
+                  labels: [
+                    for (final (dayNum, jp, cn) in _weekdays)
+                      '$jp · $cn  ${_subjectsForDay(catalog, dayNum, statusMap).length}',
+                  ],
+                  selectedIndex: (_selectedDay - 1).clamp(0, 6).toInt(),
+                  onSelected: (index) =>
+                      setState(() => _selectedDay = _weekdays[index].$1),
                 ),
               ),
               if (_activeOptionCount > 0)

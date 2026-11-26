@@ -184,6 +184,15 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                             initialRuleName: ruleName,
                           ),
                         ),
+                    onPlayNext: () => BaseNavigator.push<void>(
+                      context,
+                      PlayerPage(
+                        subjectId: subject.subjectId,
+                        initialEpisode: item.lastEpisode + 1,
+                        initialRuleId: item.lastRuleId,
+                        initialRuleName: item.lastRuleName,
+                      ),
+                    ),
                   );
                 },
               ),
@@ -202,6 +211,7 @@ class _MergedHistoryCard extends StatelessWidget {
     required this.onToggleExpand,
     required this.onOpenDetail,
     required this.onResume,
+    required this.onPlayNext,
   });
 
   final AnimeSubject subject;
@@ -210,11 +220,15 @@ class _MergedHistoryCard extends StatelessWidget {
   final VoidCallback onToggleExpand;
   final VoidCallback onOpenDetail;
   final void Function(String ruleId, String ruleName, int episode) onResume;
+  final VoidCallback onPlayNext;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
-    final pct = (entry.progressRatio * 100).round();
+    final ratio = entry.progressRatio.clamp(0.0, 1.0);
+    final pct = (ratio * 100).round();
+    final hasNext =
+        subject.totalEpisodes <= 0 || entry.lastEpisode < subject.totalEpisodes;
     return KonekoCard(
       corner: 26,
       padding: const EdgeInsets.all(14),
@@ -250,7 +264,6 @@ class _MergedHistoryCard extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        // Protected non-truncated timestamp
                         Text(
                           formatRelativeTime(entry.updatedAt),
                           maxLines: 1,
@@ -269,16 +282,31 @@ class _MergedHistoryCard extends StatelessWidget {
                           .of(context)
                           .copyWith(color: colorScheme.onSurfaceVariant),
                     ),
+                    const SizedBox(height: 6),
+                    // Episode playback progress bar
+                    ClipRRect(
+                      borderRadius: AppRadius.full,
+                      child: Container(
+                        height: 4.5,
+                        color: colorScheme.primary.withValues(alpha: 0.14),
+                        alignment: Alignment.centerLeft,
+                        child: FractionallySizedBox(
+                          widthFactor: ratio,
+                          child: Container(color: colorScheme.primary),
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 6,
                       runSpacing: 6,
                       children: [
-                        KonekoChip(
-                          label: entry.lastRuleName,
-                          height: 24,
-                          fontSize: 11,
-                        ),
+                        if (entry.lastRuleName.trim().isNotEmpty)
+                          KonekoChip(
+                            label: entry.lastRuleName,
+                            height: 24,
+                            fontSize: 11,
+                          ),
                         if (entry.mergedSourceCount > 1)
                           KonekoChip(
                             label: '${entry.mergedSourceCount} 个播放源',
@@ -301,18 +329,34 @@ class _MergedHistoryCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              KonekoCircleButton(
-                size: 38,
-                iconSize: 16,
-                glyph: KonekoGlyphs.play,
-                fillColor: colorScheme.primary,
-                foregroundColor: colorScheme.onPrimary,
-                tooltip: '继续播放',
-                onPressed: () => onResume(
-                  entry.lastRuleId,
-                  entry.lastRuleName,
-                  entry.lastEpisode,
-                ),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                spacing: 6,
+                children: [
+                  KonekoCircleButton(
+                    size: 36,
+                    iconSize: 15,
+                    glyph: KonekoGlyphs.play,
+                    fillColor: colorScheme.primary,
+                    foregroundColor: colorScheme.onPrimary,
+                    tooltip: '继续播放',
+                    onPressed: () => onResume(
+                      entry.lastRuleId,
+                      entry.lastRuleName,
+                      entry.lastEpisode,
+                    ),
+                  ),
+                  if (hasNext)
+                    KonekoCircleButton(
+                      size: 32,
+                      iconSize: 14,
+                      glyph: KonekoGlyphs.skipNext,
+                      fillColor: SurfaceLevel.block.colorOf(colorScheme),
+                      foregroundColor: colorScheme.onSurface,
+                      tooltip: '播放下一话（第 ${entry.lastEpisode + 1} 话）',
+                      onPressed: onPlayNext,
+                    ),
+                ],
               ),
             ],
           ),
