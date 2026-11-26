@@ -4,8 +4,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:koneko/common/constants.dart';
-import 'package:koneko/common/providers.dart';
 import 'package:koneko/common/feature_feedback.dart';
+import 'package:koneko/common/providers.dart';
 import 'package:koneko/features/detail/subject_detail_page.dart';
 import 'package:koneko/features/player/player_page.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
@@ -17,7 +17,8 @@ import 'package:prism_ui/prism_ui.dart';
 
 enum _HistoryFilter { all, today, week }
 
-/// Watch history page: keeps one clean card per anime across rule switches.
+/// Watch history page: keeps one clean card per anime displaying the latest
+/// watched source, episode, progress capsule and FlClash capsule play buttons.
 class HistoryPage extends ConsumerStatefulWidget {
   const HistoryPage({super.key, this.showBack = false, this.bottomPadding = 0});
 
@@ -30,7 +31,6 @@ class HistoryPage extends ConsumerStatefulWidget {
 
 class _HistoryPageState extends ConsumerState<HistoryPage> {
   _HistoryFilter _filter = _HistoryFilter.all;
-  int? _expandedSubjectId;
 
   Future<void> _import() async {
     final tracker = ref.read(trackingSyncProvider);
@@ -124,7 +124,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-              child: SegmentedControl<_HistoryFilter>(
+              child: KonekoSegmentedBar<_HistoryFilter>(
                 segments: const [
                   (_HistoryFilter.all, '全部'),
                   (_HistoryFilter.today, '今天'),
@@ -162,28 +162,22 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                   final item = visible[index];
                   final subject = catalog.getSubjectById(item.subjectId);
                   if (subject == null) return const SizedBox.shrink();
-                  final expanded = _expandedSubjectId == item.subjectId;
-                  return _MergedHistoryCard(
+                  return _HistoryCard(
                     subject: subject,
                     entry: item,
-                    expanded: expanded,
-                    onToggleExpand: () => setState(() {
-                      _expandedSubjectId = expanded ? null : item.subjectId;
-                    }),
                     onOpenDetail: () => BaseNavigator.push<void>(
                       context,
                       SubjectDetailPage(subjectId: subject.subjectId),
                     ),
-                    onResume: (ruleId, ruleName, ep) =>
-                        BaseNavigator.push<void>(
-                          context,
-                          PlayerPage(
-                            subjectId: subject.subjectId,
-                            initialEpisode: ep,
-                            initialRuleId: ruleId,
-                            initialRuleName: ruleName,
-                          ),
-                        ),
+                    onResume: () => BaseNavigator.push<void>(
+                      context,
+                      PlayerPage(
+                        subjectId: subject.subjectId,
+                        initialEpisode: item.lastEpisode,
+                        initialRuleId: item.lastRuleId,
+                        initialRuleName: item.lastRuleName,
+                      ),
+                    ),
                     onPlayNext: () => BaseNavigator.push<void>(
                       context,
                       PlayerPage(
@@ -203,12 +197,10 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
   }
 }
 
-class _MergedHistoryCard extends StatelessWidget {
-  const _MergedHistoryCard({
+class _HistoryCard extends StatelessWidget {
+  const _HistoryCard({
     required this.subject,
     required this.entry,
-    required this.expanded,
-    required this.onToggleExpand,
     required this.onOpenDetail,
     required this.onResume,
     required this.onPlayNext,
@@ -216,10 +208,8 @@ class _MergedHistoryCard extends StatelessWidget {
 
   final AnimeSubject subject;
   final MergedHistoryEntry entry;
-  final bool expanded;
-  final VoidCallback onToggleExpand;
   final VoidCallback onOpenDetail;
-  final void Function(String ruleId, String ruleName, int episode) onResume;
+  final VoidCallback onResume;
   final VoidCallback onPlayNext;
 
   @override
@@ -227,189 +217,241 @@ class _MergedHistoryCard extends StatelessWidget {
     final colorScheme = context.colorScheme;
     final ratio = entry.progressRatio.clamp(0.0, 1.0);
     final pct = (ratio * 100).round();
+    final isFinished = ratio >= 0.94;
     final hasNext =
         subject.totalEpisodes <= 0 || entry.lastEpisode < subject.totalEpisodes;
+    final ruleName = entry.lastRuleName.trim();
+    final posText = formatDurationShort(entry.lastPositionSeconds);
+    final durText = entry.lastDurationSeconds > 0
+        ? formatDurationShort(entry.lastDurationSeconds)
+        : '';
+
     return KonekoCard(
       corner: 26,
       padding: const EdgeInsets.all(14),
       onPressed: onOpenDetail,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              SizedBox(
-                width: 60,
-                height: 84,
-                child: KonekoPosterArt(
-                  subject: subject,
-                  borderRadius: AppRadius.all(14),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            subject.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTextStyle.callout
-                                .of(context, emphasized: true)
-                                .copyWith(color: colorScheme.onSurface),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          formatRelativeTime(entry.updatedAt),
-                          maxLines: 1,
-                          style: AppTextStyle.caption1
-                              .of(context)
-                              .copyWith(color: colorScheme.onSurfaceVariant),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      '第 ${entry.lastEpisode} 话 · ${formatDurationShort(entry.lastPositionSeconds)} / ${formatDurationShort(entry.lastDurationSeconds)} ($pct%)',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyle.footnote
-                          .of(context)
-                          .copyWith(color: colorScheme.onSurfaceVariant),
-                    ),
-                    const SizedBox(height: 6),
-                    // Episode playback progress bar
-                    ClipRRect(
-                      borderRadius: AppRadius.full,
-                      child: Container(
-                        height: 4.5,
-                        color: colorScheme.primary.withValues(alpha: 0.14),
-                        alignment: Alignment.centerLeft,
-                        child: FractionallySizedBox(
-                          widthFactor: ratio,
-                          child: Container(color: colorScheme.primary),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: [
-                        if (entry.lastRuleName.trim().isNotEmpty)
-                          KonekoChip(
-                            label: entry.lastRuleName,
-                            height: 24,
-                            fontSize: 11,
-                          ),
-                        if (entry.mergedSourceCount > 1)
-                          KonekoChip(
-                            label: '${entry.mergedSourceCount} 个播放源',
-                            height: 24,
-                            fontSize: 11,
-                            leading: GlyphIcon(
-                              KonekoGlyphs.layers,
-                              size: 11,
-                              color: colorScheme.primary,
-                            ),
-                            backgroundColor: colorScheme.primary.withValues(
-                              alpha: 0.14,
-                            ),
-                            foregroundColor: colorScheme.primary,
-                            onPressed: onToggleExpand,
-                          ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                spacing: 6,
-                children: [
-                  KonekoCircleButton(
-                    size: 36,
-                    iconSize: 15,
-                    glyph: KonekoGlyphs.play,
-                    fillColor: colorScheme.primary,
-                    foregroundColor: colorScheme.onPrimary,
-                    tooltip: '继续播放',
-                    onPressed: () => onResume(
-                      entry.lastRuleId,
-                      entry.lastRuleName,
-                      entry.lastEpisode,
-                    ),
-                  ),
-                  if (hasNext)
-                    KonekoCircleButton(
-                      size: 32,
-                      iconSize: 14,
-                      glyph: KonekoGlyphs.skipNext,
-                      fillColor: SurfaceLevel.block.colorOf(colorScheme),
-                      foregroundColor: colorScheme.onSurface,
-                      tooltip: '播放下一话（第 ${entry.lastEpisode + 1} 话）',
-                      onPressed: onPlayNext,
-                    ),
-                ],
-              ),
-            ],
+          SizedBox(
+            width: 74,
+            height: 108,
+            child: KonekoPosterArt(
+              subject: subject,
+              borderRadius: AppRadius.all(16),
+            ),
           ),
-          if (expanded && entry.sourceRecords.length > 1) ...[
-            const SizedBox(height: 10),
-            KonekoBlock(
-              corner: 16,
-              padding: const EdgeInsets.all(10),
+          const SizedBox(width: 14),
+          Expanded(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 108),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
-                spacing: 8,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    '其他播放源进度（点击即可切换续播）',
-                    style: AppTextStyle.caption1
-                        .of(context, emphasized: true)
-                        .copyWith(color: colorScheme.onSurfaceVariant),
-                  ),
-                  for (final rec in entry.sourceRecords)
-                    PressSurface(
-                      fill: SurfaceLevel.card.colorOf(colorScheme),
-                      shape: AppShape.md,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 8,
-                      ),
-                      onPressed: () =>
-                          onResume(rec.ruleId, rec.ruleName, rec.episodeNumber),
-                      child: Row(
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
                         children: [
                           Expanded(
                             child: Text(
-                              rec.ruleName,
+                              subject.title,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: AppTextStyle.footnote
+                              style: AppTextStyle.callout
                                   .of(context, emphasized: true)
                                   .copyWith(color: colorScheme.onSurface),
                             ),
                           ),
+                          const SizedBox(width: 8),
                           Text(
-                            '第 ${rec.episodeNumber} 话 · ${formatDurationShort(rec.positionSeconds)}',
+                            formatRelativeTime(entry.updatedAt),
+                            maxLines: 1,
                             style: AppTextStyle.caption1
                                 .of(context)
                                 .copyWith(color: colorScheme.onSurfaceVariant),
                           ),
                         ],
                       ),
-                    ),
+                      const SizedBox(height: 3),
+                      Row(
+                        children: [
+                          Text(
+                            '第 ${entry.lastEpisode} 话',
+                            style: AppTextStyle.footnote
+                                .of(context, emphasized: true)
+                                .copyWith(color: colorScheme.onSurfaceVariant),
+                          ),
+                          if (ruleName.isNotEmpty) ...[
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                '· $ruleName',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTextStyle.caption1
+                                    .of(context)
+                                    .copyWith(
+                                      color: colorScheme.onSurfaceVariant
+                                          .withValues(alpha: 0.8),
+                                    ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      // Kazumi-inspired progress capsule in pure FlClash surface palette
+                      ClipRSuperellipse(
+                        borderRadius: AppRadius.all(10),
+                        child: SizedBox(
+                          height: 22,
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              ColoredBox(
+                                color: SurfaceLevel.block.colorOf(colorScheme),
+                              ),
+                              if (ratio > 0)
+                                Align(
+                                  alignment: AlignmentDirectional.centerStart,
+                                  child: FractionallySizedBox(
+                                    widthFactor: isFinished ? 1.0 : ratio,
+                                    heightFactor: 1.0,
+                                    child: DecoratedBox(
+                                      decoration: ShapeDecoration(
+                                        color: colorScheme.primary.withValues(
+                                          alpha: 0.18,
+                                        ),
+                                        shape: SuperellipseBorder(
+                                          borderRadius: AppRadius.all(10),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        durText.isNotEmpty
+                                            ? '$posText / $durText'
+                                            : '看到 $posText',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: AppTextStyle.caption2
+                                            .of(context, emphasized: true)
+                                            .copyWith(
+                                              color: colorScheme.onSurface,
+                                              fontFeatures: const [
+                                                FontFeature.tabularFigures(),
+                                              ],
+                                            ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      isFinished ? '已看完' : '$pct%',
+                                      style: AppTextStyle.caption2
+                                          .of(context, emphasized: true)
+                                          .copyWith(
+                                            color: colorScheme.primary,
+                                            fontFeatures: const [
+                                              FontFeature.tabularFigures(),
+                                            ],
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  // FlClash capsule action buttons echoing SubjectDetailPage's Play CTA
+                  Row(
+                    spacing: 8,
+                    children: [
+                      Expanded(
+                        child: PressSurface(
+                          fill: colorScheme.primary,
+                          shape: AppShape.full,
+                          clipsChild: true,
+                          onPressed: onResume,
+                          child: SizedBox(
+                            height: 34,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              spacing: 5,
+                              children: [
+                                GlyphIcon(
+                                  KonekoGlyphs.play,
+                                  size: 13,
+                                  color: colorScheme.onPrimary,
+                                ),
+                                Text(
+                                  isFinished ? '重新播放' : '继续播放',
+                                  style: AppTextStyle.caption1
+                                      .of(context, emphasized: true)
+                                      .copyWith(
+                                        fontSize: 12.5,
+                                        color: colorScheme.onPrimary,
+                                      ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (hasNext)
+                        PressSurface(
+                          fill: colorScheme.primary.withValues(alpha: 0.13),
+                          shape: AppShape.full,
+                          clipsChild: true,
+                          onPressed: onPlayNext,
+                          child: SizedBox(
+                            height: 34,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 13,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                spacing: 4,
+                                children: [
+                                  GlyphIcon(
+                                    KonekoGlyphs.skipNext,
+                                    size: 14,
+                                    color: colorScheme.primary,
+                                  ),
+                                  Text(
+                                    '下一话',
+                                    style: AppTextStyle.caption1
+                                        .of(context, emphasized: true)
+                                        .copyWith(
+                                          fontSize: 12.5,
+                                          color: colorScheme.primary,
+                                        ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ],
               ),
             ),
-          ],
+          ),
         ],
       ),
     );

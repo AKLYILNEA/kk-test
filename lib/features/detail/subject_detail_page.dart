@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:collection/collection.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:koneko/common/constants.dart';
 import 'package:koneko/common/providers.dart';
 import 'package:koneko/features/player/player_page.dart';
+import 'package:koneko/features/player/rule_verify_page.dart';
 import 'package:koneko/features/rules/rules_page.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
 import 'package:koneko/ui/koneko_image.dart';
@@ -29,11 +32,103 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
   String _selectedRuleName = '';
   _DetailSection _section = _DetailSection.overview;
 
+  // Live parallel probe results per enabled rule (mirrors PlayerPage).
+  final Map<String, RuleProbeResult> _liveProbes = {};
+  int _probeGeneration = 0;
+  int? _probedSubjectId;
+
   // Pagination state for Bangumi comments beyond the first page.
   List<SubjectComment>? _extraComments;
   int? _extraTotal;
   bool _extraHasMore = false;
   bool _loadingMoreComments = false;
+
+  @override
+  void dispose() {
+    _probeGeneration++;
+    super.dispose();
+  }
+
+  void _ensureProbed(AnimeSubject subject) {
+    if (_probedSubjectId == subject.subjectId) return;
+    _probedSubjectId = subject.subjectId;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_probeAllEnabledRules(subject));
+    });
+  }
+
+  Future<void> _probeAllEnabledRules(AnimeSubject subject) async {
+    final resolver = ref.read(playbackSourcesProvider);
+    if (resolver == null) return;
+    final enabledRules = ref
+        .read(rulesProvider)
+        .where((r) => r.enabled)
+        .toList();
+    if (enabledRules.isEmpty) {
+      if (mounted) setState(() => _liveProbes.clear());
+      return;
+    }
+
+    final gen = ++_probeGeneration;
+    setState(() {
+      _liveProbes
+        ..clear()
+        ..addEntries(
+          enabledRules.map(
+            (r) => MapEntry(
+              r.id,
+              RuleProbeResult(
+                ruleId: r.id,
+                ruleName: r.name,
+                state: RuleProbeState.searching,
+                message: '正在检测可用性...',
+              ),
+            ),
+          ),
+        );
+    });
+
+    await Future.wait(
+      enabledRules.map((rule) async {
+        final result = await resolver.probeRule(subject, rule.id);
+        if (!mounted || gen != _probeGeneration) return;
+        setState(() => _liveProbes[rule.id] = result);
+      }),
+    );
+  }
+
+  Future<void> _verifyRule(
+    AnimeSubject subject,
+    String ruleId,
+    String ruleName,
+    Uri verifyUrl,
+  ) async {
+    final verified = await showRuleVerifySheet(
+      context: context,
+      ruleId: ruleId,
+      ruleName: ruleName,
+      verifyUrl: verifyUrl,
+    );
+    if (!mounted || verified != true) return;
+    showKonekoBanner(
+      context,
+      '$ruleName 验证已保存，正在重新检测',
+      level: BannerLevel.success,
+    );
+    final resolver = ref.read(playbackSourcesProvider);
+    if (resolver == null) return;
+    setState(() {
+      _liveProbes[ruleId] = RuleProbeResult(
+        ruleId: ruleId,
+        ruleName: ruleName,
+        state: RuleProbeState.searching,
+        message: '验证通过，重新检索中...',
+      );
+    });
+    final result = await resolver.probeRule(subject, ruleId);
+    if (!mounted) return;
+    setState(() => _liveProbes[ruleId] = result);
+  }
 
   void _playEpisode(AnimeSubject subject, int episodeNumber) {
     BaseNavigator.push<void>(
@@ -101,6 +196,12 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
         ),
       );
     }
+
+    final hasLiveResolver = ref.watch(playbackSourcesProvider) != null;
+    if (hasLiveResolver) {
+      _ensureProbed(subject);
+    }
+
     final entry = library
         .where((e) => e.subjectId == subject.subjectId)
         .firstOrNull;
@@ -117,31 +218,25 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
       watchedCount: entry?.watchedEpisodes ?? 0,
       currentEp: currentEp,
     );
-    final rules = ref.watch(rulesProvider);
-    final probes = ref.watch(playbackSourcesProvider) == null
-        ? catalog.probeSources(subject.subjectId)
-        : [
-            for (final rule in rules)
-              if (rule.enabled)
-                RuleSourceProbe(
-                  ruleId: rule.id,
-                  ruleName: rule.name,
-                  lineLabel: '播放时自动匹配线路',
-                  resolutionLabel: '',
-                  latencyMs: rule.latencyMs,
-                  availableEpisodes: 0,
-                  available: true,
-                ),
-          ];
+    final enabledRules = ref
+        .watch(rulesProvider)
+        .where((rule) => rule.enabled)
+        .toList();
+    final mockProbes = hasLiveResolver
+        ? const <RuleSourceProbe>[]
+        : catalog.probeSources(subject.subjectId);
     final related = subject.relatedIds
         .map(catalog.getSubjectById)
         .whereType<AnimeSubject>()
         .toList();
 
     final commentCount =
-        _extraTotal ?? commentsAsync.value?.total ?? catalog.getComments(subject.subjectId).length;
-    final commentsTabLabel =
-        commentCount > 0 ? '评论吐槽 ($commentCount)' : '评论吐槽';
+        _extraTotal ??
+        commentsAsync.value?.total ??
+        catalog.getComments(subject.subjectId).length;
+    final commentsTabLabel = commentCount > 0
+        ? '评论吐槽 ($commentCount)'
+        : '评论吐槽';
 
     return KonekoScaffold(
       title: '番剧详情',
@@ -178,18 +273,38 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
             onSelect: (ep) => _playEpisode(subject, ep.episodeNumber),
           );
           final sourcesCard = _RuleSourcesCard(
-            probes: probes,
+            hasLiveResolver: hasLiveResolver,
+            enabledRules: enabledRules,
+            liveProbes: _liveProbes,
+            mockProbes: mockProbes,
             selectedRuleId: _selectedRuleId,
-            onManage: () => BaseNavigator.push<void>(
-              context,
-              const RulesPage(showBack: true),
-            ),
-            onSelect: (probe) {
-              setState(() {
-                _selectedRuleId = probe.ruleId;
-                _selectedRuleName = probe.ruleName;
-              });
-              showKonekoBanner(context, '已选择播放源：${probe.ruleName}');
+            selectedRuleName: _selectedRuleName,
+            onRefresh: () => unawaited(_probeAllEnabledRules(subject)),
+            onManage: () async {
+              await BaseNavigator.push<void>(
+                context,
+                const RulesPage(showBack: true),
+              );
+              if (mounted && hasLiveResolver) {
+                unawaited(_probeAllEnabledRules(subject));
+              }
+            },
+            onVerify: (ruleId, ruleName, verifyUrl) =>
+                unawaited(_verifyRule(subject, ruleId, ruleName, verifyUrl)),
+            onToggleSelect: (ruleId, ruleName) {
+              if (_selectedRuleId == ruleId) {
+                setState(() {
+                  _selectedRuleId = '';
+                  _selectedRuleName = '';
+                });
+                showKonekoBanner(context, '已取消指定播放源，将自动沿用上次线路');
+              } else {
+                setState(() {
+                  _selectedRuleId = ruleId;
+                  _selectedRuleName = ruleName;
+                });
+                showKonekoBanner(context, '已指定播放源：$ruleName（再次点击可取消）');
+              }
             },
           );
           final relatedCard = related.isEmpty
@@ -219,9 +334,9 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
             onLoadMore: (count) => _loadMoreComments(count),
           );
 
-          final sectionSwitcher = SegmentedControl<_DetailSection>(
+          final sectionSwitcher = KonekoSegmentedBar<_DetailSection>(
             segments: [
-              (_DetailSection.overview, '选集与播放源'),
+              const (_DetailSection.overview, '选集与播放源'),
               (_DetailSection.comments, commentsTabLabel),
             ],
             value: _section,
@@ -359,7 +474,8 @@ class _HeroCardState extends State<_HeroCard> {
                           .copyWith(color: colorScheme.onSurface),
                     ),
                     if (subject.originalTitle.trim().isNotEmpty &&
-                        subject.originalTitle.trim() != subject.title.trim()) ...[
+                        subject.originalTitle.trim() !=
+                            subject.title.trim()) ...[
                       const SizedBox(height: 4),
                       Text(
                         subject.originalTitle,
@@ -403,8 +519,6 @@ class _HeroCardState extends State<_HeroCard> {
               ),
             ],
           ),
-
-          // Primary Play Action + Quick Collection Status (placed ABOVE summary!)
           const SizedBox(height: 16),
           PressSurface(
             fill: colorScheme.primary,
@@ -455,8 +569,6 @@ class _HeroCardState extends State<_HeroCard> {
                 ),
             ],
           ),
-
-          // Collapsible Summary Section
           if (summary.isNotEmpty) ...[
             const SizedBox(height: 14),
             KonekoBlock(
@@ -521,7 +633,6 @@ class _HeroCardState extends State<_HeroCard> {
               ),
             ),
           ],
-
           if (subject.tags.isNotEmpty) ...[
             const SizedBox(height: 12),
             Wrap(
@@ -601,6 +712,7 @@ class _EpisodeMatrixCardState extends State<_EpisodeMatrixCard> {
               height: 32,
               chipHeight: 28,
               fontSize: 11.5,
+              elevated: false,
               padding: EdgeInsets.zero,
               unselectedColor: SurfaceLevel.block.colorOf(colorScheme),
               labels: [
@@ -816,7 +928,8 @@ class _CommentTileState extends State<_CommentTile> {
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
     final c = widget.comment;
-    final isLong = c.content.length > 140 || '\n'.allMatches(c.content).length >= 3;
+    final isLong =
+        c.content.length > 140 || '\n'.allMatches(c.content).length >= 3;
 
     return KonekoBlock(
       corner: 18,
@@ -901,20 +1014,36 @@ class _CommentTileState extends State<_CommentTile> {
 
 class _RuleSourcesCard extends StatelessWidget {
   const _RuleSourcesCard({
-    required this.onManage,
-    required this.probes,
+    required this.hasLiveResolver,
+    required this.enabledRules,
+    required this.liveProbes,
+    required this.mockProbes,
     required this.selectedRuleId,
-    required this.onSelect,
+    required this.selectedRuleName,
+    required this.onRefresh,
+    required this.onManage,
+    required this.onVerify,
+    required this.onToggleSelect,
   });
 
-  final VoidCallback onManage;
-  final List<RuleSourceProbe> probes;
+  final bool hasLiveResolver;
+  final List<RulePluginMeta> enabledRules;
+  final Map<String, RuleProbeResult> liveProbes;
+  final List<RuleSourceProbe> mockProbes;
   final String selectedRuleId;
-  final ValueChanged<RuleSourceProbe> onSelect;
+  final String selectedRuleName;
+  final VoidCallback onRefresh;
+  final VoidCallback onManage;
+  final void Function(String ruleId, String ruleName, Uri verifyUrl) onVerify;
+  final void Function(String ruleId, String ruleName) onToggleSelect;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
+    final hasAny = hasLiveResolver
+        ? enabledRules.isNotEmpty
+        : mockProbes.isNotEmpty;
+
     return KonekoCard(
       corner: 30,
       padding: const EdgeInsets.all(18),
@@ -922,6 +1051,7 @@ class _RuleSourcesCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            spacing: 6,
             children: [
               Expanded(
                 child: Text(
@@ -931,6 +1061,18 @@ class _RuleSourcesCard extends StatelessWidget {
                       .copyWith(color: colorScheme.onSurface),
                 ),
               ),
+              if (hasLiveResolver && enabledRules.isNotEmpty)
+                KonekoChip(
+                  label: '重新检测',
+                  height: 28,
+                  fontSize: 12,
+                  leading: GlyphIcon(
+                    KonekoGlyphs.refresh,
+                    size: 12,
+                    color: colorScheme.primary,
+                  ),
+                  onPressed: onRefresh,
+                ),
               KonekoChip(
                 label: '管理规则',
                 height: 28,
@@ -941,66 +1083,217 @@ class _RuleSourcesCard extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            '切换播放源时自动保留当前观看进度',
+            selectedRuleId.isNotEmpty
+                ? '已指定「$selectedRuleName」，再次点击可取消指定'
+                : '未指定时自动沿用上次线路；点击任意源可指定或取消',
             style: AppTextStyle.caption1
                 .of(context)
                 .copyWith(color: colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 12),
-          if (probes.isEmpty)
-            TextButton(onPressed: onManage, child: const Text('去导入 Kazumi 播放规则')),
-          Column(
-            spacing: 8,
-            children: [
-              for (final probe in probes)
-                KonekoBlock(
-                  selected: probe.ruleId == selectedRuleId,
-                  onPressed: () => onSelect(probe),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              probe.ruleName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppTextStyle.subheadline
-                                  .of(context, emphasized: true)
-                                  .copyWith(color: colorScheme.onSurface),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              probe.availableEpisodes > 0
-                                  ? '${probe.lineLabel} · ${probe.availableEpisodes} 话'
-                                  : probe.lineLabel,
-                              style: AppTextStyle.caption1
-                                  .of(context)
-                                  .copyWith(
-                                    color: colorScheme.onSurfaceVariant,
-                                  ),
-                            ),
-                          ],
-                        ),
+          if (!hasAny)
+            TextButton(onPressed: onManage, child: const Text('去导入 Kazumi 播放规则'))
+          else if (hasLiveResolver)
+            Column(
+              spacing: 8,
+              children: [
+                for (final rule in enabledRules)
+                  _buildLiveRuleTile(context, rule),
+              ],
+            )
+          else
+            Column(
+              spacing: 8,
+              children: [
+                for (final probe in mockProbes)
+                  _buildMockProbeTile(context, probe),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLiveRuleTile(BuildContext context, RulePluginMeta rule) {
+    final colorScheme = context.colorScheme;
+    final probe = liveProbes[rule.id];
+    final state = probe?.state ?? RuleProbeState.searching;
+    final selected = rule.id == selectedRuleId;
+
+    final (badgeText, badgeBg, badgeFg) = switch (state) {
+      RuleProbeState.searching => (
+        '检测中',
+        SurfaceLevel.card.colorOf(colorScheme),
+        colorScheme.onSurfaceVariant,
+      ),
+      RuleProbeState.found => (
+        '可用 · ${probe!.hits.length} 条',
+        colorScheme.successContainer,
+        colorScheme.onSuccessContainer,
+      ),
+      RuleProbeState.noResult => (
+        '无结果',
+        SurfaceLevel.card.colorOf(colorScheme),
+        colorScheme.onSurfaceVariant,
+      ),
+      RuleProbeState.captchaRequired => (
+        '需验证',
+        colorScheme.warningContainer,
+        colorScheme.onWarningContainer,
+      ),
+      RuleProbeState.error => (
+        '不可用',
+        colorScheme.errorContainer,
+        colorScheme.onErrorContainer,
+      ),
+    };
+
+    final subtitle = switch (state) {
+      RuleProbeState.searching => '正在搜索匹配资源...',
+      RuleProbeState.found =>
+        probe != null && probe.hits.isNotEmpty
+            ? '匹配：${probe.hits.first.title}'
+            : '找到可用线路',
+      RuleProbeState.noResult => '该源未收录此番剧',
+      RuleProbeState.captchaRequired => '点击完成站点验证后即可检索',
+      RuleProbeState.error => probe?.message ?? '连接超时或解析失败',
+    };
+
+    return KonekoBlock(
+      selected: selected,
+      onPressed: () {
+        if (state == RuleProbeState.captchaRequired &&
+            probe?.verifyUrl != null) {
+          onVerify(rule.id, rule.name, probe!.verifyUrl!);
+        } else {
+          onToggleSelect(rule.id, rule.name);
+        }
+      },
+      child: Row(
+        spacing: 8,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  spacing: 6,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        rule.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyle.subheadline
+                            .of(context, emphasized: true)
+                            .copyWith(color: colorScheme.onSurface),
                       ),
-                      if (probe.latencyMs > 0)
-                        KonekoChip(
-                          label: '${probe.latencyMs} ms',
-                          height: 24,
-                          fontSize: 11,
-                          backgroundColor: probe.latencyMs < 130
-                              ? colorScheme.successContainer
-                              : colorScheme.warningContainer,
-                          foregroundColor: probe.latencyMs < 130
-                              ? colorScheme.onSuccessContainer
-                              : colorScheme.onWarningContainer,
-                        ),
-                    ],
-                  ),
+                    ),
+                    if (selected)
+                      KonekoChip(
+                        label: '已指定',
+                        height: 20,
+                        fontSize: 10,
+                        backgroundColor: colorScheme.primary,
+                        foregroundColor: colorScheme.onPrimary,
+                      ),
+                  ],
                 ),
-            ],
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyle.caption1
+                      .of(context)
+                      .copyWith(color: colorScheme.onSurfaceVariant),
+                ),
+              ],
+            ),
           ),
+          if (state == RuleProbeState.captchaRequired &&
+              probe?.verifyUrl != null)
+            KonekoChip(
+              label: '去验证',
+              height: 26,
+              fontSize: 11.5,
+              backgroundColor: colorScheme.primary,
+              foregroundColor: colorScheme.onPrimary,
+              onPressed: () => onVerify(rule.id, rule.name, probe!.verifyUrl!),
+            )
+          else
+            KonekoChip(
+              label: badgeText,
+              height: 24,
+              fontSize: 11,
+              backgroundColor: badgeBg,
+              foregroundColor: badgeFg,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMockProbeTile(BuildContext context, RuleSourceProbe probe) {
+    final colorScheme = context.colorScheme;
+    final selected = probe.ruleId == selectedRuleId;
+    return KonekoBlock(
+      selected: selected,
+      onPressed: () => onToggleSelect(probe.ruleId, probe.ruleName),
+      child: Row(
+        spacing: 8,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  spacing: 6,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        probe.ruleName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyle.subheadline
+                            .of(context, emphasized: true)
+                            .copyWith(color: colorScheme.onSurface),
+                      ),
+                    ),
+                    if (selected)
+                      KonekoChip(
+                        label: '已指定',
+                        height: 20,
+                        fontSize: 10,
+                        backgroundColor: colorScheme.primary,
+                        foregroundColor: colorScheme.onPrimary,
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  probe.availableEpisodes > 0
+                      ? '${probe.lineLabel} · ${probe.availableEpisodes} 话'
+                      : probe.lineLabel,
+                  style: AppTextStyle.caption1
+                      .of(context)
+                      .copyWith(color: colorScheme.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ),
+          if (probe.latencyMs > 0)
+            KonekoChip(
+              label: '${probe.latencyMs} ms',
+              height: 24,
+              fontSize: 11,
+              backgroundColor: probe.latencyMs < 130
+                  ? colorScheme.successContainer
+                  : colorScheme.warningContainer,
+              foregroundColor: probe.latencyMs < 130
+                  ? colorScheme.onSuccessContainer
+                  : colorScheme.onWarningContainer,
+            ),
         ],
       ),
     );
@@ -1018,28 +1311,37 @@ class _RelatedSeriesCard extends StatelessWidget {
     final colorScheme = context.colorScheme;
     return KonekoCard(
       corner: 30,
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.fromLTRB(0, 18, 0, 6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            '关联系列',
-            style: AppTextStyle.headline
-                .of(context, emphasized: true)
-                .copyWith(color: colorScheme.onSurface),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            child: Text(
+              '关联系列',
+              style: AppTextStyle.headline
+                  .of(context, emphasized: true)
+                  .copyWith(color: colorScheme.onSurface),
+            ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           SizedBox(
-            height: 205,
+            height: 238,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
+              clipBehavior: Clip.none,
+              padding: const EdgeInsets.fromLTRB(18, 6, 18, 22),
               itemCount: subjects.length,
               separatorBuilder: (_, _) => const SizedBox(width: 12),
               itemBuilder: (_, index) {
                 final s = subjects[index];
                 return SizedBox(
-                  width: 120,
-                  child: UnifiedAnimeCard(subject: s, onTap: () => onOpen(s)),
+                  width: 122,
+                  child: UnifiedAnimeCard(
+                    subject: s,
+                    corner: 18,
+                    onTap: () => onOpen(s),
+                  ),
                 );
               },
             ),

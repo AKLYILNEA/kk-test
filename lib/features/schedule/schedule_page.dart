@@ -390,12 +390,12 @@ class _SchedulePageState extends ConsumerState<SchedulePage> {
               const KonekoScrollStart(),
               SliverToBoxAdapter(
                 child: KonekoAutoScrollChipBar(
-                  height: 44,
+                  height: 48,
                   chipHeight: 36,
                   fontSize: 13,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16,
-                    vertical: 4,
+                    vertical: 6,
                   ),
                   labels: [
                     for (final (dayNum, jp, cn) in _weekdays)
@@ -409,7 +409,7 @@ class _SchedulePageState extends ConsumerState<SchedulePage> {
               if (_activeOptionCount > 0)
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 2),
+                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
                     child: Wrap(
                       spacing: 8,
                       runSpacing: 6,
@@ -419,10 +419,9 @@ class _SchedulePageState extends ConsumerState<SchedulePage> {
                             label: '${_season.shortLabel} · 回到本季',
                             height: 28,
                             fontSize: 12,
-                            backgroundColor: colorScheme.primary.withValues(
-                              alpha: 0.14,
-                            ),
-                            foregroundColor: colorScheme.primary,
+                            elevated: true,
+                            backgroundColor: colorScheme.primary,
+                            foregroundColor: colorScheme.onPrimary,
                             onPressed: () =>
                                 unawaited(_selectSeason(AnimeSeason.current())),
                           ),
@@ -431,6 +430,10 @@ class _SchedulePageState extends ConsumerState<SchedulePage> {
                             label: _sort.label,
                             height: 28,
                             fontSize: 12,
+                            elevated: true,
+                            backgroundColor: SurfaceLevel.card.colorOf(
+                              colorScheme,
+                            ),
                             onPressed: _openSettingsSheet,
                           ),
                         if (_onlyWatching)
@@ -438,6 +441,10 @@ class _SchedulePageState extends ConsumerState<SchedulePage> {
                             label: '仅看在追',
                             height: 28,
                             fontSize: 12,
+                            elevated: true,
+                            backgroundColor: SurfaceLevel.card.colorOf(
+                              colorScheme,
+                            ),
                             onPressed: () =>
                                 setState(() => _onlyWatching = false),
                           ),
@@ -446,6 +453,10 @@ class _SchedulePageState extends ConsumerState<SchedulePage> {
                             label: '隐藏看过',
                             height: 28,
                             fontSize: 12,
+                            elevated: true,
+                            backgroundColor: SurfaceLevel.card.colorOf(
+                              colorScheme,
+                            ),
                             onPressed: () =>
                                 setState(() => _hideWatched = false),
                           ),
@@ -454,6 +465,10 @@ class _SchedulePageState extends ConsumerState<SchedulePage> {
                             label: '隐藏抛弃',
                             height: 28,
                             fontSize: 12,
+                            elevated: true,
+                            backgroundColor: SurfaceLevel.card.colorOf(
+                              colorScheme,
+                            ),
                             onPressed: () =>
                                 setState(() => _hideDropped = false),
                           ),

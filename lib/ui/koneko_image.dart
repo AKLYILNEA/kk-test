@@ -2,6 +2,12 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/widgets.dart';
 import 'package:prism_ui/prism_ui.dart';
 
+/// Fixed quantized decode width for all anime posters so every page (Home,
+/// Schedule, Library, History, Detail, Related) hits the EXACT SAME entry in
+/// Flutter's synchronous [ImageCache] with zero re-decoding or flashing.
+const int kPosterCacheWidth = 420;
+const int kAvatarCacheWidth = 96;
+
 /// Normalizes Bangumi & external cover URLs exactly like Kazumi:
 /// upgrades protocol-relative or `http://` URLs to `https://`.
 String normalizeKonekoImageUrl(String raw) {
@@ -14,9 +20,12 @@ String normalizeKonekoImageUrl(String raw) {
   return trimmed;
 }
 
-/// Disk- and memory-cached network image aligned 1:1 with Kazumi's `NetworkImgLayer`.
-/// Uses `CachedNetworkImage`'s default cache manager without custom headers so
-/// Bangumi CDN (`lain.bgm.tv`) never rejects requests with 403/timeout.
+/// Disk- and memory-cached network image with synchronous Frame-0 memory hits.
+///
+/// Uses [CachedNetworkImageProvider] wrapped in [ResizeImage.resizeIfNeeded]
+/// directly on Flutter's [Image] widget (with `gaplessPlayback: true`) instead
+/// of `CachedNetworkImage`'s async `FutureBuilder` wrapper, eliminating the
+/// placeholder flash when navigating or scrolling across pages.
 class KonekoNetworkImage extends StatelessWidget {
   const KonekoNetworkImage({
     super.key,
@@ -39,17 +48,23 @@ class KonekoNetworkImage extends StatelessWidget {
     if (normalized.isEmpty || !normalized.startsWith('http')) {
       return placeholder;
     }
-    return CachedNetworkImage(
-      imageUrl: normalized,
+    final provider = ResizeImage.resizeIfNeeded(
+      memCacheWidth,
+      memCacheHeight,
+      CachedNetworkImageProvider(normalized),
+    );
+    return Image(
+      image: provider,
       fit: fit,
-      memCacheWidth: memCacheWidth,
-      memCacheHeight: memCacheHeight,
-      fadeInDuration: const Duration(milliseconds: 120),
-      fadeOutDuration: const Duration(milliseconds: 120),
-      useOldImageOnUrlChange: true,
+      gaplessPlayback: true,
       filterQuality: FilterQuality.medium,
-      placeholder: (_, _) => placeholder,
-      errorWidget: (_, _, _) => placeholder,
+      frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+        if (wasSynchronouslyLoaded || frame != null) {
+          return child;
+        }
+        return placeholder;
+      },
+      errorBuilder: (_, _, _) => placeholder,
     );
   }
 }
@@ -83,8 +98,6 @@ class KonekoAvatar extends StatelessWidget {
       ),
     );
     final url = avatarUrl == null ? '' : normalizeKonekoImageUrl(avatarUrl!);
-    final dpr = MediaQuery.devicePixelRatioOf(context);
-    final decodePx = (size * dpr).round().clamp(48, 160);
 
     return ClipOval(
       child: SizedBox.square(
@@ -94,7 +107,7 @@ class KonekoAvatar extends StatelessWidget {
             : KonekoNetworkImage(
                 url: url,
                 placeholder: fallback,
-                memCacheWidth: decodePx,
+                memCacheWidth: kAvatarCacheWidth,
               ),
       ),
     );

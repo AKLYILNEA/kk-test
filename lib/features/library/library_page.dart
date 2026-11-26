@@ -285,12 +285,12 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
               const KonekoScrollStart(),
               SliverToBoxAdapter(
                 child: KonekoAutoScrollChipBar(
-                  height: 40,
+                  height: 46,
                   chipHeight: 34,
                   fontSize: 13,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16,
-                    vertical: 2,
+                    vertical: 6,
                   ),
                   labels: [
                     for (final (status, label) in _tabs)
@@ -326,7 +326,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                       crossAxisCount: columns,
                       crossAxisSpacing: 10,
                       mainAxisSpacing: 12,
-                      childAspectRatio: 0.58,
+                      childAspectRatio: 0.56,
                     ),
                     delegate: SliverChildBuilderDelegate((context, index) {
                       final entry = filtered[index];
@@ -334,6 +334,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                       return UnifiedAnimeCard(
                         subject: subject,
                         showMetaLine: false,
+                        corner: 18,
                         statusBadgeLabel: entry.status.label,
                         onStatusTap: () => _pickStatus(subject, entry),
                         onTap: () => BaseNavigator.push<void>(

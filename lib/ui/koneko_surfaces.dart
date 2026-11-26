@@ -24,6 +24,23 @@ List<BoxShadow> konekoCardShadows(ColorScheme colorScheme) {
   ];
 }
 
+/// Matching softer elevation shadow for page-level pills, chip bars & segmented controls.
+List<BoxShadow> konekoPillShadows(ColorScheme colorScheme) {
+  final isDark = colorScheme.brightness == Brightness.dark;
+  return [
+    BoxShadow(
+      color: colorScheme.shadow.withValues(alpha: isDark ? 0.22 : 0.055),
+      blurRadius: isDark ? 14 : 12,
+      offset: const Offset(0, 4),
+    ),
+    BoxShadow(
+      color: colorScheme.shadow.withValues(alpha: isDark ? 0.12 : 0.028),
+      blurRadius: 2.5,
+      offset: const Offset(0, 1),
+    ),
+  ];
+}
+
 void showKonekoBanner(
   BuildContext context,
   String message, {
@@ -140,7 +157,40 @@ class KonekoBlock extends StatelessWidget {
   }
 }
 
-/// Full-pill capsule chip with locked vertical optical alignment (`StrutStyle`).
+/// Elevated wrapper for page-level [SegmentedControl] so sliders share the
+/// exact same soft shadow language as cards and top chip bars.
+class KonekoSegmentedBar<T extends Object> extends StatelessWidget {
+  const KonekoSegmentedBar({
+    super.key,
+    required this.segments,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final List<(T, String)> segments;
+  final T value;
+  final ValueChanged<T> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = context.colorScheme;
+    return DecoratedBox(
+      decoration: ShapeDecoration(
+        shape: AppShape.full,
+        shadows: konekoPillShadows(colorScheme),
+      ),
+      child: SegmentedControl<T>(
+        segments: segments,
+        value: value,
+        onChanged: onChanged,
+      ),
+    );
+  }
+}
+
+/// Full-pill capsule chip with locked vertical optical alignment.
+/// Set [elevated] to `true` when sitting directly on `SurfaceLevel.page` so
+/// top-level pills share the unified FlClash soft shadow language.
 class KonekoChip extends StatelessWidget {
   const KonekoChip({
     super.key,
@@ -153,6 +203,7 @@ class KonekoChip extends StatelessWidget {
     this.fontSize = 11.5,
     this.onPressed,
     this.selected = false,
+    this.elevated = false,
   });
 
   final String label;
@@ -164,6 +215,7 @@ class KonekoChip extends StatelessWidget {
   final double fontSize;
   final VoidCallback? onPressed;
   final bool selected;
+  final bool elevated;
 
   @override
   Widget build(BuildContext context) {
@@ -205,23 +257,36 @@ class KonekoChip extends StatelessWidget {
     );
 
     if (onPressed != null) {
+      final surface = PressSurface(
+        fill: bg,
+        shape: AppShape.full,
+        clipsChild: true,
+        selected: selected,
+        onPressed: onPressed,
+        child: Center(widthFactor: 1.0, child: row),
+      );
       return SizedBox(
         height: height,
-        child: PressSurface(
-          fill: bg,
-          shape: AppShape.full,
-          clipsChild: true,
-          selected: selected,
-          onPressed: onPressed,
-          child: Center(widthFactor: 1.0, child: row),
-        ),
+        child: elevated
+            ? DecoratedBox(
+                decoration: ShapeDecoration(
+                  shape: AppShape.full,
+                  shadows: konekoPillShadows(colorScheme),
+                ),
+                child: surface,
+              )
+            : surface,
       );
     }
 
     return SizedBox(
       height: height,
       child: DecoratedBox(
-        decoration: ShapeDecoration(color: bg, shape: AppShape.full),
+        decoration: ShapeDecoration(
+          color: bg,
+          shape: AppShape.full,
+          shadows: elevated ? konekoPillShadows(colorScheme) : null,
+        ),
         child: Center(widthFactor: 1.0, child: row),
       ),
     );
@@ -280,7 +345,9 @@ class KonekoCircleButton extends StatelessWidget {
   }
 }
 
-/// A network cover with a local palette fallback.
+/// A cached network cover with a clean Kazumi/Bilibili-style little-TV placeholder.
+/// Uses a single fixed decode width ([kPosterCacheWidth]) across all pages so
+/// Flutter's synchronous memory cache hits instantly without re-loading.
 class KonekoPosterArt extends StatelessWidget {
   const KonekoPosterArt({
     super.key,
@@ -295,25 +362,27 @@ class KonekoPosterArt extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fallback = CustomPaint(
-      painter: _PosterPainter(subject.poster),
-      child: const SizedBox.expand(),
+    final colorScheme = context.colorScheme;
+    final isDark = colorScheme.brightness == Brightness.dark;
+    final fallback = ColoredBox(
+      color: SurfaceLevel.block.colorOf(colorScheme),
+      child: CustomPaint(
+        painter: _BiliTvPlaceholderPainter(
+          iconColor: colorScheme.onSurfaceVariant.withValues(
+            alpha: isDark ? 0.28 : 0.24,
+          ),
+          screenColor: SurfaceLevel.card.colorOf(colorScheme),
+        ),
+        child: const SizedBox.expand(),
+      ),
     );
     final url = subject.coverUrl;
     final art = url == null || url.isEmpty
         ? fallback
-        : LayoutBuilder(
-            builder: (context, constraints) {
-              final dpr = MediaQuery.devicePixelRatioOf(context);
-              final maxW = constraints.maxWidth.isFinite && constraints.maxWidth > 0
-                  ? (constraints.maxWidth * dpr).round().clamp(160, 720)
-                  : 420;
-              return KonekoNetworkImage(
-                url: url,
-                placeholder: fallback,
-                memCacheWidth: maxW,
-              );
-            },
+        : KonekoNetworkImage(
+            url: url,
+            placeholder: fallback,
+            memCacheWidth: kPosterCacheWidth,
           );
     final content = overlayBadges.isEmpty
         ? art
@@ -325,180 +394,133 @@ class KonekoPosterArt extends StatelessWidget {
   }
 }
 
-class _PosterPainter extends CustomPainter {
-  const _PosterPainter(this.palette);
+/// Clean vector recreation of Kazumi / Bilibili's iconic little-TV (`-ω-`)
+/// loading placeholder that adapts naturally to light and dark surfaces.
+class _BiliTvPlaceholderPainter extends CustomPainter {
+  const _BiliTvPlaceholderPainter({
+    required this.iconColor,
+    required this.screenColor,
+  });
 
-  final PosterPalette palette;
+  final Color iconColor;
+  final Color screenColor;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
-    final primary = Color(palette.primaryHex);
-    final secondary = Color(palette.secondaryHex);
-    final accent = Color(palette.accentHex);
+    final base = math.min(size.width, size.height);
+    if (base <= 0) return;
 
-    canvas.drawRect(
-      rect,
-      Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [primary, secondary],
-        ).createShader(rect),
+    final tvWidth = (base * 0.44).clamp(26.0, 74.0);
+    final tvHeight = tvWidth * 0.74;
+    final cx = size.width / 2;
+    final cy = size.height / 2 + tvHeight * 0.05;
+    final stroke = (tvWidth * 0.095).clamp(2.4, 6.2);
+
+    final bodyRect = Rect.fromCenter(
+      center: Offset(cx, cy),
+      width: tvWidth,
+      height: tvHeight,
+    );
+    final bodyRadius = Radius.circular(tvWidth * 0.18);
+
+    final strokePaint = Paint()
+      ..color = iconColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    final fillPaint = Paint()
+      ..color = iconColor
+      ..style = PaintingStyle.fill;
+
+    // Two tilted antennae on top
+    final topY = bodyRect.top;
+    canvas.drawLine(
+      Offset(cx - tvWidth * 0.08, topY),
+      Offset(cx - tvWidth * 0.24, topY - tvHeight * 0.23),
+      strokePaint..strokeWidth = stroke * 0.82,
+    );
+    canvas.drawLine(
+      Offset(cx + tvWidth * 0.08, topY),
+      Offset(cx + tvWidth * 0.24, topY - tvHeight * 0.23),
+      strokePaint,
     );
 
-    final cx = size.width * 0.56;
-    final cy = size.height * 0.38;
-    final r = math.min(size.width, size.height) * 0.34;
+    // Two small rounded feet at bottom
+    final footRadius = stroke * 0.56;
+    canvas.drawCircle(
+      Offset(cx - tvWidth * 0.26, bodyRect.bottom + footRadius * 0.42),
+      footRadius,
+      fillPaint,
+    );
+    canvas.drawCircle(
+      Offset(cx + tvWidth * 0.26, bodyRect.bottom + footRadius * 0.42),
+      footRadius,
+      fillPaint,
+    );
 
-    switch (palette.motifIndex % 8) {
-      case 0:
-        canvas.drawCircle(
-          Offset(cx, cy),
-          r,
-          Paint()..color = accent.withValues(alpha: 0.25),
-        );
-        canvas.drawCircle(
-          Offset(cx + r * 0.35, cy - r * 0.25),
-          r * 0.48,
-          Paint()..color = accent.withValues(alpha: 0.72),
-        );
-        canvas.drawCircle(
-          Offset(size.width * 0.24, size.height * 0.74),
-          r * 0.85,
-          Paint()..color = Colors.white.withValues(alpha: 0.1),
-        );
-      case 1:
-        canvas.drawCircle(
-          Offset(size.width * 0.5, size.height * 0.42),
-          r * 0.9,
-          Paint()..color = accent.withValues(alpha: 0.22),
-        );
-        canvas.drawLine(
-          Offset(size.width * 0.24, size.height * 0.78),
-          Offset(size.width * 0.76, size.height * 0.22),
-          Paint()
-            ..color = accent.withValues(alpha: 0.8)
-            ..strokeWidth = size.width * 0.032
-            ..strokeCap = StrokeCap.round,
-        );
-        canvas.drawCircle(
-          Offset(size.width * 0.68, size.height * 0.3),
-          r * 0.26,
-          Paint()..color = accent,
-        );
-      case 2:
-        canvas.drawCircle(
-          Offset(size.width * 0.5, size.height * 0.36),
-          r * 0.72,
-          Paint()..color = accent.withValues(alpha: 0.82),
-        );
-        canvas.drawOval(
-          Rect.fromCenter(
-            center: Offset(size.width * 0.5, size.height * 0.86),
-            width: size.width * 1.15,
-            height: size.height * 0.46,
-          ),
-          Paint()..color = primary.withValues(alpha: 0.58),
-        );
-      case 3:
-        canvas.drawRSuperellipse(
-          RSuperellipse.fromRectAndRadius(
-            Rect.fromCenter(
-              center: Offset(size.width * 0.5, size.height * 0.44),
-              width: size.width * 0.54,
-              height: size.height * 0.38,
-            ),
-            Radius.circular(size.width * 0.08),
-          ),
-          Paint()..color = Colors.white.withValues(alpha: 0.24),
-        );
-        canvas.drawCircle(
-          Offset(size.width * 0.72, size.height * 0.22),
-          r * 0.32,
-          Paint()..color = accent.withValues(alpha: 0.85),
-        );
-      case 4:
-        canvas.drawCircle(
-          Offset(size.width * 0.5, size.height * 0.48),
-          r * 0.86,
-          Paint()..color = accent.withValues(alpha: 0.75),
-        );
-        canvas.drawCircle(
-          Offset(size.width * 0.5, size.height * 0.48),
-          r * 0.55,
-          Paint()..color = primary.withValues(alpha: 0.36),
-        );
-      case 5:
-        for (var i = 0; i < 3; i++) {
-          canvas.drawCircle(
-            Offset(size.width * 0.5, size.height * 0.45),
-            r * (0.45 + i * 0.35),
-            Paint()
-              ..style = PaintingStyle.stroke
-              ..strokeWidth = 2.2
-              ..color = accent.withValues(alpha: 0.55 - i * 0.14),
-          );
-        }
-        canvas.drawCircle(
-          Offset(size.width * 0.5, size.height * 0.45),
-          r * 0.22,
-          Paint()..color = accent,
-        );
-      case 6:
-        final path = Path()
-          ..moveTo(size.width * 0.2, size.height * 0.34)
-          ..lineTo(size.width * 0.8, size.height * 0.34)
-          ..lineTo(size.width * 0.8, size.height * 0.66)
-          ..lineTo(size.width * 0.2, size.height * 0.66)
-          ..close();
-        canvas.drawPath(
-          path,
-          Paint()..color = Colors.white.withValues(alpha: 0.24),
-        );
-        canvas.drawCircle(
-          Offset(size.width * 0.5, size.height * 0.5),
-          r * 0.26,
-          Paint()..color = accent.withValues(alpha: 0.9),
-        );
-      default:
-        final star = Path();
-        final center = Offset(size.width * 0.5, size.height * 0.44);
-        final outer = r * 0.82;
-        final inner = r * 0.28;
-        for (var i = 0; i < 8; i++) {
-          final rad = i * math.pi / 4 - math.pi / 2;
-          final dist = i.isEven ? outer : inner;
-          final pt = Offset(
-            center.dx + math.cos(rad) * dist,
-            center.dy + math.sin(rad) * dist,
-          );
-          if (i == 0) {
-            star.moveTo(pt.dx, pt.dy);
-          } else {
-            star.lineTo(pt.dx, pt.dy);
-          }
-        }
-        star.close();
-        canvas.drawPath(star, Paint()..color = accent.withValues(alpha: 0.85));
+    // Outer TV chassis + inner screen
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(bodyRect, bodyRadius),
+      Paint()..color = screenColor,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(bodyRect, bodyRadius),
+      strokePaint..strokeWidth = stroke,
+    );
+
+    // Relaxed slanted bar eyes (`-  -`)
+    final eyeY = cy - tvHeight * 0.06;
+    final eyeW = tvWidth * 0.17;
+    final eyeH = stroke * 0.72;
+    for (final sign in const [-1.0, 1.0]) {
+      canvas.save();
+      canvas.translate(cx + sign * tvWidth * 0.21, eyeY);
+      canvas.rotate(sign * 0.16);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(center: Offset.zero, width: eyeW, height: eyeH),
+          Radius.circular(eyeH * 0.35),
+        ),
+        fillPaint,
+      );
+      canvas.restore();
     }
 
-    // Subtle bottom scrim for badge legibility.
-    canvas.drawRect(
-      rect,
+    // Cute little `ω` mouth
+    final mouthY = cy + tvHeight * 0.15;
+    final mouthSpan = tvWidth * 0.11;
+    final mouthDrop = tvHeight * 0.10;
+    final mouthPath = Path()
+      ..moveTo(cx - mouthSpan, mouthY - mouthDrop * 0.25)
+      ..quadraticBezierTo(
+        cx - mouthSpan * 0.5,
+        mouthY + mouthDrop,
+        cx,
+        mouthY - mouthDrop * 0.1,
+      )
+      ..quadraticBezierTo(
+        cx + mouthSpan * 0.5,
+        mouthY + mouthDrop,
+        cx + mouthSpan,
+        mouthY - mouthDrop * 0.25,
+      );
+    canvas.drawPath(
+      mouthPath,
       Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          stops: const [0.55, 1.0],
-          colors: [Colors.transparent, Colors.black.withValues(alpha: 0.34)],
-        ).createShader(rect),
+        ..color = iconColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = stroke * 0.62
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round,
     );
   }
 
   @override
-  bool shouldRepaint(_PosterPainter oldDelegate) =>
-      oldDelegate.palette != palette;
+  bool shouldRepaint(_BiliTvPlaceholderPainter oldDelegate) =>
+      oldDelegate.iconColor != iconColor ||
+      oldDelegate.screenColor != screenColor;
 }
 
 /// Builds a concise metadata line for cards without ever showing "更至第 0 话".
@@ -526,11 +548,12 @@ class KonekoAutoScrollChipBar extends StatefulWidget {
     required this.labels,
     required this.selectedIndex,
     required this.onSelected,
-    this.height = 44,
+    this.height = 48,
     this.chipHeight = 36,
     this.fontSize = 13,
-    this.padding = const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+    this.padding = const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
     this.unselectedColor,
+    this.elevated = true,
   });
 
   final List<String> labels;
@@ -541,6 +564,7 @@ class KonekoAutoScrollChipBar extends StatefulWidget {
   final double fontSize;
   final EdgeInsetsGeometry padding;
   final Color? unselectedColor;
+  final bool elevated;
 
   @override
   State<KonekoAutoScrollChipBar> createState() =>
@@ -599,6 +623,7 @@ class _KonekoAutoScrollChipBarState extends State<KonekoAutoScrollChipBar> {
       height: widget.height,
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
+        clipBehavior: Clip.none,
         padding: widget.padding,
         child: Row(
           spacing: 8,
@@ -611,6 +636,7 @@ class _KonekoAutoScrollChipBarState extends State<KonekoAutoScrollChipBar> {
                   height: widget.chipHeight,
                   fontSize: widget.fontSize,
                   selected: i == widget.selectedIndex,
+                  elevated: widget.elevated,
                   backgroundColor: i == widget.selectedIndex
                       ? colorScheme.primary
                       : idleColor,
@@ -624,9 +650,10 @@ class _KonekoAutoScrollChipBarState extends State<KonekoAutoScrollChipBar> {
   }
 }
 
-/// Unified Anime Card (user-approved v3 design):
-/// Full-bleed poster cover fused together with the bottom text footer inside ONE
-/// borderless elevated `22dp` superellipse card — no detached floating captions.
+/// Unified Anime Card (pure FlClash elevated design):
+/// Full-bleed poster cover fused together with a locked-height text footer
+/// inside ONE borderless elevated superellipse card so every card in a row
+/// aligns pixel-perfectly regardless of 1-line vs 2-line title length.
 class UnifiedAnimeCard extends StatelessWidget {
   const UnifiedAnimeCard({
     super.key,
@@ -637,6 +664,7 @@ class UnifiedAnimeCard extends StatelessWidget {
     this.statusBadgeLabel,
     this.onStatusTap,
     this.showMetaLine = true,
+    this.corner = 22,
   });
 
   final AnimeSubject subject;
@@ -646,11 +674,14 @@ class UnifiedAnimeCard extends StatelessWidget {
   final String? statusBadgeLabel;
   final VoidCallback? onStatusTap;
   final bool showMetaLine;
+  final double corner;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
-    final shape = SuperellipseBorder(borderRadius: AppRadius.all(22));
+    final shape = SuperellipseBorder(borderRadius: AppRadius.all(corner));
+    final textScale = MediaQuery.textScalerOf(context).scale(1.0).clamp(1.0, 1.35);
+
     return DecoratedBox(
       decoration: ShapeDecoration(
         shape: shape,
@@ -739,28 +770,20 @@ class UnifiedAnimeCard extends StatelessWidget {
                 ],
               ),
             ),
-            Padding(
-              padding: EdgeInsets.fromLTRB(
-                10,
-                showMetaLine ? 9 : 8,
-                10,
-                showMetaLine ? 10 : 9,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    subject.title,
-                    maxLines: showMetaLine ? 1 : 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTextStyle.subheadline
-                        .of(context, emphasized: true)
-                        .copyWith(
-                          color: colorScheme.onSurface,
-                          fontSize: showMetaLine ? 14 : 13,
-                        ),
-                  ),
-                  if (showMetaLine) ...[
+            if (showMetaLine)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(10, 9, 10, 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      subject.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyle.subheadline
+                          .of(context, emphasized: true)
+                          .copyWith(color: colorScheme.onSurface, fontSize: 14),
+                    ),
                     const SizedBox(height: 4),
                     Text(
                       subjectMetaCaption(subject),
@@ -771,9 +794,32 @@ class UnifiedAnimeCard extends StatelessWidget {
                           .copyWith(color: colorScheme.onSurfaceVariant),
                     ),
                   ],
-                ],
+                ),
+              )
+            else
+              // Locked uniform 2-line footer height so every card in the Library
+              // grid aligns its cover bottom and white block pixel-perfectly.
+              SizedBox(
+                height: (48 * textScale).roundToDouble(),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(9, 7, 9, 7),
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: Text(
+                      subject.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyle.subheadline
+                          .of(context, emphasized: true)
+                          .copyWith(
+                            color: colorScheme.onSurface,
+                            fontSize: 12.5,
+                            height: 1.25,
+                          ),
+                    ),
+                  ),
+                ),
               ),
-            ),
           ],
         ),
       ),

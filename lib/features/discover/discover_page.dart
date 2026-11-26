@@ -616,11 +616,17 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
-                  child: SearchField(
-                    controller: _controller,
-                    fill: SurfaceLevel.card.colorOf(colorScheme),
-                    hintText: '搜索 Bangumi 番名或原名…',
-                    onChanged: _onKeywordChanged,
+                  child: DecoratedBox(
+                    decoration: ShapeDecoration(
+                      shape: AppShape.full,
+                      shadows: konekoPillShadows(colorScheme),
+                    ),
+                    child: SearchField(
+                      controller: _controller,
+                      fill: SurfaceLevel.card.colorOf(colorScheme),
+                      hintText: '搜索 Bangumi 番名或原名…',
+                      onChanged: _onKeywordChanged,
+                    ),
                   ),
                 ),
               ),
@@ -638,6 +644,7 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
                             : '按条件查找',
                         height: 32,
                         fontSize: 12.5,
+                        elevated: true,
                         selected: filterCount > 0,
                         backgroundColor: filterCount > 0
                             ? colorScheme.primary
@@ -656,6 +663,10 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
                           label: _sortLabel(_filter.sort),
                           height: 32,
                           fontSize: 12,
+                          elevated: true,
+                          backgroundColor: SurfaceLevel.card.colorOf(
+                            colorScheme,
+                          ),
                           onPressed: _openFilterSheet,
                         ),
                       for (final tag in _filter.tags)
@@ -663,8 +674,9 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
                           label: tag,
                           height: 32,
                           fontSize: 12,
-                          backgroundColor: colorScheme.primary.withValues(
-                            alpha: 0.14,
+                          elevated: true,
+                          backgroundColor: SurfaceLevel.card.colorOf(
+                            colorScheme,
                           ),
                           foregroundColor: colorScheme.primary,
                           onPressed: _openFilterSheet,
@@ -674,6 +686,10 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
                           label: season.shortLabel,
                           height: 32,
                           fontSize: 12,
+                          elevated: true,
+                          backgroundColor: SurfaceLevel.card.colorOf(
+                            colorScheme,
+                          ),
                           onPressed: _openFilterSheet,
                         )
                       else if (_filter.year case final year?)
@@ -681,6 +697,10 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
                           label: '$year 年',
                           height: 32,
                           fontSize: 12,
+                          elevated: true,
+                          backgroundColor: SurfaceLevel.card.colorOf(
+                            colorScheme,
+                          ),
                           onPressed: _openFilterSheet,
                         ),
                       if (_filter.minScore case final minScore?)
@@ -688,6 +708,10 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
                           label: '评分 ${minScore.toStringAsFixed(1)}+',
                           height: 32,
                           fontSize: 12,
+                          elevated: true,
+                          backgroundColor: SurfaceLevel.card.colorOf(
+                            colorScheme,
+                          ),
                           onPressed: _openFilterSheet,
                         ),
                       if (filterCount > 0)
@@ -695,6 +719,10 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
                           label: '清空条件',
                           height: 32,
                           fontSize: 12,
+                          elevated: true,
+                          backgroundColor: SurfaceLevel.card.colorOf(
+                            colorScheme,
+                          ),
                           onPressed: () {
                             final reset = SearchFilter(
                               keyword: _filter.keyword,
@@ -731,6 +759,7 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
                             label: '# $hot',
                             height: 28,
                             fontSize: 12,
+                            elevated: true,
                             backgroundColor: SurfaceLevel.card.colorOf(
                               colorScheme,
                             ),

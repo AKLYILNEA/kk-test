@@ -13,7 +13,7 @@ Dio networkClient() => Dio(
     sendTimeout: const Duration(seconds: 12),
     headers: {
       'user-agent':
-          'AKLYILNEA/Koneko/0.0.5 (https://github.com/AKLYILNEA/kk-test)',
+          'AKLYILNEA/Koneko/0.0.6 (https://github.com/AKLYILNEA/kk-test)',
     },
   ),
 );

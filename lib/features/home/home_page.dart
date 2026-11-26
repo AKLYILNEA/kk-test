@@ -69,7 +69,6 @@ class _HomePageState extends ConsumerState<HomePage> {
     final loading = ref.watch(loadHomeCatalogProvider);
     final library = ref.watch(libraryProvider);
     final history = ref.watch(historyProvider);
-    final rules = ref.watch(rulesProvider);
 
     final subjects = catalog.getTrending(tag: _selectedTag);
     final trackingIds = {
@@ -80,7 +79,6 @@ class _HomePageState extends ConsumerState<HomePage> {
     final resumeSubject = latestHistory != null
         ? catalog.getSubjectById(latestHistory.subjectId)
         : (subjects.isNotEmpty ? subjects.first : null);
-    final enabledRulesCount = rules.where((r) => r.enabled).length;
 
     return KonekoScaffold(
       title: '推荐',
@@ -117,12 +115,10 @@ class _HomePageState extends ConsumerState<HomePage> {
               if (resumeSubject != null)
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
                     child: _TopSummaryDeck(
                       subject: resumeSubject,
                       history: latestHistory,
-                      watchingCount: trackingIds.length,
-                      enabledRulesCount: enabledRulesCount,
                       onResume: () => _openPlayer(
                         resumeSubject,
                         latestHistory?.lastEpisode ?? 1,
@@ -135,12 +131,12 @@ class _HomePageState extends ConsumerState<HomePage> {
                 ),
               SliverToBoxAdapter(
                 child: KonekoAutoScrollChipBar(
-                  height: 40,
+                  height: 46,
                   chipHeight: 34,
                   fontSize: 13,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16,
-                    vertical: 2,
+                    vertical: 6,
                   ),
                   labels: _tags,
                   selectedIndex: _tags
@@ -166,7 +162,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                 SliverPadding(
                   padding: EdgeInsets.fromLTRB(
                     16,
-                    14,
+                    12,
                     16,
                     24 + widget.bottomPadding,
                   ),
@@ -200,16 +196,12 @@ class _TopSummaryDeck extends StatelessWidget {
   const _TopSummaryDeck({
     required this.subject,
     required this.history,
-    required this.watchingCount,
-    required this.enabledRulesCount,
     required this.onResume,
     required this.onOpenDetail,
   });
 
   final AnimeSubject subject;
   final MergedHistoryEntry? history;
-  final int watchingCount;
-  final int enabledRulesCount;
   final VoidCallback onResume;
   final VoidCallback onOpenDetail;
 
@@ -303,7 +295,7 @@ class _TopSummaryDeck extends StatelessWidget {
             ],
           ),
           if (history != null) ...[
-            const SizedBox(height: 11),
+            const SizedBox(height: 12),
             ClipRRect(
               borderRadius: AppRadius.full,
               child: Container(
@@ -317,68 +309,7 @@ class _TopSummaryDeck extends StatelessWidget {
               ),
             ),
           ],
-          const SizedBox(height: 11),
-          IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              spacing: 8,
-              children: [
-                Expanded(
-                  child: _SummaryStat(label: '在追', value: '$watchingCount 部'),
-                ),
-                Expanded(
-                  child: _SummaryStat(
-                    label: '已启用规则',
-                    value: '$enabledRulesCount 个源',
-                    color: colorScheme.primary,
-                  ),
-                ),
-              ],
-            ),
-          ),
         ],
-      ),
-    );
-  }
-}
-
-class _SummaryStat extends StatelessWidget {
-  const _SummaryStat({required this.label, required this.value, this.color});
-
-  final String label;
-  final String value;
-  final Color? color;
-
-  @override
-  Widget build(BuildContext context) {
-    return KonekoBlock(
-      corner: 16,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-      child: Align(
-        alignment: AlignmentDirectional.centerStart,
-        child: SizedBox(
-          width: double.infinity,
-          child: Wrap(
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 6,
-            runSpacing: 4,
-            children: [
-              Text(
-                label,
-                style: AppTextStyle.caption1
-                    .of(context)
-                    .copyWith(color: context.colorScheme.onSurfaceVariant),
-              ),
-              Text(
-                value,
-                style: AppTextStyle.subheadline
-                    .of(context, emphasized: true)
-                    .copyWith(color: color ?? context.colorScheme.onSurface),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

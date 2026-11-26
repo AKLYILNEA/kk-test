@@ -301,9 +301,15 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   }
 
   Future<void> _verifyRule(String ruleId, String ruleName, Uri verifyUrl) async {
-    final verified = await BaseNavigator.push<bool>(
-      context,
-      RuleVerifyPage(ruleId: ruleId, ruleName: ruleName, verifyUrl: verifyUrl),
+    if (_fullscreen) {
+      await _setFullscreen(false);
+    }
+    if (!mounted) return;
+    final verified = await showRuleVerifySheet(
+      context: context,
+      ruleId: ruleId,
+      ruleName: ruleName,
+      verifyUrl: verifyUrl,
     );
     if (!mounted || verified != true) return;
     showKonekoBanner(
@@ -1311,7 +1317,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: SegmentedControl<_PanelTab>(
+          child: KonekoSegmentedBar<_PanelTab>(
             segments: [
               const (_PanelTab.episodes, '选集'),
               const (_PanelTab.sources, '换源与弹幕'),
@@ -1402,8 +1408,11 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                   label: line.line,
                   height: 30,
                   fontSize: 12,
-                  selected: line.page == _source?.page,
-                  backgroundColor: line.page == _source?.page
+                  elevated: true,
+                  selected:
+                      line.line == _source?.line && line.page == _source?.page,
+                  backgroundColor:
+                      line.line == _source?.line && line.page == _source?.page
                       ? colorScheme.primary
                       : SurfaceLevel.card.colorOf(colorScheme),
                   onPressed: _loading
@@ -1448,6 +1457,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                   height: 32,
                   chipHeight: 28,
                   fontSize: 11.5,
+                  elevated: false,
                   padding: EdgeInsets.zero,
                   unselectedColor: SurfaceLevel.block.colorOf(colorScheme),
                   labels: [
@@ -1704,7 +1714,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                           label: line.line,
                           height: 30,
                           fontSize: 12,
-                          selected: line.page == _source?.page,
+                          selected:
+                              line.line == _source?.line &&
+                              line.page == _source?.page,
                           onPressed: _loading
                               ? null
                               : () => _openEpisode(
@@ -2133,9 +2145,18 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                   if (offline)
                     Text('当前正在离线播放', style: _style(context))
                   else ...[
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4, bottom: 6),
+                      child: Text(
+                        '播放源（规则）',
+                        style: _style(context, small: true).copyWith(
+                          color: Colors.white.withValues(alpha: 0.62),
+                        ),
+                      ),
+                    ),
                     for (final rule in rules.where((rule) => rule.enabled))
                       Padding(
-                        padding: const EdgeInsets.only(bottom: 5),
+                        padding: const EdgeInsets.only(bottom: 6),
                         child: _HudAction(
                           label: () {
                             final probe = _probes[rule.id];
@@ -2172,21 +2193,46 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                                 },
                         ),
                       ),
-                    for (final line in lines)
+                    if (lines.isNotEmpty) ...[
+                      Container(
+                        height: 1,
+                        margin: const EdgeInsets.symmetric(vertical: 8),
+                        color: Colors.white.withValues(alpha: 0.14),
+                      ),
                       Padding(
-                        padding: const EdgeInsets.only(bottom: 5),
-                        child: _HudAction(
-                          label: line.line,
-                          active: line.page == _source?.page,
-                          onTap: _loading
-                              ? null
-                              : () => _openEpisode(
-                                  _episode,
-                                  ruleId: line.ruleId,
-                                  choice: line,
-                                ),
+                        padding: const EdgeInsets.only(left: 4, bottom: 6),
+                        child: Text(
+                          _ruleName.isNotEmpty
+                              ? '当前源线路 · $_ruleName'
+                              : '当前源线路',
+                          style: _style(context, small: true).copyWith(
+                            color: Colors.white.withValues(alpha: 0.62),
+                          ),
                         ),
                       ),
+                      for (final line in lines)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: _HudAction(
+                            label: line.line,
+                            active:
+                                line.line == _source?.line &&
+                                line.page == _source?.page,
+                            onTap: _loading
+                                ? null
+                                : () => _openEpisode(
+                                    _episode,
+                                    ruleId: line.ruleId,
+                                    choice: line,
+                                  ),
+                          ),
+                        ),
+                    ],
+                    Container(
+                      height: 1,
+                      margin: const EdgeInsets.symmetric(vertical: 8),
+                      color: Colors.white.withValues(alpha: 0.14),
+                    ),
                     _HudAction(
                       label: '管理规则',
                       onTap: () => BaseNavigator.push<void>(

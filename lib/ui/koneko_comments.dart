@@ -10,6 +10,7 @@ import 'package:prism_ui/icons/icons.dart';
 import 'package:prism_ui/prism_ui.dart';
 
 /// Reusable Bangumi 吐槽箱 comments panel used in both SubjectDetailPage and PlayerPage.
+/// Both modes present comments inside clean FlClash elevated cards.
 class KonekoCommentsPanel extends ConsumerStatefulWidget {
   const KonekoCommentsPanel({
     super.key,
@@ -20,8 +21,9 @@ class KonekoCommentsPanel extends ConsumerStatefulWidget {
 
   final int subjectId;
 
-  /// When true, renders directly inside a scrollable viewport (e.g. PlayerPage tab)
-  /// without outer card chrome; when false, wraps inside a [KonekoCard].
+  /// When true, renders as a scrollable list of elevated [KonekoCard] items
+  /// (e.g. inside PlayerPage's Comments tab); when false, wraps inside a single
+  /// outer [KonekoCard] section.
   final bool embedded;
   final double bottomPadding;
 
@@ -104,6 +106,10 @@ class _KonekoCommentsPanelState extends ConsumerState<KonekoCommentsPanel> {
           label: '刷新',
           height: 28,
           fontSize: 12,
+          elevated: widget.embedded,
+          backgroundColor: widget.embedded
+              ? SurfaceLevel.card.colorOf(colorScheme)
+              : null,
           leading: GlyphIcon(
             KonekoGlyphs.refresh,
             size: 13,
@@ -114,7 +120,7 @@ class _KonekoCommentsPanelState extends ConsumerState<KonekoCommentsPanel> {
       ],
     );
 
-    Widget buildBody() {
+    Widget buildEmptyOrLoading() {
       if (commentsAsync.isLoading && items.isEmpty) {
         return const Padding(
           padding: EdgeInsets.symmetric(vertical: 32),
@@ -147,49 +153,57 @@ class _KonekoCommentsPanelState extends ConsumerState<KonekoCommentsPanel> {
           ),
         );
       }
-      if (items.isEmpty) {
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 28),
-          child: Center(
-            child: Text(
-              '暂时还没有吐槽评论',
-              style: AppTextStyle.subheadline
-                  .of(context)
-                  .copyWith(color: colorScheme.onSurfaceVariant),
-            ),
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 28),
+        child: Center(
+          child: Text(
+            '暂时还没有吐槽评论',
+            style: AppTextStyle.subheadline
+                .of(context)
+                .copyWith(color: colorScheme.onSurfaceVariant),
           ),
-        );
-      }
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        spacing: 10,
-        children: [
-          for (final comment in items) _KonekoCommentTile(comment: comment),
-          if (hasMore)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Center(
-                child: KonekoChip(
-                  label: _loadingMore ? '正在加载...' : '加载更多评论',
-                  height: 36,
-                  fontSize: 13,
-                  backgroundColor: colorScheme.primary.withValues(alpha: 0.14),
-                  foregroundColor: colorScheme.primary,
-                  onPressed: _loadingMore ? null : () => _loadMore(items.length),
-                ),
-              ),
-            ),
-        ],
+        ),
       );
     }
 
     if (widget.embedded) {
       return ListView(
-        padding: EdgeInsets.fromLTRB(16, 10, 16, widget.bottomPadding),
+        padding: EdgeInsets.fromLTRB(16, 8, 16, widget.bottomPadding),
         children: [
-          header,
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: header,
+          ),
           const SizedBox(height: 12),
-          buildBody(),
+          if (items.isEmpty)
+            KonekoCard(
+              corner: 24,
+              padding: const EdgeInsets.all(16),
+              child: buildEmptyOrLoading(),
+            )
+          else ...[
+            for (var i = 0; i < items.length; i++) ...[
+              _KonekoCommentTile(comment: items[i], cardized: true),
+              if (i < items.length - 1) const SizedBox(height: 10),
+            ],
+            if (hasMore)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Center(
+                  child: KonekoChip(
+                    label: _loadingMore ? '正在加载...' : '加载更多评论',
+                    height: 36,
+                    fontSize: 13,
+                    elevated: true,
+                    backgroundColor: SurfaceLevel.card.colorOf(colorScheme),
+                    foregroundColor: colorScheme.primary,
+                    onPressed: _loadingMore
+                        ? null
+                        : () => _loadMore(items.length),
+                  ),
+                ),
+              ),
+          ],
         ],
       );
     }
@@ -202,7 +216,36 @@ class _KonekoCommentsPanelState extends ConsumerState<KonekoCommentsPanel> {
         children: [
           header,
           const SizedBox(height: 12),
-          buildBody(),
+          if (items.isEmpty)
+            buildEmptyOrLoading()
+          else ...[
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              spacing: 10,
+              children: [
+                for (final comment in items)
+                  _KonekoCommentTile(comment: comment, cardized: false),
+              ],
+            ),
+            if (hasMore)
+              Padding(
+                padding: const EdgeInsets.only(top: 14),
+                child: Center(
+                  child: KonekoChip(
+                    label: _loadingMore ? '正在加载...' : '加载更多评论',
+                    height: 36,
+                    fontSize: 13,
+                    backgroundColor: colorScheme.primary.withValues(
+                      alpha: 0.14,
+                    ),
+                    foregroundColor: colorScheme.primary,
+                    onPressed: _loadingMore
+                        ? null
+                        : () => _loadMore(items.length),
+                  ),
+                ),
+              ),
+          ],
         ],
       ),
     );
@@ -210,9 +253,10 @@ class _KonekoCommentsPanelState extends ConsumerState<KonekoCommentsPanel> {
 }
 
 class _KonekoCommentTile extends StatefulWidget {
-  const _KonekoCommentTile({required this.comment});
+  const _KonekoCommentTile({required this.comment, required this.cardized});
 
   final SubjectComment comment;
+  final bool cardized;
 
   @override
   State<_KonekoCommentTile> createState() => _KonekoCommentTileState();
@@ -228,83 +272,93 @@ class _KonekoCommentTileState extends State<_KonekoCommentTile> {
     final isLong =
         c.content.length > 140 || '\n'.allMatches(c.content).length >= 3;
 
+    final body = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            KonekoAvatar(
+              name: c.userName,
+              avatarUrl: c.avatarUrl,
+              size: 34,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    c.userName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyle.subheadline
+                        .of(context, emphasized: true)
+                        .copyWith(color: colorScheme.onSurface),
+                  ),
+                  Text(
+                    formatRelativeTime(c.updatedAt),
+                    style: AppTextStyle.caption2
+                        .of(context)
+                        .copyWith(color: colorScheme.onSurfaceVariant),
+                  ),
+                ],
+              ),
+            ),
+            if (c.rate > 0)
+              KonekoChip(
+                label: '${c.rate}',
+                height: 22,
+                fontSize: 11,
+                leading: const GlyphIcon(
+                  KonekoGlyphs.star,
+                  size: 11,
+                  color: Color(0xFFE09F24),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 9),
+        Text(
+          c.content,
+          maxLines: _expanded ? null : 4,
+          overflow: _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
+          style: AppTextStyle.footnote
+              .of(context)
+              .copyWith(color: colorScheme.onSurface, height: 1.5),
+        ),
+        if (isLong) ...[
+          const SizedBox(height: 6),
+          Align(
+            alignment: Alignment.centerRight,
+            child: PressSurface(
+              fill: Colors.transparent,
+              shape: AppShape.full,
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              onPressed: () => setState(() => _expanded = !_expanded),
+              child: Text(
+                _expanded ? '收起' : '展开全文',
+                style: AppTextStyle.caption1
+                    .of(context, emphasized: true)
+                    .copyWith(color: colorScheme.primary),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+
+    if (widget.cardized) {
+      return KonekoCard(
+        corner: 22,
+        padding: const EdgeInsets.all(14),
+        child: body,
+      );
+    }
+
     return KonekoBlock(
       corner: 18,
       padding: const EdgeInsets.all(13),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              KonekoAvatar(
-                name: c.userName,
-                avatarUrl: c.avatarUrl,
-                size: 34,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      c.userName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyle.subheadline
-                          .of(context, emphasized: true)
-                          .copyWith(color: colorScheme.onSurface),
-                    ),
-                    Text(
-                      formatRelativeTime(c.updatedAt),
-                      style: AppTextStyle.caption2
-                          .of(context)
-                          .copyWith(color: colorScheme.onSurfaceVariant),
-                    ),
-                  ],
-                ),
-              ),
-              if (c.rate > 0)
-                KonekoChip(
-                  label: '${c.rate}',
-                  height: 22,
-                  fontSize: 11,
-                  leading: const GlyphIcon(
-                    KonekoGlyphs.star,
-                    size: 11,
-                    color: Color(0xFFE09F24),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 9),
-          Text(
-            c.content,
-            maxLines: _expanded ? null : 4,
-            overflow: _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
-            style: AppTextStyle.footnote
-                .of(context)
-                .copyWith(color: colorScheme.onSurface, height: 1.5),
-          ),
-          if (isLong) ...[
-            const SizedBox(height: 6),
-            Align(
-              alignment: Alignment.centerRight,
-              child: PressSurface(
-                fill: Colors.transparent,
-                shape: AppShape.full,
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                onPressed: () => setState(() => _expanded = !_expanded),
-                child: Text(
-                  _expanded ? '收起' : '展开全文',
-                  style: AppTextStyle.caption1
-                      .of(context, emphasized: true)
-                      .copyWith(color: colorScheme.primary),
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
+      child: body,
     );
   }
 }
