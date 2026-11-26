@@ -1,3 +1,4 @@
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:koneko/common/providers.dart';
@@ -64,7 +65,7 @@ class _SchedulePageState extends ConsumerState<SchedulePage> {
         builder: (context, constraints) {
           final isWide = constraints.maxWidth >= 760;
           return CustomScrollView(
-            cacheExtent: 600,
+            scrollCacheExtent: const ScrollCacheExtent.pixels(600),
             slivers: [
               const KonekoScrollStart(),
               SliverToBoxAdapter(

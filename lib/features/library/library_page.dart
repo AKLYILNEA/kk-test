@@ -1,4 +1,5 @@
 import 'package:collection/collection.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:koneko/common/providers.dart';
@@ -107,7 +108,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
               : 1;
 
           return CustomScrollView(
-            cacheExtent: 600,
+            scrollCacheExtent: const ScrollCacheExtent.pixels(600),
             slivers: [
               const KonekoScrollStart(),
               if (_showSearch)

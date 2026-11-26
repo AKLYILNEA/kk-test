@@ -1,3 +1,4 @@
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:koneko/common/constants.dart';
@@ -112,7 +113,7 @@ class _HomePageState extends ConsumerState<HomePage> {
               : 2;
 
           return CustomScrollView(
-            cacheExtent: 800,
+            scrollCacheExtent: const ScrollCacheExtent.pixels(800),
             slivers: [
               const KonekoScrollStart(),
               if (resumeSubject != null)
