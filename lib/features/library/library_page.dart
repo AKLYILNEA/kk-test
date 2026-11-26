@@ -2,6 +2,7 @@ import 'package:collection/collection.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:koneko/common/providers.dart';
+import 'package:koneko/features/my/service_settings_page.dart';
 import 'package:koneko/features/detail/subject_detail_page.dart';
 import 'package:koneko/features/player/player_page.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
@@ -41,6 +42,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
+    ref.watch(catalogUpdatesProvider);
     final catalog = ref.watch(catalogRepositoryProvider);
     final entries = ref.watch(libraryProvider);
     final history = ref.watch(historyProvider);
@@ -91,13 +93,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
         IconButtonData(
           glyph: KonekoGlyphs.sync,
           tooltip: '同步 Bangumi',
-          onPressed: () {
-            showKonekoBanner(
-              context,
-              '已与 Bangumi 收藏同步（Mock 演示）',
-              level: BannerLevel.success,
-            );
-          },
+          onPressed: () =>
+              BaseNavigator.push<void>(context, const ServiceSettingsPage()),
         ),
       ],
       body: LayoutBuilder(

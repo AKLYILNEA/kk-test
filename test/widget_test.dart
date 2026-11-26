@@ -48,7 +48,7 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
 
-    await tester.pumpWidget(const ProviderScope(child: KonekoApp()));
+    await tester.pumpWidget(_testApp());
     await tester.pumpAndSettle();
 
     expect(find.text('推荐'), findsWidgets);
@@ -99,7 +99,7 @@ void main() {
     'narrow toolbar stays above scrolling and uses mobile push and back',
     (tester) async {
       _setViewport(tester, const Size(320, 720));
-      await tester.pumpWidget(const ProviderScope(child: KonekoApp()));
+      await tester.pumpWidget(_testApp());
       await tester.pumpAndSettle();
 
       final toolbar = find.byType(ScaffoldBar);
@@ -137,7 +137,7 @@ void main() {
     'rapid tab switches retain controls and group the first two actions',
     (tester) async {
       _setViewport(tester, const Size(360, 780));
-      await tester.pumpWidget(const ProviderScope(child: KonekoApp()));
+      await tester.pumpWidget(_testApp());
       await tester.pumpAndSettle();
 
       Finder dockItem(String label) => find.descendant(
@@ -179,7 +179,7 @@ void main() {
 
   testWidgets('desktop push fades inside the sidebar content', (tester) async {
     _setViewport(tester, const Size(1100, 800));
-    await tester.pumpWidget(const ProviderScope(child: KonekoApp()));
+    await tester.pumpWidget(_testApp());
     await tester.pumpAndSettle();
 
     await tester.tap(_barAction('发现搜索'));
@@ -207,4 +207,24 @@ void _setViewport(WidgetTester tester, Size size) {
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
+}
+
+Widget _testApp() => ProviderScope(
+  overrides: [
+    catalogRepositoryProvider.overrideWithValue(MockCatalogRepository()),
+    ruleRepositoryProvider.overrideWithValue(MockRuleRepository()),
+    libraryProvider.overrideWith(_FixtureLibrary.new),
+    historyProvider.overrideWith(_FixtureHistory.new),
+  ],
+  child: const KonekoApp(),
+);
+
+class _FixtureLibrary extends LibraryNotifier {
+  @override
+  List<CollectionEntry> build() => MockSeedData.initialCollections();
+}
+
+class _FixtureHistory extends HistoryNotifier {
+  @override
+  List<MergedHistoryEntry> build() => MockSeedData.initialMergedHistory();
 }

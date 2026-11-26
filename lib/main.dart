@@ -10,6 +10,7 @@ import 'package:koneko/common/providers.dart';
 import 'package:koneko/common/ui_localizations.dart';
 import 'package:koneko/features/shell/home_shell.dart';
 import 'package:koneko/ui/miuix/miuix_bg_effect.dart';
+import 'package:koneko_core/koneko_core.dart';
 import 'package:prism_ui/prism_ui.dart';
 
 Future<void> main() async {
@@ -17,7 +18,31 @@ Future<void> main() async {
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   await FontManager.init();
   unawaited(MiuixBgEffectController.warmUp());
-  runApp(const ProviderScope(child: KonekoApp()));
+  final core = await KonekoCore.open();
+  runApp(
+    ProviderScope(
+      overrides: [
+        catalogRepositoryProvider.overrideWithValue(core.catalog),
+        ruleRepositoryProvider.overrideWithValue(core.rules),
+        trackingStoreProvider.overrideWithValue(core.tracking),
+        secretsProvider.overrideWithValue(core.settings),
+        trackingSyncProvider.overrideWithValue(core.sync),
+        playbackSourcesProvider.overrideWithValue(core.sources),
+        offlineLibraryProvider.overrideWithValue(core.offline),
+        danmakuProvider.overrideWithValue(core.danmaku),
+        checkForUpdateProvider.overrideWithValue(findKonekoUpdate),
+        playbackFactoryProvider.overrideWithValue(() {
+          NativePlayback.initialize();
+          return NativePlayback();
+        }),
+        videoViewportProvider.overrideWithValue(NativePlayback.viewport),
+        danmakuViewportProvider.overrideWithValue(
+          (items, status) => NativeDanmaku(items: items, status: status),
+        ),
+      ],
+      child: const KonekoApp(),
+    ),
+  );
 }
 
 class KonekoApp extends ConsumerWidget {
@@ -26,6 +51,8 @@ class KonekoApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(themeSettingsProvider);
+    ref.watch(loadHomeCatalogProvider);
+    ref.watch(loadTrackedSubjectsProvider);
 
     return ValueListenableBuilder<String?>(
       valueListenable: FontManager.fontFamilyNotifier,

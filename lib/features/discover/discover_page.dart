@@ -19,7 +19,7 @@ class DiscoverPage extends ConsumerStatefulWidget {
 }
 
 class _DiscoverPageState extends ConsumerState<DiscoverPage> {
-  static const _hotQueries = ['星海旅人', '青瓷药铺', '流光协奏曲', '科幻', '治愈'];
+  static const _hotQueries = ['葬送的芙莉莲', '间谍过家家', '四月是你的谎言'];
   static const _tags = ['全部', '奇幻', '治愈', '日常', '科幻', '悬疑', '音乐', '美食'];
 
   final TextEditingController _controller = TextEditingController();
@@ -43,6 +43,7 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
+    ref.watch(catalogUpdatesProvider);
     final catalog = ref.watch(catalogRepositoryProvider);
     final library = ref.watch(libraryProvider);
     final trackingIds = {
@@ -50,6 +51,9 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
         if (e.status == CollectionStatus.watching) e.subjectId,
     };
     final results = catalog.search(_query, tag: _tag);
+    final lookup = ref.watch(searchCatalogProvider(_query.trim()));
+    final feed = ref.watch(loadHomeCatalogProvider);
+    final status = _query.trim().isEmpty ? feed : lookup;
 
     return KonekoScaffold(
       title: '发现搜索',
@@ -74,7 +78,7 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
                   child: SearchField(
                     controller: _controller,
                     fill: SurfaceLevel.card.colorOf(colorScheme),
-                    hintText: '搜索番名、原名、制作社或标签...',
+                    hintText: '搜索 Bangumi 番名或原名…',
                     onChanged: (v) => setState(() => _query = v),
                   ),
                 ),
@@ -129,12 +133,29 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
                 SliverFillRemaining(
                   hasScrollBody: false,
                   child: Center(
-                    child: Text(
-                      '未找到匹配「$_query」的番剧',
-                      style: AppTextStyle.subheadline
-                          .of(context)
-                          .copyWith(color: colorScheme.onSurfaceVariant),
-                    ),
+                    child: status.isLoading
+                        ? const ActivityIndicator()
+                        : status.hasError
+                        ? TextButton(
+                            onPressed: () {
+                              if (_query.trim().isEmpty) {
+                                ref.invalidate(loadHomeCatalogProvider);
+                              } else {
+                                ref.invalidate(
+                                  searchCatalogProvider(_query.trim()),
+                                );
+                              }
+                            },
+                            child: const Text('搜索失败，点此重试'),
+                          )
+                        : Text(
+                            _query.trim().isEmpty
+                                ? '输入番名开始搜索'
+                                : '未找到匹配「$_query」的番剧',
+                            style: AppTextStyle.subheadline
+                                .of(context)
+                                .copyWith(color: colorScheme.onSurfaceVariant),
+                          ),
                   ),
                 )
               else

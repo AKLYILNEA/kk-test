@@ -1,3 +1,5 @@
+export 'online.dart';
+
 /// Collection tracking state aligned with Bangumi & Animeko.
 enum CollectionStatus {
   watching('在看'),
@@ -11,12 +13,7 @@ enum CollectionStatus {
 }
 
 /// Four-state episode lifecycle inspired by Animeko.
-enum EpisodeWatchState {
-  watched,
-  current,
-  aired,
-  unaired,
-}
+enum EpisodeWatchState { watched, current, aired, unaired }
 
 /// Visual poster palette seed for deterministic procedural cover art
 /// (replaced by network covers when koneko_core connects to Bangumi).
@@ -62,6 +59,7 @@ class AnimeSubject {
   final int rank;
   final int year;
   final String seasonLabel;
+
   /// 1 = Monday .. 7 = Sunday
   final int weekday;
   final int airedEpisodes;
@@ -166,6 +164,7 @@ class SourceProgressRecord {
     required this.positionSeconds,
     required this.durationSeconds,
     required this.watchedAt,
+    this.isCompleted = false,
   });
 
   final String ruleId;
@@ -174,9 +173,13 @@ class SourceProgressRecord {
   final int positionSeconds;
   final int durationSeconds;
   final DateTime watchedAt;
+  final bool isCompleted;
 
-  double get progressRatio =>
-      durationSeconds <= 0 ? 0 : (positionSeconds / durationSeconds).clamp(0, 1);
+  double get progressRatio => isCompleted
+      ? 1
+      : durationSeconds <= 0
+      ? 0
+      : (positionSeconds / durationSeconds).clamp(0, 1);
 }
 
 /// Animeko-style unified watch history card keyed strictly by [subjectId].
@@ -203,7 +206,8 @@ class MergedHistoryEntry {
   final DateTime updatedAt;
   final List<SourceProgressRecord> sourceRecords;
 
-  int get mergedSourceCount => sourceRecords.length;
+  int get mergedSourceCount =>
+      sourceRecords.map((record) => record.ruleId).toSet().length;
 
   double get progressRatio => lastDurationSeconds <= 0
       ? 0
@@ -277,7 +281,11 @@ abstract interface class CatalogRepository {
   List<AnimeSubject> getTrending({String? tag});
   List<AnimeSubject> getByWeekday(int weekday);
   List<AnimeSubject> search(String query, {String? tag});
-  List<EpisodeItem> getEpisodes(int subjectId, {int watchedCount = 0, int? currentEp});
+  List<EpisodeItem> getEpisodes(
+    int subjectId, {
+    int watchedCount = 0,
+    int? currentEp,
+  });
   List<RuleSourceProbe> probeSources(int subjectId);
   List<DanmakuItem> getDanmaku(int subjectId, int episodeNumber);
 }

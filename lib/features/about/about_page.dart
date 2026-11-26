@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:koneko/common/providers.dart';
 import 'package:koneko/common/constants.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
 import 'package:koneko/ui/koneko_scaffold.dart';
@@ -14,7 +16,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 /// 08 · 1:1 FlClash MIUIX About Page with dynamic fluid mesh shader,
 /// chromatic cat-ear Logo & Title, floating pills, and frosted glass cards.
-class AboutPage extends StatefulWidget {
+class AboutPage extends ConsumerStatefulWidget {
   const AboutPage({
     super.key,
     this.showBack = false,
@@ -27,10 +29,10 @@ class AboutPage extends StatefulWidget {
   final bool dynamicBackground;
 
   @override
-  State<AboutPage> createState() => _AboutPageState();
+  ConsumerState<AboutPage> createState() => _AboutPageState();
 }
 
-class _AboutPageState extends State<AboutPage>
+class _AboutPageState extends ConsumerState<AboutPage>
     with SingleTickerProviderStateMixin {
   final GlobalKey _backdropKey = GlobalKey();
   final GlobalKey _heroKey = GlobalKey();
@@ -97,14 +99,45 @@ class _AboutPageState extends State<AboutPage>
   Future<void> _checkUpdate() async {
     if (_checkingUpdate) return;
     setState(() => _checkingUpdate = true);
-    await Future<void>.delayed(const Duration(milliseconds: 500));
-    if (!mounted) return;
-    setState(() => _checkingUpdate = false);
-    showKonekoBanner(
-      context,
-      '当前已是最新版本 v$kAppVersion（UI 预览版）',
-      level: BannerLevel.success,
-    );
+    try {
+      final check = ref.read(checkForUpdateProvider);
+      if (check == null) return;
+      final result = await check(kAppVersion);
+      if (!mounted) return;
+      if (result == null) {
+        showKonekoBanner(
+          context,
+          '当前已是最新版本 v$kAppVersion',
+          level: BannerLevel.success,
+        );
+      } else {
+        final open = await showFloatingDialog<bool>(
+          context: context,
+          child: Builder(
+            builder: (dialog) => AlertDialog(
+              title: '发现新版本 ${result.version}',
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialog, false),
+                  child: const Text('稍后'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(dialog, true),
+                  child: const Text('查看发布'),
+                ),
+              ],
+            ),
+          ),
+        );
+        if (mounted && open == true) await _openUrl(result.url.toString());
+      }
+    } on Object {
+      if (mounted) {
+        showKonekoBanner(context, '检查更新失败，请稍后重试', level: BannerLevel.error);
+      }
+    } finally {
+      if (mounted) setState(() => _checkingUpdate = false);
+    }
   }
 
   Widget _linkRow({
@@ -343,9 +376,9 @@ class _AboutPageState extends State<AboutPage>
                         blurEnabled: !routeMoving,
                         items: const [
                           DecorationListItem(
-                            title: Text('严格 UI / Core 剥离'),
+                            title: Text('构建版本'),
                             subtitle: Text(
-                              '当前 v$kAppVersion 为 UI 预览构建（koneko_contract + koneko_mock），下一阶段无缝接入 Kazumi 真核心。',
+                              'v$kAppVersion 使用 Bangumi 目录、Kazumi 规则及本地视频播放服务。',
                             ),
                           ),
                           DecorationListItem(

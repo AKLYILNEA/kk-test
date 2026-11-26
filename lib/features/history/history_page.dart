@@ -1,7 +1,11 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:koneko/common/constants.dart';
 import 'package:koneko/common/providers.dart';
+import 'package:koneko/common/feature_feedback.dart';
 import 'package:koneko/features/detail/subject_detail_page.dart';
 import 'package:koneko/features/player/player_page.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
@@ -29,9 +33,64 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
   _HistoryFilter _filter = _HistoryFilter.all;
   int? _expandedSubjectId;
 
+  Future<void> _import() async {
+    final tracker = ref.read(trackingSyncProvider);
+    if (tracker == null) return;
+    try {
+      final picked = await FilePicker.pickFile();
+      final path = picked?.path;
+      if (path == null) return;
+      final file = File(path);
+      if (await file.length() > 64 * 1024 * 1024) {
+        throw const FormatException('单个备份文件不能超过 64 MB');
+      }
+      final count = await tracker.importKazumi(await file.readAsBytes());
+      if (mounted) {
+        showKonekoBanner(
+          context,
+          '导入 $count 条记录，同番剧历史已合并',
+          level: BannerLevel.success,
+        );
+      }
+    } on Object catch (error) {
+      if (mounted) {
+        showKonekoBanner(
+          context,
+          featureError(error, '备份读取失败'),
+          level: BannerLevel.error,
+        );
+      }
+    }
+  }
+
+  Future<void> _confirmClear() async {
+    final confirmed = await showFloatingDialog<bool>(
+      context: context,
+      child: Builder(
+        builder: (dialog) => AlertDialog(
+          title: '清空观看历史？',
+          destructive: true,
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialog, false),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialog, true),
+              child: const Text('清空'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || confirmed != true) return;
+    ref.read(historyProvider.notifier).clearAll();
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
+    ref.watch(catalogUpdatesProvider);
     final catalog = ref.watch(catalogRepositoryProvider);
     final entries = ref.watch(historyProvider);
 
@@ -50,27 +109,13 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
       actions: [
         IconButtonData(
           glyph: KonekoGlyphs.importFile,
-          tooltip: '模拟导入 Kazumi 备份',
-          onPressed: () {
-            final imported = ref
-                .read(historyProvider.notifier)
-                .importLegacyKazumiSample();
-            showKonekoBanner(
-              context,
-              '已导入 $imported 条 Kazumi 分源历史，并按番剧自动合并！',
-              level: BannerLevel.success,
-            );
-          },
+          tooltip: '导入 Kazumi 备份',
+          onPressed: ref.watch(trackingSyncProvider) == null ? null : _import,
         ),
         IconButtonData(
           glyph: KonekoGlyphs.trash,
           tooltip: '清空历史',
-          onPressed: entries.isEmpty
-              ? null
-              : () {
-                  ref.read(historyProvider.notifier).clearAll();
-                  showKonekoBanner(context, '已清空播放历史');
-                },
+          onPressed: entries.isEmpty ? null : _confirmClear,
         ),
       ],
       body: CustomScrollView(

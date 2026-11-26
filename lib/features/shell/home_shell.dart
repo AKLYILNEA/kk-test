@@ -8,6 +8,7 @@ import 'package:koneko/features/history/history_page.dart';
 import 'package:koneko/features/home/home_page.dart';
 import 'package:koneko/features/library/library_page.dart';
 import 'package:koneko/features/my/my_page.dart';
+import 'package:koneko/features/rules/rules_page.dart';
 import 'package:koneko/features/schedule/schedule_page.dart';
 import 'package:koneko/features/theme/theme_page.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';

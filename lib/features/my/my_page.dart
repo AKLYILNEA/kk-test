@@ -5,6 +5,9 @@ import 'package:koneko/common/font_manager.dart';
 import 'package:koneko/common/providers.dart';
 import 'package:koneko/features/about/about_page.dart';
 import 'package:koneko/features/history/history_page.dart';
+import 'package:koneko/features/my/offline_page.dart';
+import 'package:koneko/features/my/service_settings_page.dart';
+import 'package:koneko/features/rules/rules_page.dart';
 import 'package:koneko/features/theme/font_family_page.dart';
 import 'package:koneko/features/theme/theme_page.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
@@ -62,14 +65,14 @@ class MyPage extends ConsumerWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Bangumi 离线演示账号',
+                              'Koneko',
                               style: AppTextStyle.headline
                                   .of(context, emphasized: true)
                                   .copyWith(color: colorScheme.onSurface),
                             ),
                             const SizedBox(height: 3),
                             Text(
-                              '追番 ${library.length} 部 · 合并历史 ${history.length} 部 · Twemoji 默认',
+                              '追番 ${library.length} 部 · 合并历史 ${history.length} 部',
                               style: AppTextStyle.caption1
                                   .of(context)
                                   .copyWith(
@@ -123,27 +126,26 @@ class MyPage extends ConsumerWidget {
                         KonekoGlyphs.cloud,
                         color: colorScheme.primary,
                       ),
-                      title: const Text('WebDAV 云端同步'),
-                      subtitle: const Text('支持导入 Kazumi 备份并自动合并多源历史'),
-                      trailing: KonekoChip(
-                        label: '测试合并',
-                        height: 26,
-                        fontSize: 11.5,
-                        backgroundColor: colorScheme.primary.withValues(
-                          alpha: 0.14,
-                        ),
-                        foregroundColor: colorScheme.primary,
+                      title: const Text('服务与同步'),
+                      subtitle: const Text('Bangumi、WebDAV 与弹弹Play'),
+                      trailing: const GlyphIcon(Glyphs.chevronForward),
+                      onPressed: () => BaseNavigator.push<void>(
+                        context,
+                        const ServiceSettingsPage(),
                       ),
-                      onPressed: () {
-                        final count = ref
-                            .read(historyProvider.notifier)
-                            .importLegacyKazumiSample();
-                        showKonekoBanner(
-                          context,
-                          '模拟 WebDAV 同步完成：已合并 $count 条 Kazumi 历史',
-                          level: BannerLevel.success,
-                        );
-                      },
+                    ),
+                    DecorationListItem(
+                      leading: GlyphIcon(
+                        KonekoGlyphs.importFile,
+                        color: colorScheme.primary,
+                      ),
+                      title: const Text('离线缓存'),
+                      subtitle: const Text('管理已下载剧集'),
+                      trailing: const GlyphIcon(Glyphs.chevronForward),
+                      onPressed: () => BaseNavigator.push<void>(
+                        context,
+                        const OfflinePage(),
+                      ),
                     ),
                   ],
                 ),
@@ -207,140 +209,6 @@ class MyPage extends ConsumerWidget {
                   ],
                 ),
               ]),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Dedicated Kazumi Rules Manager Page (accessible from Desktop Sidebar or MyPage).
-class RulesPage extends ConsumerStatefulWidget {
-  const RulesPage({super.key, this.showBack = false, this.bottomPadding = 0});
-
-  final bool showBack;
-  final double bottomPadding;
-
-  @override
-  ConsumerState<RulesPage> createState() => _RulesPageState();
-}
-
-class _RulesPageState extends ConsumerState<RulesPage> {
-  bool _testing = false;
-
-  Future<void> _testAll() async {
-    if (_testing) return;
-    setState(() => _testing = true);
-    await ref.read(rulesProvider.notifier).testLatencies();
-    if (!mounted) return;
-    setState(() => _testing = false);
-    showKonekoBanner(context, '规则测速完成', level: BannerLevel.success);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = context.colorScheme;
-    final rules = ref.watch(rulesProvider);
-
-    return KonekoScaffold(
-      title: '规则管理',
-      showBack: widget.showBack,
-      actions: [
-        IconButtonData(
-          glyph: KonekoGlyphs.speed,
-          tooltip: _testing ? '测速中…' : '全部测速',
-          isLoading: _testing,
-          onPressed: _testAll,
-        ),
-      ],
-      body: CustomScrollView(
-        slivers: [
-          const KonekoScrollStart(),
-          SliverPadding(
-            padding: EdgeInsets.fromLTRB(16, 8, 16, 24 + widget.bottomPadding),
-            sliver: SliverList.separated(
-              itemCount: rules.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 12),
-              itemBuilder: (context, index) {
-                final rule = rules[index];
-                return KonekoCard(
-                  corner: 24,
-                  padding: const EdgeInsets.all(14),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 42,
-                        height: 42,
-                        decoration: ShapeDecoration(
-                          color: rule.enabled
-                              ? colorScheme.primary.withValues(alpha: 0.14)
-                              : SurfaceLevel.block.colorOf(colorScheme),
-                          shape: AppShape.md,
-                        ),
-                        child: Center(
-                          child: GlyphIcon(
-                            KonekoGlyphs.resources,
-                            size: 20,
-                            color: rule.enabled
-                                ? colorScheme.primary
-                                : colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    rule.name,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: AppTextStyle.callout
-                                        .of(context, emphasized: true)
-                                        .copyWith(color: colorScheme.onSurface),
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                KonekoChip(
-                                  label: '${rule.latencyMs} ms',
-                                  height: 22,
-                                  fontSize: 10.5,
-                                  backgroundColor: rule.latencyMs < 140
-                                      ? colorScheme.successContainer
-                                      : colorScheme.warningContainer,
-                                  foregroundColor: rule.latencyMs < 140
-                                      ? colorScheme.onSuccessContainer
-                                      : colorScheme.onWarningContainer,
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${rule.apiType} · v${rule.version} · ${rule.lastCheckedLabel}',
-                              style: AppTextStyle.caption1
-                                  .of(context)
-                                  .copyWith(
-                                    color: colorScheme.onSurfaceVariant,
-                                  ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Switch(
-                        value: rule.enabled,
-                        onChanged: (v) =>
-                            ref.read(rulesProvider.notifier).toggle(rule.id, v),
-                      ),
-                    ],
-                  ),
-                );
-              },
             ),
           ),
         ],

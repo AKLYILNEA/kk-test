@@ -52,7 +52,9 @@ class _HomePageState extends ConsumerState<HomePage> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
+    ref.watch(catalogUpdatesProvider);
     final catalog = ref.watch(catalogRepositoryProvider);
+    final loading = ref.watch(loadHomeCatalogProvider);
     final library = ref.watch(libraryProvider);
     final history = ref.watch(historyProvider);
     final rules = ref.watch(rulesProvider);
@@ -81,13 +83,8 @@ class _HomePageState extends ConsumerState<HomePage> {
         IconButtonData(
           glyph: KonekoGlyphs.refresh,
           tooltip: '刷新榜单',
-          onPressed: () {
-            showKonekoBanner(
-              context,
-              '已刷新 2026 秋季热门榜单',
-              level: BannerLevel.success,
-            );
-          },
+          isLoading: loading.isLoading && subjects.isEmpty,
+          onPressed: () => ref.invalidate(loadHomeCatalogProvider),
         ),
       ],
       body: LayoutBuilder(
@@ -116,8 +113,8 @@ class _HomePageState extends ConsumerState<HomePage> {
                       onResume: () => _openPlayer(
                         resumeSubject,
                         latestHistory?.lastEpisode ?? 1,
-                        latestHistory?.lastRuleId ?? 'rule_yhdmp',
-                        latestHistory?.lastRuleName ?? '樱花源 · XPath',
+                        latestHistory?.lastRuleId ?? '',
+                        latestHistory?.lastRuleName ?? '',
                       ),
                       onOpenDetail: () => _openDetail(resumeSubject),
                     ),
@@ -147,31 +144,43 @@ class _HomePageState extends ConsumerState<HomePage> {
                   ),
                 ),
               ),
-              SliverPadding(
-                padding: EdgeInsets.fromLTRB(
-                  16,
-                  14,
-                  16,
-                  24 + widget.bottomPadding,
-                ),
-                sliver: SliverGrid(
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: crossAxisCount,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 14,
-                    childAspectRatio: 0.56,
+              if (subjects.isEmpty)
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Center(
+                    child: loading.isLoading
+                        ? const ActivityIndicator()
+                        : Text(
+                            loading.hasError ? '番剧目录加载失败，点右上角重试' : '此分类暂无番剧',
+                          ),
                   ),
-                  delegate: SliverChildBuilderDelegate((context, index) {
-                    final subject = subjects[index];
-                    return UnifiedAnimeCard(
-                      subject: subject,
-                      isTracking: trackingIds.contains(subject.subjectId),
-                      showTopRank: _selectedTag == '全部',
-                      onTap: () => _openDetail(subject),
-                    );
-                  }, childCount: subjects.length),
+                )
+              else
+                SliverPadding(
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    14,
+                    16,
+                    24 + widget.bottomPadding,
+                  ),
+                  sliver: SliverGrid(
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: crossAxisCount,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 14,
+                      childAspectRatio: 0.56,
+                    ),
+                    delegate: SliverChildBuilderDelegate((context, index) {
+                      final subject = subjects[index];
+                      return UnifiedAnimeCard(
+                        subject: subject,
+                        isTracking: trackingIds.contains(subject.subjectId),
+                        showTopRank: _selectedTag == '全部',
+                        onTap: () => _openDetail(subject),
+                      );
+                    }, childCount: subjects.length),
+                  ),
                 ),
-              ),
             ],
           );
         },

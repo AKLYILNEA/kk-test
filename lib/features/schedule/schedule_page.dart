@@ -35,7 +35,9 @@ class _SchedulePageState extends ConsumerState<SchedulePage> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
+    ref.watch(catalogUpdatesProvider);
     final catalog = ref.watch(catalogRepositoryProvider);
+    final loading = ref.watch(loadHomeCatalogProvider);
     final library = ref.watch(libraryProvider);
     final watchingIds = {
       for (final e in library)
@@ -50,7 +52,7 @@ class _SchedulePageState extends ConsumerState<SchedulePage> {
     }
 
     return KonekoScaffold(
-      title: '2026 秋季新番',
+      title: ref.watch(onlineCatalogProvider)?.seasonTitle ?? '放送时间表',
       actions: [
         IconButtonData(
           glyph: Glyphs.sort,
@@ -93,24 +95,59 @@ class _SchedulePageState extends ConsumerState<SchedulePage> {
                   ),
                 ),
               ),
-              SliverPadding(
-                padding: EdgeInsets.fromLTRB(
-                  16,
-                  12,
-                  16,
-                  24 + widget.bottomPadding,
-                ),
-                sliver: isWide
-                    ? SliverGrid(
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 2,
-                              crossAxisSpacing: 14,
-                              mainAxisSpacing: 14,
-                              mainAxisExtent: 124,
+              if (items.isEmpty)
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Center(
+                    child: loading.isLoading
+                        ? const ActivityIndicator()
+                        : loading.hasError
+                        ? TextButton(
+                            onPressed: () =>
+                                ref.invalidate(loadHomeCatalogProvider),
+                            child: const Text('时间表加载失败，点此重试'),
+                          )
+                        : const Text('当天暂无放送条目'),
+                  ),
+                )
+              else
+                SliverPadding(
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    12,
+                    16,
+                    24 + widget.bottomPadding,
+                  ),
+                  sliver: isWide
+                      ? SliverGrid(
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                crossAxisSpacing: 14,
+                                mainAxisSpacing: 14,
+                                mainAxisExtent: 124,
+                              ),
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) => _ScheduleCard(
+                              subject: items[index],
+                              isWatching: watchingIds.contains(
+                                items[index].subjectId,
+                              ),
+                              onTap: () => BaseNavigator.push<void>(
+                                context,
+                                SubjectDetailPage(
+                                  subjectId: items[index].subjectId,
+                                ),
+                              ),
                             ),
-                        delegate: SliverChildBuilderDelegate(
-                          (context, index) => _ScheduleCard(
+                            childCount: items.length,
+                          ),
+                        )
+                      : SliverList.separated(
+                          itemCount: items.length,
+                          separatorBuilder: (_, _) =>
+                              const SizedBox(height: 12),
+                          itemBuilder: (context, index) => _ScheduleCard(
                             subject: items[index],
                             isWatching: watchingIds.contains(
                               items[index].subjectId,
@@ -122,26 +159,8 @@ class _SchedulePageState extends ConsumerState<SchedulePage> {
                               ),
                             ),
                           ),
-                          childCount: items.length,
                         ),
-                      )
-                    : SliverList.separated(
-                        itemCount: items.length,
-                        separatorBuilder: (_, _) => const SizedBox(height: 12),
-                        itemBuilder: (context, index) => _ScheduleCard(
-                          subject: items[index],
-                          isWatching: watchingIds.contains(
-                            items[index].subjectId,
-                          ),
-                          onTap: () => BaseNavigator.push<void>(
-                            context,
-                            SubjectDetailPage(
-                              subjectId: items[index].subjectId,
-                            ),
-                          ),
-                        ),
-                      ),
-              ),
+                ),
             ],
           );
         },

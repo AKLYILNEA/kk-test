@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:koneko/common/providers.dart';
 import 'package:koneko/features/player/player_page.dart';
+import 'package:koneko/features/rules/rules_page.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
 import 'package:koneko/ui/koneko_scaffold.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
@@ -20,8 +21,8 @@ class SubjectDetailPage extends ConsumerStatefulWidget {
 }
 
 class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
-  String _selectedRuleId = 'rule_yhdmp';
-  String _selectedRuleName = '樱花源 · XPath';
+  String _selectedRuleId = '';
+  String _selectedRuleName = '';
 
   void _playEpisode(AnimeSubject subject, int episodeNumber) {
     BaseNavigator.push<void>(
@@ -37,13 +38,29 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(catalogUpdatesProvider);
     final catalog = ref.watch(catalogRepositoryProvider);
     final library = ref.watch(libraryProvider);
     final history = ref.watch(historyProvider);
 
-    final subject =
-        catalog.getSubjectById(widget.subjectId) ??
-        catalog.getAllSubjects().first;
+    final load = ref.watch(loadCatalogSubjectProvider(widget.subjectId));
+    final subject = catalog.getSubjectById(widget.subjectId);
+    if (subject == null) {
+      return KonekoScaffold(
+        title: '番剧详情',
+        showBack: true,
+        body: Center(
+          child: load.isLoading
+              ? const ActivityIndicator()
+              : TextButton(
+                  onPressed: () => ref.invalidate(
+                    loadCatalogSubjectProvider(widget.subjectId),
+                  ),
+                  child: const Text('番剧资料暂不可用，点此重试'),
+                ),
+        ),
+      );
+    }
     final entry = library
         .where((e) => e.subjectId == subject.subjectId)
         .firstOrNull;
@@ -59,7 +76,22 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
       watchedCount: entry?.watchedEpisodes ?? 0,
       currentEp: currentEp,
     );
-    final probes = catalog.probeSources(subject.subjectId);
+    final rules = ref.watch(rulesProvider);
+    final probes = ref.watch(playbackSourcesProvider) == null
+        ? catalog.probeSources(subject.subjectId)
+        : [
+            for (final rule in rules)
+              if (rule.enabled)
+                RuleSourceProbe(
+                  ruleId: rule.id,
+                  ruleName: rule.name,
+                  lineLabel: '播放时匹配线路',
+                  resolutionLabel: '',
+                  latencyMs: rule.latencyMs,
+                  availableEpisodes: 0,
+                  available: true,
+                ),
+          ];
     final related = subject.relatedIds
         .map(catalog.getSubjectById)
         .whereType<AnimeSubject>()
@@ -102,6 +134,10 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
           final sourcesCard = _RuleSourcesCard(
             probes: probes,
             selectedRuleId: _selectedRuleId,
+            onManage: () => BaseNavigator.push<void>(
+              context,
+              const RulesPage(showBack: true),
+            ),
             onSelect: (probe) {
               setState(() {
                 _selectedRuleId = probe.ruleId;
@@ -326,7 +362,7 @@ class _EpisodeMatrixCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  '选集矩阵（Animeko 四态）',
+                  '选集',
                   style: AppTextStyle.headline
                       .of(context, emphasized: true)
                       .copyWith(color: colorScheme.onSurface),
@@ -341,6 +377,7 @@ class _EpisodeMatrixCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
+          if (episodes.isEmpty) const Text('Bangumi 暂无剧集资料，仍可在播放器选集。'),
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -403,11 +440,13 @@ class _EpisodeMatrixCard extends StatelessWidget {
 
 class _RuleSourcesCard extends StatelessWidget {
   const _RuleSourcesCard({
+    required this.onManage,
     required this.probes,
     required this.selectedRuleId,
     required this.onSelect,
   });
 
+  final VoidCallback onManage;
   final List<RuleSourceProbe> probes;
   final String selectedRuleId;
   final ValueChanged<RuleSourceProbe> onSelect;
@@ -435,6 +474,8 @@ class _RuleSourcesCard extends StatelessWidget {
                 .copyWith(color: colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 12),
+          if (probes.isEmpty)
+            TextButton(onPressed: onManage, child: const Text('添加播放规则')),
           Column(
             spacing: 8,
             children: [
@@ -458,7 +499,9 @@ class _RuleSourcesCard extends StatelessWidget {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              '${probe.lineLabel} · ${probe.availableEpisodes} 话',
+                              probe.availableEpisodes > 0
+                                  ? '${probe.lineLabel} · ${probe.availableEpisodes} 话'
+                                  : probe.lineLabel,
                               style: AppTextStyle.caption1
                                   .of(context)
                                   .copyWith(
@@ -468,17 +511,18 @@ class _RuleSourcesCard extends StatelessWidget {
                           ],
                         ),
                       ),
-                      KonekoChip(
-                        label: '${probe.latencyMs} ms',
-                        height: 24,
-                        fontSize: 11,
-                        backgroundColor: probe.latencyMs < 130
-                            ? colorScheme.successContainer
-                            : colorScheme.warningContainer,
-                        foregroundColor: probe.latencyMs < 130
-                            ? colorScheme.onSuccessContainer
-                            : colorScheme.onWarningContainer,
-                      ),
+                      if (probe.latencyMs > 0)
+                        KonekoChip(
+                          label: '${probe.latencyMs} ms',
+                          height: 24,
+                          fontSize: 11,
+                          backgroundColor: probe.latencyMs < 130
+                              ? colorScheme.successContainer
+                              : colorScheme.warningContainer,
+                          foregroundColor: probe.latencyMs < 130
+                              ? colorScheme.onSuccessContainer
+                              : colorScheme.onWarningContainer,
+                        ),
                     ],
                   ),
                 ),

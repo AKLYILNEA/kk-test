@@ -279,7 +279,7 @@ class KonekoCircleButton extends StatelessWidget {
   }
 }
 
-/// Crisp deterministic procedural poster art for offline UI-First MVP.
+/// A network cover with a local palette fallback.
 class KonekoPosterArt extends StatelessWidget {
   const KonekoPosterArt({
     super.key,
@@ -294,10 +294,21 @@ class KonekoPosterArt extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final art = CustomPaint(
+    final fallback = CustomPaint(
       painter: _PosterPainter(subject.poster),
       child: const SizedBox.expand(),
     );
+    final url = subject.coverUrl;
+    final art = url == null
+        ? fallback
+        : Image.network(
+            url,
+            fit: BoxFit.cover,
+            gaplessPlayback: true,
+            frameBuilder: (_, image, frame, _) =>
+                frame == null ? fallback : image,
+            errorBuilder: (_, _, _) => fallback,
+          );
     final content = overlayBadges.isEmpty
         ? art
         : Stack(fit: StackFit.expand, children: [art, ...overlayBadges]);

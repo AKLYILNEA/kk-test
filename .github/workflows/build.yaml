@@ -46,7 +46,7 @@ jobs:
       - name: Unit & widget tests
         run: |
           set +e
-          flutter test 2>&1 | tee test.log
+          flutter test test packages/koneko_core/test 2>&1 | tee test.log
           rc=${PIPESTATUS[0]}
           if [ "$rc" -ne 0 ]; then
             grep -E "EXCEPTION|overflowed|Assert|Expected|Actual|Failed|No .* found" test.log | head -n 25 | while IFS= read -r line; do

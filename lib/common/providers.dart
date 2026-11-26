@@ -5,11 +5,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:koneko/common/constants.dart';
+import 'package:koneko/common/core_providers.dart';
 import 'package:koneko/common/font_manager.dart';
 import 'package:koneko_contract/koneko_contract.dart';
-import 'package:koneko_mock/koneko_mock.dart';
 import 'package:prism_ui/prism_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+export 'package:koneko/common/core_providers.dart';
 
 // ---------------------------------------------------------------------------
 // Theme & Appearance State (1:1 FlClash ThemeProps + pure black + liquid glass)
@@ -216,20 +218,33 @@ ThemeData buildKonekoTheme({
 }
 
 // ---------------------------------------------------------------------------
-// Domain Repositories & State (Strict koneko_contract -> koneko_mock boundary)
+// Tracking and rule state exposed to the UI
 // ---------------------------------------------------------------------------
-
-final catalogRepositoryProvider = Provider<CatalogRepository>(
-  (_) => MockCatalogRepository(),
-);
-
-final ruleRepositoryProvider = Provider<RuleRepository>(
-  (_) => MockRuleRepository(),
-);
 
 class LibraryNotifier extends Notifier<List<CollectionEntry>> {
   @override
-  List<CollectionEntry> build() => MockSeedData.initialCollections();
+  List<CollectionEntry> build() {
+    ref.listen(trackingUpdatesProvider, (_, next) {
+      if (next.value case final snapshot?) state = snapshot.collections;
+    });
+    return ref.watch(trackingStoreProvider)?.current.collections ?? const [];
+  }
+
+  void _save(List<CollectionEntry> next, int id, DateTime changedAt) {
+    state = next;
+    final store = ref.read(trackingStoreProvider);
+    if (store == null) return;
+    unawaited(
+      store
+          .update(
+            (current) => current.copyWith(
+              collections: next,
+              collectionChanges: {...current.collectionChanges, id: changedAt},
+            ),
+          )
+          .onError((Object _, StackTrace _) {}),
+    );
+  }
 
   CollectionEntry? entryFor(int subjectId) {
     for (final entry in state) {
@@ -240,62 +255,54 @@ class LibraryNotifier extends Notifier<List<CollectionEntry>> {
 
   void setStatus(int subjectId, CollectionStatus status) {
     final now = DateTime.now();
-    final exists = state.any((e) => e.subjectId == subjectId);
-    if (exists) {
-      state = [
-        for (final e in state)
-          if (e.subjectId == subjectId)
-            e.copyWith(status: status, updatedAt: now)
-          else
-            e,
-      ];
-    } else {
-      state = [
+    final entry = entryFor(subjectId);
+    final updated =
+        entry?.copyWith(status: status, updatedAt: now) ??
         CollectionEntry(
           subjectId: subjectId,
           status: status,
           watchedEpisodes: 0,
           updatedAt: now,
-        ),
-        ...state,
-      ];
-    }
+        );
+    _save(
+      [
+        updated,
+        for (final other in state)
+          if (other.subjectId != subjectId) other,
+      ],
+      subjectId,
+      now,
+    );
   }
 
   void markEpisodeWatched(int subjectId, int episodeNumber, int totalEpisodes) {
-    final now = DateTime.now();
     final existing = entryFor(subjectId);
-    final nextWatched = existing == null
-        ? episodeNumber
-        : (episodeNumber > existing.watchedEpisodes
-              ? episodeNumber
-              : existing.watchedEpisodes);
-    final nextStatus = (totalEpisodes > 0 && nextWatched >= totalEpisodes)
+    final previous = existing?.watchedEpisodes ?? 0;
+    final nextWatched = episodeNumber > previous ? episodeNumber : previous;
+    final isComplete = totalEpisodes > 0 && nextWatched >= totalEpisodes;
+    final status = isComplete || existing?.status == CollectionStatus.watched
         ? CollectionStatus.watched
         : CollectionStatus.watching;
-    if (existing == null) {
-      state = [
+    if (existing != null &&
+        status == existing.status &&
+        nextWatched == previous) {
+      return;
+    }
+    final now = DateTime.now();
+    _save(
+      [
         CollectionEntry(
           subjectId: subjectId,
-          status: nextStatus,
+          status: status,
           watchedEpisodes: nextWatched,
           updatedAt: now,
         ),
-        ...state,
-      ];
-    } else {
-      state = [
-        for (final e in state)
-          if (e.subjectId == subjectId)
-            e.copyWith(
-              status: nextStatus,
-              watchedEpisodes: nextWatched,
-              updatedAt: now,
-            )
-          else
-            e,
-      ];
-    }
+        for (final other in state)
+          if (other.subjectId != subjectId) other,
+      ],
+      subjectId,
+      now,
+    );
   }
 }
 
@@ -306,7 +313,39 @@ final libraryProvider =
 
 class HistoryNotifier extends Notifier<List<MergedHistoryEntry>> {
   @override
-  List<MergedHistoryEntry> build() => MockSeedData.initialMergedHistory();
+  List<MergedHistoryEntry> build() {
+    ref.listen(trackingUpdatesProvider, (_, next) {
+      if (next.value case final snapshot?) state = snapshot.history;
+    });
+    return ref.watch(trackingStoreProvider)?.current.history ?? const [];
+  }
+
+  void _save(
+    List<MergedHistoryEntry> entries, {
+    Iterable<int> removed = const [],
+  }) {
+    state = entries;
+    final store = ref.read(trackingStoreProvider);
+    if (store == null) return;
+    final now = DateTime.now();
+    unawaited(
+      store
+          .update(
+            (current) => current.copyWith(
+              history: entries,
+              removedHistory: {
+                ...current.removedHistory,
+                for (final id in removed) id: now,
+              },
+            ),
+          )
+          .onError((Object _, StackTrace _) {}),
+    );
+  }
+
+  SourceProgressRecord? positionFor(int subjectId, int episode) => entryFor(
+    subjectId,
+  )?.sourceRecords.where((item) => item.episodeNumber == episode).firstOrNull;
 
   MergedHistoryEntry? entryFor(int subjectId) {
     for (final entry in state) {
@@ -324,6 +363,7 @@ class HistoryNotifier extends Notifier<List<MergedHistoryEntry>> {
     required int durationSeconds,
     required String ruleId,
     required String ruleName,
+    bool completed = false,
   }) {
     final now = DateTime.now();
     final newSourceRec = SourceProgressRecord(
@@ -333,13 +373,16 @@ class HistoryNotifier extends Notifier<List<MergedHistoryEntry>> {
       positionSeconds: positionSeconds,
       durationSeconds: durationSeconds,
       watchedAt: now,
+      isCompleted: completed,
     );
 
     final existing = entryFor(subjectId);
     final mergedSources = <SourceProgressRecord>[
       newSourceRec,
       if (existing != null)
-        ...existing.sourceRecords.where((r) => r.ruleId != ruleId),
+        ...existing.sourceRecords.where(
+          (r) => r.ruleId != ruleId || r.episodeNumber != episodeNumber,
+        ),
     ];
 
     final updated = MergedHistoryEntry(
@@ -353,56 +396,25 @@ class HistoryNotifier extends Notifier<List<MergedHistoryEntry>> {
       sourceRecords: mergedSources,
     );
 
-    state = [
+    _save([
       updated,
       for (final item in state)
         if (item.subjectId != subjectId) item,
-    ];
-  }
-
-  /// Simulates importing a Kazumi WebDAV multi-source backup and auto-merging
-  /// duplicate cards that belong to the same anime [subjectId].
-  int importLegacyKazumiSample() {
-    final now = DateTime.now();
-    final sample = [
-      LegacyKazumiHistoryRecord(
-        subjectId: 1001,
-        pluginName: 'Kazumi · 哔哩备用源',
-        episodeNumber: 14,
-        positionSeconds: 910,
-        durationSeconds: 1425,
-        watchedAt: now.subtract(const Duration(minutes: 45)),
-      ),
-      LegacyKazumiHistoryRecord(
-        subjectId: 1009,
-        pluginName: 'Kazumi · 樱花源',
-        episodeNumber: 13,
-        positionSeconds: 720,
-        durationSeconds: 1425,
-        watchedAt: now.subtract(const Duration(hours: 3)),
-      ),
-      LegacyKazumiHistoryRecord(
-        subjectId: 1009,
-        pluginName: 'Kazumi · AGE 源',
-        episodeNumber: 12,
-        positionSeconds: 1415,
-        durationSeconds: 1425,
-        watchedAt: now.subtract(const Duration(days: 3)),
-      ),
-    ];
-    state = MockSeedData.mergeLegacyKazumiRecords(state, sample);
-    return sample.length;
+    ]);
   }
 
   void removeSubject(int subjectId) {
-    state = [
-      for (final item in state)
-        if (item.subjectId != subjectId) item,
-    ];
+    _save(
+      [
+        for (final item in state)
+          if (item.subjectId != subjectId) item,
+      ],
+      removed: [subjectId],
+    );
   }
 
   void clearAll() {
-    state = const [];
+    _save(const [], removed: state.map((entry) => entry.subjectId).toList());
   }
 }
 
@@ -418,6 +430,10 @@ class RulesNotifier extends Notifier<List<RulePluginMeta>> {
 
   void toggle(String ruleId, bool enabled) {
     state = ref.read(ruleRepositoryProvider).toggleRule(ruleId, enabled);
+  }
+
+  void replace(List<RulePluginMeta> rules) {
+    state = rules;
   }
 
   Future<void> testLatencies() async {
