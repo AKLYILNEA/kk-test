@@ -949,7 +949,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     final totalPages = epNumbers.isEmpty
         ? 1
         : (epNumbers.length + _pageSize - 1) ~/ _pageSize;
-    final safePage = _epPageIndex.clamp(0, math.max(0, totalPages - 1));
+    final safePage = _epPageIndex
+        .clamp(0, math.max(0, totalPages - 1))
+        .toInt();
     final visibleEps = epNumbers
         .skip(safePage * _pageSize)
         .take(_pageSize)
@@ -1544,7 +1546,11 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   TextStyle _style(BuildContext context, {bool small = false}) =>
       (small ? AppTextStyle.caption1 : AppTextStyle.subheadline)
           .of(context, emphasized: !small)
-          .copyWith(color: small ? Colors.white70 : Colors.white);
+          .copyWith(
+            color: small
+                ? Colors.white.withValues(alpha: 0.72)
+                : Colors.white,
+          );
 
   Widget _round({
     required Glyph glyph,
@@ -1566,7 +1572,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           child: GlyphIcon(
             glyph,
             size: 16,
-            color: onPressed == null ? Colors.white38 : Colors.white,
+            color: onPressed == null
+                ? Colors.white.withValues(alpha: 0.38)
+                : Colors.white,
           ),
         ),
       ),
@@ -1648,7 +1656,11 @@ class _HudAction extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: AppTextStyle.caption1
               .of(context, emphasized: true)
-              .copyWith(color: onTap == null ? Colors.white38 : Colors.white),
+              .copyWith(
+                color: onTap == null
+                    ? Colors.white.withValues(alpha: 0.38)
+                    : Colors.white,
+              ),
         ),
       ),
     );
