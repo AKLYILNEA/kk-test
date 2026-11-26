@@ -10,6 +10,13 @@ class DandanplaySource implements DanmakuSource {
   DandanplaySource(this._vault, {Dio? client})
     : _client = client ?? networkClient();
 
+  // Default DanDanPlay credentials aligned with Kazumi so danmaku works out of
+  // the box without requiring manual API setup. CI/users may still override.
+  static const _defaultAppId = 'qb998n8g3u';
+  static const _defaultAppKey = '4y2waS6A6yb4uw7Dhd9pmdTzvrF7YUsg';
+  static const _envAppId = String.fromEnvironment('DANDANAPI_APPID');
+  static const _envAppKey = String.fromEnvironment('DANDANAPI_KEY');
+
   final SettingsVault _vault;
   final Dio _client;
   final _cache = <(int, int, String), List<DanmakuItem>>{};
@@ -19,13 +26,10 @@ class DandanplaySource implements DanmakuSource {
     final settings = await _vault.read();
     final appId = settings.danmakuAppId.isNotEmpty
         ? settings.danmakuAppId
-        : const String.fromEnvironment('DANDANAPI_APPID');
+        : (_envAppId.isNotEmpty ? _envAppId : _defaultAppId);
     final key = settings.danmakuKey.isNotEmpty
         ? settings.danmakuKey
-        : const String.fromEnvironment('DANDANAPI_KEY');
-    if (appId.isEmpty || key.isEmpty) {
-      throw StateError('请在服务设置中填写弹弹Play App ID 和密钥');
-    }
+        : (_envAppKey.isNotEmpty ? _envAppKey : _defaultAppKey);
 
     final cacheKey = (subject.subjectId, episode, appId);
     var items = _cache[cacheKey];
@@ -44,6 +48,7 @@ class DandanplaySource implements DanmakuSource {
           options: Options(
             followRedirects: false,
             headers: {
+              'referer': '',
               'X-Auth': 1,
               'X-AppId': appId,
               'X-Timestamp': timestamp,
@@ -54,21 +59,56 @@ class DandanplaySource implements DanmakuSource {
         return jsonObject(response.data);
       }
 
-      final match = await get('/api/v2/bangumi/bgmtv/${subject.subjectId}');
-      final animeId = jsonInt(
-        match['bangumiId'] ?? jsonObject(match['bangumi'])['animeId'],
-      );
+      var animeId = 0;
+      var episodes = <dynamic>[];
+
+      // 1. Primary lookup: match via Bangumi subject ID (aligned with Kazumi).
+      try {
+        final match = await get('/api/v2/bangumi/bgmtv/${subject.subjectId}');
+        final bangumiObj = jsonObject(match['bangumi']);
+        animeId = jsonInt(match['bangumiId'] ?? bangumiObj['animeId']);
+        episodes = jsonList(bangumiObj['episodes']);
+      } on Object {
+        // Fallback to title search below.
+      }
+
+      // 2. Fallback lookup: search DanDanPlay by Chinese or original title.
+      if (animeId <= 0) {
+        final queries = <String>{
+          if (subject.title.trim().isNotEmpty) subject.title.trim(),
+          if (subject.originalTitle.trim().isNotEmpty)
+            subject.originalTitle.trim(),
+        };
+        for (final query in queries) {
+          try {
+            final search = await get('/api/v2/search/episodes', {
+              'anime': query,
+              'v2': 'true',
+            });
+            final animes = jsonList(search['animes']);
+            if (animes.isNotEmpty) {
+              final first = jsonObject(animes.first);
+              animeId = jsonInt(first['animeId']);
+              episodes = jsonList(first['episodes']);
+              if (animeId > 0) break;
+            }
+          } on Object {
+            // Try next query candidate.
+          }
+        }
+      }
+
       if (animeId <= 0) return const [];
-      final matchedEpisodes = jsonList(
-        jsonObject(match['bangumi'])['episodes'],
-      );
-      final episodes = matchedEpisodes.isNotEmpty
-          ? matchedEpisodes
-          : jsonList(
-              jsonObject(
-                (await get('/api/v2/bangumi/$animeId'))['bangumi'],
-              )['episodes'],
-            );
+
+      if (episodes.isEmpty) {
+        try {
+          final info = await get('/api/v2/bangumi/$animeId');
+          episodes = jsonList(jsonObject(info['bangumi'])['episodes']);
+        } on Object {
+          // Proceed with Kazumi's episode ID convention if episode list fails.
+        }
+      }
+
       final matches = episodes
           .map(jsonObject)
           .where(

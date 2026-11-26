@@ -46,12 +46,30 @@ class KazumiRules implements ManagedRules {
   }
 
   static const _storeKey = 'koneko_kazumi_rules_v1';
+  static const _repoKey = 'koneko_rules_repository';
   static const officialRepository =
       'https://raw.githubusercontent.com/Predidit/KazumiRules/main/';
+  static const ghProxyMirror =
+      'https://gh-proxy.org/https://raw.githubusercontent.com/Predidit/KazumiRules/main/';
+  static const ghfastMirror =
+      'https://ghfast.top/https://raw.githubusercontent.com/Predidit/KazumiRules/main/';
+  static const gitcodeMirror =
+      'https://raw.gitcode.com/gh_mirrors/ka/KazumiRules/raw/main/';
+
+  /// Mirror order aligned with Kazumi (`gh-proxy` default, with automatic
+  /// fallback to `ghfast`, `GitCode`, and direct `raw.githubusercontent.com`).
+  static const officialMirrors = <String>[
+    ghProxyMirror,
+    ghfastMirror,
+    gitcodeMirror,
+    officialRepository,
+  ];
+
   final SharedPreferences _preferences;
   final Dio _client;
   final _installed = <String, ({Plugin plugin, bool enabled})>{};
   final _latencies = <String, ({int elapsed, String status})>{};
+  String? _preferredOfficialBase;
   Future<void> _saveQueue = Future.value();
 
   Plugin? enabledPlugin(String id) {
@@ -78,22 +96,196 @@ class KazumiRules implements ManagedRules {
 
   @override
   Future<List<RuleListing>> browse({String? repository}) async {
-    final configured =
-        (repository ??
-                _preferences.getString('koneko_rules_repository') ??
-                officialRepository)
-            .trim();
-    final root = networkUri(configured);
-    final index = root.path.endsWith('index.json')
-        ? root
-        : root.replace(
-            path:
-                '${root.path.endsWith('/') ? root.path : '${root.path}/'}index.json',
-          );
-    final response = await _client.getUri<dynamic>(index);
-    if (response.data is! List) throw const FormatException('规则仓库索引格式无效');
+    final rawConfigured = repository != null
+        ? repository.trim()
+        : (_preferences.getString(_repoKey) ?? officialRepository).trim();
+    final normalizedBase = _normalizeRepositoryBase(rawConfigured);
+    final candidates = _repositoryCandidates(normalizedBase);
+    Object? lastError;
+
+    for (final base in candidates) {
+      final indexUri = _joinRepoFile(base, 'index.json');
+      try {
+        final response = await _client.getUri<dynamic>(
+          indexUri,
+          options: Options(responseType: ResponseType.plain),
+        );
+        final results = _parseIndex(response.data, base);
+        if (officialMirrors.contains(base)) {
+          _preferredOfficialBase = base;
+        }
+        if (repository != null) {
+          if (rawConfigured.isEmpty) {
+            await _preferences.remove(_repoKey);
+          } else {
+            await _preferences.setString(_repoKey, normalizedBase);
+          }
+        }
+        return results;
+      } on FormatException catch (error) {
+        lastError = error;
+      } on DioException catch (error) {
+        lastError = error;
+      }
+    }
+
+    throw _describeRepoFailure(lastError, multiMirror: candidates.length > 1);
+  }
+
+  @override
+  Future<List<RulePluginMeta>> install(Uri url) async {
+    final validUrl = networkUri('$url');
+    final candidates = _fileCandidates(validUrl);
+    Object? lastError;
+
+    for (final candidate in candidates) {
+      try {
+        final response = await _client.getUri<dynamic>(
+          candidate,
+          options: Options(responseType: ResponseType.plain),
+        );
+        final rawText = _stringifyResponse(response.data);
+        final installed = await importRules(rawText);
+        final matchedBase = _matchOfficialBase('$candidate');
+        if (matchedBase != null) {
+          _preferredOfficialBase = matchedBase;
+        }
+        return installed;
+      } on FormatException catch (error) {
+        lastError = error;
+      } on DioException catch (error) {
+        lastError = error;
+      }
+    }
+
+    throw _describeRepoFailure(lastError, multiMirror: candidates.length > 1);
+  }
+
+  String _normalizeRepositoryBase(String raw) {
+    if (raw.isEmpty) return officialRepository;
+    final uri = networkUri(raw);
+    if (uri.host.toLowerCase() == 'github.com') {
+      final cleanedPath = uri.path.replaceAll(RegExp(r'/+$'), '').toLowerCase();
+      if (cleanedPath == '/predidit/kazumirules') {
+        return officialRepository;
+      }
+      throw const FormatException(
+        '请填写规则仓库 Raw 地址（如 raw.githubusercontent.com），不要填写 GitHub 网页地址',
+      );
+    }
+    var normalized = raw.trim();
+    final lower = normalized.toLowerCase();
+    if (lower.endsWith('/index.json')) {
+      normalized = normalized.substring(0, normalized.length - 'index.json'.length);
+    } else if (lower.endsWith('index.json')) {
+      normalized = normalized.substring(0, normalized.length - 'index.json'.length);
+    }
+    if (!normalized.endsWith('/')) {
+      normalized = '$normalized/';
+    }
+    return normalized;
+  }
+
+  List<String> _repositoryCandidates(String normalizedBase) {
+    final ordered = <String>[];
+    void addUnique(String value) {
+      if (!ordered.contains(value)) ordered.add(value);
+    }
+
+    if (normalizedBase == officialRepository) {
+      if (_preferredOfficialBase != null) {
+        addUnique(_preferredOfficialBase!);
+      }
+      for (final mirror in officialMirrors) {
+        addUnique(mirror);
+      }
+      return ordered;
+    }
+
+    if (officialMirrors.contains(normalizedBase)) {
+      addUnique(normalizedBase);
+      for (final mirror in officialMirrors) {
+        addUnique(mirror);
+      }
+      return ordered;
+    }
+
+    addUnique(normalizedBase);
+    final uri = Uri.tryParse(normalizedBase);
+    if (uri != null && uri.host.toLowerCase() == 'raw.githubusercontent.com') {
+      addUnique('https://gh-proxy.org/$normalizedBase');
+      addUnique('https://ghfast.top/$normalizedBase');
+    }
+    return ordered;
+  }
+
+  List<Uri> _fileCandidates(Uri url) {
+    final raw = '$url';
+    final ordered = <Uri>[];
+    void addUnique(Uri uri) {
+      if (!ordered.any((existing) => '$existing' == '$uri')) {
+        ordered.add(uri);
+      }
+    }
+
+    final matchedBase = _matchOfficialBase(raw);
+    if (matchedBase != null) {
+      final suffix = raw.substring(matchedBase.length);
+      addUnique(url);
+      if (_preferredOfficialBase != null) {
+        addUnique(Uri.parse('$_preferredOfficialBase$suffix'));
+      }
+      for (final mirror in officialMirrors) {
+        addUnique(Uri.parse('$mirror$suffix'));
+      }
+      return ordered;
+    }
+
+    addUnique(url);
+    if (url.host.toLowerCase() == 'raw.githubusercontent.com') {
+      addUnique(Uri.parse('https://gh-proxy.org/$raw'));
+      addUnique(Uri.parse('https://ghfast.top/$raw'));
+    }
+    return ordered;
+  }
+
+  String? _matchOfficialBase(String url) {
+    for (final base in officialMirrors) {
+      if (url.startsWith(base)) return base;
+    }
+    return null;
+  }
+
+  Uri _joinRepoFile(String baseWithSlash, String fileName) =>
+      Uri.parse('$baseWithSlash${Uri.encodeComponent(fileName)}');
+
+  String _stringifyResponse(Object? data) {
+    if (data == null) return '';
+    if (data is String) {
+      return data.startsWith('\uFEFF') ? data.substring(1) : data;
+    }
+    return jsonEncode(data);
+  }
+
+  List<RuleListing> _parseIndex(Object? rawData, String activeBase) {
+    final Object? decoded;
+    if (rawData is String) {
+      final cleaned = (rawData.startsWith('\uFEFF')
+              ? rawData.substring(1)
+              : rawData)
+          .trim();
+      if (cleaned.isEmpty) {
+        throw const FormatException('规则仓库返回内容为空');
+      }
+      decoded = jsonDecode(cleaned);
+    } else {
+      decoded = rawData;
+    }
+    if (decoded is! List) {
+      throw const FormatException('规则仓库索引格式无效');
+    }
     final results = <RuleListing>[];
-    for (final raw in jsonList(response.data)) {
+    for (final raw in jsonList(decoded)) {
       final item = jsonObject(raw);
       final name = jsonString(item['name']).trim();
       if (name.isEmpty ||
@@ -107,23 +299,39 @@ class KazumiRules implements ManagedRules {
         RuleListing(
           name: name,
           version: '${item['version'] ?? ''}',
-          url: index.resolve('${Uri.encodeComponent(name)}.json'),
+          url: _joinRepoFile(activeBase, '$name.json'),
         ),
       );
-    }
-    if (repository != null) {
-      await _preferences.setString('koneko_rules_repository', configured);
     }
     return results;
   }
 
-  @override
-  Future<List<RulePluginMeta>> install(Uri url) async {
-    final response = await _client.getUri<String>(
-      networkUri('$url'),
-      options: Options(responseType: ResponseType.plain),
-    );
-    return importRules(response.data ?? '');
+  Object _describeRepoFailure(Object? error, {required bool multiMirror}) {
+    if (error is FormatException) return error;
+    if (error is DioException) {
+      final status = error.response?.statusCode;
+      if (status == 404) {
+        return StateError('未找到规则仓库文件（HTTP 404），请检查仓库地址');
+      }
+      if (status != null) {
+        return StateError('规则仓库返回异常（HTTP $status），请稍后重试或切换镜像');
+      }
+      if (error.type == DioExceptionType.connectionTimeout ||
+          error.type == DioExceptionType.receiveTimeout ||
+          error.type == DioExceptionType.sendTimeout) {
+        return StateError(
+          multiMirror
+              ? '连接规则仓库超时（已自动尝试官方源与多个镜像），请检查网络'
+              : '连接规则仓库超时，请检查网络或切换镜像源',
+        );
+      }
+      return StateError(
+        multiMirror
+            ? '无法连接规则仓库（已自动尝试官方源与多个镜像），请检查网络设置'
+            : '无法连接规则仓库，请检查网络或仓库地址',
+      );
+    }
+    return StateError('规则仓库读取失败，请稍后重试');
   }
 
   @override

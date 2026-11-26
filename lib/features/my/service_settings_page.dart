@@ -224,18 +224,24 @@ class _ServiceSettingsPageState extends ConsumerState<ServiceSettingsPage> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Text(
-                          '弹弹Play',
+                          '弹幕与屏蔽词（弹弹Play）',
                           style: AppTextStyle.headline.of(context),
                         ),
-                        _field(_appId, 'App ID'),
-                        _field(_appKey, 'App 密钥', secret: true),
+                        const SizedBox(height: 4),
+                        Text(
+                          '已内置 Kazumi 同款弹幕接口，开箱即用。下方 App ID 与密钥留空即可，仅在需要自定义密钥时填写。',
+                          style: context.listSubtitleStyle,
+                        ),
+                        const SizedBox(height: 6),
+                        _field(_appId, '自定义 App ID（留空使用内置默认）'),
+                        _field(_appKey, '自定义 App 密钥（留空使用内置默认）', secret: true),
                         const SizedBox(height: 8),
                         TextField(
                           controller: _shield,
                           minLines: 2,
                           maxLines: 4,
                           decoration: const InputDecoration(
-                            hintText: '屏蔽词，每行一个',
+                            hintText: '弹幕屏蔽词，每行一个',
                           ),
                         ),
                       ],

@@ -1,5 +1,109 @@
 import 'koneko_contract.dart';
 
+/// Represents an anime broadcast season (quarter 1=冬, 2=春, 3=夏, 4=秋).
+class AnimeSeason {
+  const AnimeSeason({required this.year, required this.quarter});
+
+  factory AnimeSeason.current([DateTime? now]) {
+    final date = now ?? DateTime.now();
+    return AnimeSeason(year: date.year, quarter: ((date.month - 1) ~/ 3) + 1);
+  }
+
+  final int year;
+
+  /// 1 = 冬 (1月), 2 = 春 (4月), 3 = 夏 (7月), 4 = 秋 (10月).
+  final int quarter;
+
+  int get startMonth => (quarter - 1) * 3 + 1;
+
+  String get seasonName => const ['冬', '春', '夏', '秋'][(quarter - 1).clamp(0, 3)];
+
+  String get label => '$year ${seasonName}季新番';
+
+  String get shortLabel => '$year $seasonName';
+
+  String get code => '${year}Q$quarter';
+
+  bool isSameAs(AnimeSeason other) =>
+      year == other.year && quarter == other.quarter;
+
+  bool get isCurrent => isSameAs(AnimeSeason.current());
+
+  bool isAfter(DateTime now) => DateTime(year, startMonth, 1).isAfter(now);
+
+  (String start, String end) get dateRange {
+    String fmt(DateTime d) =>
+        '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    final start = DateTime(year, startMonth, 1);
+    final end = DateTime(year, startMonth + 3, 1);
+    return (fmt(start), fmt(end));
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is AnimeSeason && year == other.year && quarter == other.quarter;
+
+  @override
+  int get hashCode => Object.hash(year, quarter);
+}
+
+/// Condition-based Bangumi search filter aligned with Kazumi (without image search).
+class SearchFilter {
+  const SearchFilter({
+    this.keyword = '',
+    this.sort = 'heat',
+    this.tags = const [],
+    this.season,
+    this.year,
+    this.minScore,
+    this.weekdays = const [],
+  });
+
+  final String keyword;
+
+  /// One of `'heat'`, `'score'`, `'rank'`, `'match'`.
+  final String sort;
+  final List<String> tags;
+  final AnimeSeason? season;
+  final int? year;
+  final double? minScore;
+  final List<int> weekdays;
+
+  bool get hasActiveFilters => activeFilterCount > 0;
+
+  int get activeFilterCount {
+    var count = 0;
+    if (sort != 'heat') count++;
+    if (tags.isNotEmpty) count++;
+    if (season != null || year != null) count++;
+    if (minScore != null && minScore! > 0) count++;
+    if (weekdays.isNotEmpty) count++;
+    return count;
+  }
+
+  SearchFilter copyWith({
+    String? keyword,
+    String? sort,
+    List<String>? tags,
+    Object? season = _sentinel,
+    Object? year = _sentinel,
+    Object? minScore = _sentinel,
+    List<int>? weekdays,
+  }) => SearchFilter(
+    keyword: keyword ?? this.keyword,
+    sort: sort ?? this.sort,
+    tags: tags ?? this.tags,
+    season: identical(season, _sentinel) ? this.season : season as AnimeSeason?,
+    year: identical(year, _sentinel) ? this.year : year as int?,
+    minScore: identical(minScore, _sentinel)
+        ? this.minScore
+        : minScore as double?,
+    weekdays: weekdays ?? this.weekdays,
+  );
+
+  static const _sentinel = Object();
+}
+
 /// The cache-backed network capabilities are separate from synchronous reads.
 abstract interface class OnlineCatalog implements CatalogRepository {
   Stream<void> get changes;
@@ -7,6 +111,12 @@ abstract interface class OnlineCatalog implements CatalogRepository {
   Future<void> refresh();
   Future<void> loadSubject(int id);
   Future<void> searchOnline(String query);
+  Future<List<AnimeSubject>> searchFiltered(
+    SearchFilter filter, {
+    int offset = 0,
+    int limit = 30,
+  });
+  Future<Map<int, List<AnimeSubject>>> loadSeasonCalendar(AnimeSeason season);
   Future<SubjectCommentsPage> loadComments(
     int subjectId, {
     int offset = 0,

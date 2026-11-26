@@ -177,6 +177,37 @@ class _RulesPageState extends ConsumerState<RulesPage> {
   }
 }
 
+class _RuleStorePreset {
+  const _RuleStorePreset({required this.label, required this.repository});
+
+  final String label;
+  final String repository;
+}
+
+const _ruleStorePresets = <_RuleStorePreset>[
+  _RuleStorePreset(label: '自动优选', repository: ''),
+  _RuleStorePreset(
+    label: 'gh-proxy',
+    repository:
+        'https://gh-proxy.org/https://raw.githubusercontent.com/Predidit/KazumiRules/main/',
+  ),
+  _RuleStorePreset(
+    label: 'ghfast',
+    repository:
+        'https://ghfast.top/https://raw.githubusercontent.com/Predidit/KazumiRules/main/',
+  ),
+  _RuleStorePreset(
+    label: 'GitCode',
+    repository:
+        'https://raw.gitcode.com/gh_mirrors/ka/KazumiRules/raw/main/',
+  ),
+  _RuleStorePreset(
+    label: 'GitHub 直连',
+    repository:
+        'https://raw.githubusercontent.com/Predidit/KazumiRules/main/',
+  ),
+];
+
 class _RuleStorePage extends ConsumerStatefulWidget {
   const _RuleStorePage({required this.repository});
 
@@ -188,13 +219,35 @@ class _RuleStorePage extends ConsumerStatefulWidget {
 
 class _RuleStorePageState extends ConsumerState<_RuleStorePage> {
   final _address = TextEditingController();
+  final _filter = TextEditingController();
   late Future<List<RuleListing>> _rules = widget.repository.browse();
   final _installing = <Uri>{};
+  int _selectedPreset = 0;
 
   @override
   void dispose() {
     _address.dispose();
+    _filter.dispose();
     super.dispose();
+  }
+
+  void _reload({String? repository}) {
+    setState(() {
+      _rules = widget.repository.browse(repository: repository);
+    });
+  }
+
+  void _selectPreset(int index) {
+    final preset = _ruleStorePresets[index];
+    setState(() {
+      _selectedPreset = index;
+      if (index == 0) {
+        _address.clear();
+      } else {
+        _address.text = preset.repository;
+      }
+      _rules = widget.repository.browse(repository: preset.repository);
+    });
   }
 
   Future<void> _install(RuleListing listing) async {
@@ -224,20 +277,17 @@ class _RuleStorePageState extends ConsumerState<_RuleStorePage> {
   @override
   Widget build(BuildContext context) {
     final installed = ref.watch(rulesProvider);
+    final query = _filter.text.trim().toLowerCase();
     return KonekoScaffold(
       title: '规则仓库',
       showBack: true,
       actions: [
         IconButtonData(
           glyph: KonekoGlyphs.refresh,
-          tooltip: '加载仓库',
+          tooltip: '重新加载',
           onPressed: () {
             final url = _address.text.trim();
-            setState(
-              () => _rules = widget.repository.browse(
-                repository: url.isEmpty ? null : url,
-              ),
-            );
+            _reload(repository: url.isEmpty ? null : url);
           },
         ),
       ],
@@ -255,12 +305,33 @@ class _RuleStorePageState extends ConsumerState<_RuleStorePage> {
               keyboardType: TextInputType.url,
               autocorrect: false,
               decoration: const InputDecoration(
-                hintText: '自定义仓库 URL（留空使用当前仓库）',
+                hintText: '自定义仓库 Raw URL（留空使用官方仓库与镜像自动优选）',
               ),
-              onSubmitted: (text) => setState(
-                () => _rules = widget.repository.browse(
-                  repository: text.trim().isEmpty ? null : text.trim(),
-                ),
+              onSubmitted: (text) {
+                final trimmed = text.trim();
+                setState(() {
+                  _selectedPreset = trimmed.isEmpty ? 0 : -1;
+                  _rules = widget.repository.browse(
+                    repository: trimmed.isEmpty ? '' : trimmed,
+                  );
+                });
+              },
+            ),
+            const SizedBox(height: 10),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                spacing: 8,
+                children: [
+                  for (var i = 0; i < _ruleStorePresets.length; i++)
+                    KonekoChip(
+                      label: _ruleStorePresets[i].label,
+                      height: 30,
+                      fontSize: 12,
+                      selected: _selectedPreset == i,
+                      onPressed: () => _selectPreset(i),
+                    ),
+                ],
               ),
             ),
             const SizedBox(height: 10),
@@ -268,32 +339,121 @@ class _RuleStorePageState extends ConsumerState<_RuleStorePage> {
               future: _rules,
               builder: (context, snapshot) {
                 if (snapshot.connectionState != ConnectionState.done) {
-                  return const Center(child: ActivityIndicator());
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 36),
+                    child: Center(child: ActivityIndicator()),
+                  );
                 }
-                if (snapshot.hasError) return const Text('仓库读取失败，请检查网络或仓库地址。');
-                final items = snapshot.data ?? const [];
-                if (items.isEmpty) return const Text('仓库中暂无规则');
-                return generateGroup([
-                  for (final item in items)
-                    DecorationListItem(
-                      title: Text(item.name),
-                      subtitle: Text(item.version),
-                      trailing: _installing.contains(item.url)
-                          ? const ActivityIndicator()
-                          : GlyphIcon(
-                              installed.any(
-                                    (rule) =>
-                                        rule.id == item.name.toLowerCase() &&
-                                        rule.version == item.version,
-                                  )
-                                  ? Glyphs.check
-                                  : KonekoGlyphs.addCircle,
+                if (snapshot.hasError) {
+                  final message = featureError(
+                    snapshot.error!,
+                    '仓库读取失败，请检查网络或切换上方镜像源。',
+                  );
+                  return KonekoCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      spacing: 12,
+                      children: [
+                        Text(
+                          '规则仓库暂时无法加载',
+                          style: AppTextStyle.headline.of(context),
+                        ),
+                        Text(message, style: context.listSubtitleStyle),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            TextButton.icon(
+                              onPressed: () {
+                                final url = _address.text.trim();
+                                _reload(repository: url.isEmpty ? null : url);
+                              },
+                              icon: const GlyphIcon(KonekoGlyphs.refresh),
+                              label: const Text('重新加载'),
                             ),
-                      onPressed: _installing.contains(item.url)
-                          ? null
-                          : () => _install(item),
+                            if (_address.text.trim().isNotEmpty)
+                              TextButton.icon(
+                                onPressed: () => _selectPreset(0),
+                                icon: const GlyphIcon(KonekoGlyphs.reset),
+                                label: const Text('恢复官方自动优选'),
+                              ),
+                          ],
+                        ),
+                      ],
                     ),
-                ]);
+                  );
+                }
+                final allItems = snapshot.data ?? const [];
+                if (allItems.isEmpty) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Center(child: Text('仓库中暂无可用规则')),
+                  );
+                }
+                final items = query.isEmpty
+                    ? allItems
+                    : allItems
+                          .where(
+                            (item) => item.name.toLowerCase().contains(query),
+                          )
+                          .toList();
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  spacing: 10,
+                  children: [
+                    TextField(
+                      controller: _filter,
+                      autocorrect: false,
+                      decoration: InputDecoration(
+                        hintText: '筛选规则（共 ${allItems.length} 条）',
+                      ),
+                      onChanged: (_) => setState(() {}),
+                    ),
+                    if (items.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 20),
+                        child: Center(child: Text('没有匹配的规则')),
+                      )
+                    else
+                      generateGroup([
+                        for (final item in items)
+                          Builder(
+                            builder: (context) {
+                              final key = item.name.trim().toLowerCase();
+                              RulePluginMeta? current;
+                              for (final rule in installed) {
+                                if (rule.id == key) {
+                                  current = rule;
+                                  break;
+                                }
+                              }
+                              final upToDate =
+                                  current != null &&
+                                  current.version == item.version;
+                              final statusText = upToDate
+                                  ? 'v${item.version} · 已安装'
+                                  : current != null
+                                  ? 'v${current.version} → v${item.version} · 可更新'
+                                  : 'v${item.version}';
+                              return DecorationListItem(
+                                title: Text(item.name),
+                                subtitle: Text(statusText),
+                                trailing: _installing.contains(item.url)
+                                    ? const ActivityIndicator()
+                                    : GlyphIcon(
+                                        upToDate
+                                            ? Glyphs.check
+                                            : KonekoGlyphs.addCircle,
+                                      ),
+                                onPressed: _installing.contains(item.url)
+                                    ? null
+                                    : () => _install(item),
+                              );
+                            },
+                          ),
+                      ]),
+                  ],
+                );
               },
             ),
           ],

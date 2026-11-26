@@ -527,4 +527,85 @@ abstract final class KonekoGlyphs {
     GlyphPath('M6 5.5L15 12L6 18.5Z'),
     GlyphPath('M18 6V18', role: GlyphRole.line),
   ]);
+
+  static const tune = Glyph([
+    GlyphPolyline([
+      GlyphVertex(4, 7),
+      GlyphVertex(20, 7),
+    ], role: GlyphRole.line),
+    GlyphCircle(9, 7, 2.2, role: GlyphRole.line, solid: true),
+    GlyphPolyline([
+      GlyphVertex(4, 12),
+      GlyphVertex(20, 12),
+    ], role: GlyphRole.line),
+    GlyphCircle(15.5, 12, 2.2, role: GlyphRole.line, solid: true),
+    GlyphPolyline([
+      GlyphVertex(4, 17),
+      GlyphVertex(20, 17),
+    ], role: GlyphRole.line),
+    GlyphCircle(10.5, 17, 2.2, role: GlyphRole.line, solid: true),
+  ]);
+
+  static const fullscreen = Glyph([
+    GlyphPolyline([
+      GlyphVertex(4.5, 9),
+      GlyphVertex(4.5, 4.5, 0.5),
+      GlyphVertex(9, 4.5),
+    ], role: GlyphRole.line),
+    GlyphPolyline([
+      GlyphVertex(15, 4.5),
+      GlyphVertex(19.5, 4.5, 0.5),
+      GlyphVertex(19.5, 9),
+    ], role: GlyphRole.line),
+    GlyphPolyline([
+      GlyphVertex(19.5, 15),
+      GlyphVertex(19.5, 19.5, 0.5),
+      GlyphVertex(15, 19.5),
+    ], role: GlyphRole.line),
+    GlyphPolyline([
+      GlyphVertex(9, 19.5),
+      GlyphVertex(4.5, 19.5, 0.5),
+      GlyphVertex(4.5, 15),
+    ], role: GlyphRole.line),
+  ]);
+
+  static const fullscreenExit = Glyph([
+    GlyphPolyline([
+      GlyphVertex(9, 4.5),
+      GlyphVertex(9, 9, 0.5),
+      GlyphVertex(4.5, 9),
+    ], role: GlyphRole.line),
+    GlyphPolyline([
+      GlyphVertex(15, 4.5),
+      GlyphVertex(15, 9, 0.5),
+      GlyphVertex(19.5, 9),
+    ], role: GlyphRole.line),
+    GlyphPolyline([
+      GlyphVertex(19.5, 15),
+      GlyphVertex(15, 15, 0.5),
+      GlyphVertex(15, 19.5),
+    ], role: GlyphRole.line),
+    GlyphPolyline([
+      GlyphVertex(4.5, 15),
+      GlyphVertex(9, 15, 0.5),
+      GlyphVertex(9, 19.5),
+    ], role: GlyphRole.line),
+  ]);
+
+  static const comment = Glyph([
+    GlyphBox(3.5, 4.5, 20.5, 16.5, 3.2),
+    GlyphPolyline([
+      GlyphVertex(8, 16.5),
+      GlyphVertex(6.5, 20.2),
+      GlyphVertex(11.8, 16.5),
+    ], role: GlyphRole.line),
+    GlyphPolyline([
+      GlyphVertex(7.8, 9.2),
+      GlyphVertex(16.2, 9.2),
+    ], role: GlyphRole.detail),
+    GlyphPolyline([
+      GlyphVertex(7.8, 12.6),
+      GlyphVertex(13.5, 12.6),
+    ], role: GlyphRole.detail),
+  ]);
 }

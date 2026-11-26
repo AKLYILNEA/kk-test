@@ -275,6 +275,18 @@ class LibraryNotifier extends Notifier<List<CollectionEntry>> {
     );
   }
 
+  void removeSubject(int subjectId) {
+    final now = DateTime.now();
+    _save(
+      [
+        for (final other in state)
+          if (other.subjectId != subjectId) other,
+      ],
+      subjectId,
+      now,
+    );
+  }
+
   void markEpisodeWatched(int subjectId, int episodeNumber, int totalEpisodes) {
     final existing = entryFor(subjectId);
     final previous = existing?.watchedEpisodes ?? 0;

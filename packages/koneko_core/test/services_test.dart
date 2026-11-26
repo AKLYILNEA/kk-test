@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:koneko_contract/koneko_contract.dart';
 import 'package:koneko_core/src/bangumi.dart';
+import 'package:koneko_core/src/danmaku.dart';
 import 'package:koneko_core/src/downloads.dart';
 import 'package:koneko_core/src/playback_sources.dart';
 import 'package:koneko_core/src/rules.dart';
@@ -48,6 +49,23 @@ void main() {
       expect(comments.items.single.userName, '测试观众');
       expect(comments.items.single.content, '非常好看！');
       expect(comments.items.single.rate, 9);
+
+      final filtered = await catalog.searchFiltered(
+        const SearchFilter(
+          keyword: '芙莉莲',
+          sort: 'score',
+          tags: ['奇幻'],
+          year: 2023,
+          minScore: 8.0,
+        ),
+      );
+      expect(filtered.single.subjectId, 414461);
+
+      final pastSeason = await catalog.loadSeasonCalendar(
+        const AnimeSeason(year: 2023, quarter: 4),
+      );
+      expect(pastSeason[5]?.single.subjectId, 414461);
+
       await Future<void>.delayed(Duration.zero);
       expect(
         BangumiCatalog(
@@ -132,6 +150,52 @@ void main() {
       // The persistence queue is flushed by the following import.
       await rules.importRules(jsonEncode(api));
       expect(KazumiRules(preferences).getAllRules().first.enabled, false);
+    },
+  );
+
+  test(
+    'KazumiRules parses text/plain repository index and falls back across mirrors',
+    () async {
+      final requested = <String>[];
+      final adapter = _RuleMirrorAdapter(requested);
+      final rules = KazumiRules(
+        preferences,
+        client: Dio()..httpClientAdapter = adapter,
+      );
+
+      final listings = await rules.browse();
+      expect(listings.single.name, 'MirrorRule');
+      expect(listings.single.version, '1.2');
+      // First mirror returned HTML error page, second timed out, third succeeded.
+      expect(requested.length, 3);
+      expect(requested.first, startsWith('https://gh-proxy.org/'));
+      expect(requested[1], startsWith('https://ghfast.top/'));
+      expect(requested[2], startsWith('https://raw.gitcode.com/'));
+      expect(
+        '${listings.single.url}',
+        'https://raw.gitcode.com/gh_mirrors/ka/KazumiRules/raw/main/MirrorRule.json',
+      );
+
+      // Install falls back cleanly if the preferred mirror returns an error.
+      final installed = await rules.install(listings.single.url);
+      expect(installed.single.name, 'MirrorRule');
+      expect(installed.single.version, '1.2');
+    },
+  );
+
+  test(
+    'DandanplaySource loads danmaku out-of-the-box with Kazumi defaults and title fallback',
+    () async {
+      final adapter = _DanmakuFixtureAdapter();
+      final source = DandanplaySource(
+        _EmptyVault(),
+        client: Dio()..httpClientAdapter = adapter,
+      );
+      final items = await source.load(_subject, 1);
+      expect(items, hasLength(1));
+      expect(items.single.text, '前方高能！');
+      expect(items.single.timeSeconds, 12.5);
+      expect(adapter.sawAppIdHeader, isTrue);
     },
   );
 
@@ -345,4 +409,145 @@ class _DirectSource implements PlaybackSources {
   @override
   Future<PlayableMedia> resolve(SourceEpisode episode) async =>
       PlayableMedia(episode.page);
+}
+
+class _RuleMirrorAdapter implements HttpClientAdapter {
+  _RuleMirrorAdapter(this.requested);
+
+  final List<String> requested;
+
+  @override
+  void close({bool force = false}) {}
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    final url = '${options.uri}';
+    requested.add(url);
+
+    if (url.endsWith('/index.json')) {
+      if (url.startsWith('https://gh-proxy.org/')) {
+        return ResponseBody.fromString(
+          '<html><body>502 Bad Gateway</body></html>',
+          200,
+          headers: {
+            Headers.contentTypeHeader: ['text/html; charset=utf-8'],
+          },
+        );
+      }
+      if (url.startsWith('https://ghfast.top/')) {
+        throw DioException.connectionTimeout(
+          timeout: const Duration(seconds: 5),
+          requestOptions: options,
+        );
+      }
+      if (url.startsWith('https://raw.gitcode.com/')) {
+        return ResponseBody.fromString(
+          jsonEncode([
+            {'name': 'MirrorRule', 'version': '1.2'},
+          ]),
+          200,
+          headers: {
+            Headers.contentTypeHeader: ['text/plain; charset=utf-8'],
+          },
+        );
+      }
+    }
+
+    if (url.endsWith('/MirrorRule.json')) {
+      if (url.startsWith('https://raw.gitcode.com/')) {
+        throw DioException.connectionError(
+          requestOptions: options,
+          reason: 'temporary reset',
+        );
+      }
+      if (url.startsWith('https://gh-proxy.org/')) {
+        return ResponseBody.fromString(
+          jsonEncode({
+            'name': 'MirrorRule',
+            'api': '9',
+            'version': '1.2',
+            'baseURL': 'https://example.com',
+            'searchURL': 'https://example.com/search?q=@keyword',
+            'searchList': '//li',
+            'searchName': './a',
+            'searchResult': './a',
+            'chapterRoads': '//div',
+            'chapterResult': './a',
+          }),
+          200,
+          headers: {
+            Headers.contentTypeHeader: ['text/plain; charset=utf-8'],
+          },
+        );
+      }
+    }
+
+    throw StateError('Unexpected rule mirror request: $url');
+  }
+}
+
+class _DanmakuFixtureAdapter implements HttpClientAdapter {
+  bool sawAppIdHeader = false;
+
+  @override
+  void close({bool force = false}) {}
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    if ((options.headers['X-AppId'] ?? '').toString().isNotEmpty &&
+        (options.headers['X-Signature'] ?? '').toString().isNotEmpty) {
+      sawAppIdHeader = true;
+    }
+    final path = options.uri.path;
+    if (path == '/api/v2/bangumi/bgmtv/414461') {
+      // Simulate no direct bgmtv match so title search fallback is exercised.
+      return ResponseBody.fromString(
+        jsonEncode({'bangumiId': 0}),
+        200,
+        headers: {
+          Headers.contentTypeHeader: [Headers.jsonContentType],
+        },
+      );
+    }
+    if (path == '/api/v2/search/episodes') {
+      return ResponseBody.fromString(
+        jsonEncode({
+          'animes': [
+            {
+              'animeId': 9876,
+              'episodes': [
+                {'episodeId': 98760001, 'episodeTitle': '第1话'},
+              ],
+            },
+          ],
+        }),
+        200,
+        headers: {
+          Headers.contentTypeHeader: [Headers.jsonContentType],
+        },
+      );
+    }
+    if (path == '/api/v2/comment/98760001') {
+      return ResponseBody.fromString(
+        jsonEncode({
+          'comments': [
+            {'p': '12.5,1,16777215,0', 'm': '前方高能！'},
+          ],
+        }),
+        200,
+        headers: {
+          Headers.contentTypeHeader: [Headers.jsonContentType],
+        },
+      );
+    }
+    throw StateError('Unexpected danmaku request: ${options.uri}');
+  }
 }

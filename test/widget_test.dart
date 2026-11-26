@@ -135,9 +135,9 @@ void main() {
   );
 
   testWidgets(
-    'rapid tab switches retain controls and group the first two actions',
+    'schedule and library use FlClash sheets for season/filter/status selection',
     (tester) async {
-      _setViewport(tester, const Size(360, 780));
+      _setViewport(tester, const Size(390, 820));
       await tester.pumpWidget(_testApp());
       await tester.pumpAndSettle();
 
@@ -146,34 +146,41 @@ void main() {
         matching: find.text(label),
       );
 
+      // Schedule page opens FlClash settings sheet with year/season picker
       await tester.tap(dockItem('时间表'));
       await tester.pumpAndSettle();
-      await tester.tap(_barAction('当前：评分优先'));
+      await tester.tap(_barAction('放送设置与季度切换'));
       await tester.pumpAndSettle();
-      await tester.tap(dockItem('我的'));
-      await tester.pump(const Duration(milliseconds: 50));
-      await tester.tap(dockItem('追番'));
+      expect(find.text('放送时间表设置'), findsOneWidget);
+      expect(find.text('切换年份与季度'), findsOneWidget);
+      await tester.tap(_barAction('关闭'));
       await tester.pumpAndSettle();
 
-      final toolbarGroup = find.descendant(
-        of: find.byType(ScaffoldBar),
-        matching: find.byType(TonalButtonGroup),
-      );
-      expect(
-        find.descendant(of: toolbarGroup, matching: _barAction('筛选收藏')),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(of: toolbarGroup, matching: _barAction('同步 Bangumi')),
-        findsNothing,
-      );
-      expect(
-        tester.widget<AppBarActionButton>(_barAction('同步 Bangumi')).data.glyph,
-        KonekoGlyphs.sync,
-      );
-      await tester.tap(dockItem('时间表'));
+      // Library page has clean 2-button toolbar and opens Status Picker Sheet
+      await tester.tap(dockItem('追番'));
       await tester.pumpAndSettle();
-      expect(_barAction('当前：更新优先'), findsOneWidget);
+      expect(_barAction('搜索追番库'), findsOneWidget);
+      expect(_barAction('排序与同步设置'), findsOneWidget);
+      expect(
+        tester.widget<AppBarActionButton>(_barAction('排序与同步设置')).data.glyph,
+        KonekoGlyphs.tune,
+      );
+
+      await tester.tap(find.text('在看').last);
+      await tester.pumpAndSettle();
+      expect(find.text('修改追番状态'), findsOneWidget);
+      await tester.tap(find.text('想看').last);
+      await tester.pumpAndSettle();
+
+      // Discover page opens FlClash condition filter sheet (no image search)
+      await tester.tap(dockItem('推荐'));
+      await tester.pumpAndSettle();
+      await tester.tap(_barAction('发现搜索'));
+      await tester.pumpAndSettle();
+      expect(find.text('以图搜番'), findsNothing);
+      await tester.tap(_barAction('按条件筛选'));
+      await tester.pumpAndSettle();
+      expect(find.text('按条件搜索'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );

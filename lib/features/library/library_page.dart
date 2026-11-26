@@ -1,22 +1,33 @@
+import 'dart:async';
+
 import 'package:collection/collection.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:koneko/common/feature_feedback.dart';
 import 'package:koneko/common/providers.dart';
-import 'package:koneko/features/my/service_settings_page.dart';
 import 'package:koneko/features/detail/subject_detail_page.dart';
+import 'package:koneko/features/my/service_settings_page.dart';
 import 'package:koneko/features/player/player_page.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
 import 'package:koneko/ui/koneko_scaffold.dart';
+import 'package:koneko/ui/koneko_sheet.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:koneko_contract/koneko_contract.dart';
 import 'package:prism_ui/icons/icons.dart';
 import 'package:prism_ui/prism_ui.dart';
 
-/// Pure FlClash responsive Library page (03-library-collect):
-/// Completely escapes Kazumi's secondary toolbar & grid/list toggle button.
-/// Uses minimal floating top circular action buttons, horizontal category pills,
-/// and responsive 1 / 2 / 3-column FlClash cards with inline progress & direct resume.
+enum _LibrarySort {
+  recent('最近更新'),
+  score('评分优先'),
+  progress('观看进度');
+
+  const _LibrarySort(this.label);
+  final String label;
+}
+
+/// Pure FlClash responsive Library page with Kazumi sync parity
+/// (Bangumi + WebDAV) and explicit Status Picker Sheet.
 class LibraryPage extends ConsumerStatefulWidget {
   const LibraryPage({super.key, this.bottomPadding = 0});
 
@@ -29,16 +40,184 @@ class LibraryPage extends ConsumerStatefulWidget {
 class _LibraryPageState extends ConsumerState<LibraryPage> {
   CollectionStatus? _filter = CollectionStatus.watching;
   bool _showSearch = false;
-  bool _sortByRecent = true;
+  _LibrarySort _sort = _LibrarySort.recent;
   String _query = '';
+  bool _syncing = false;
 
   static const _tabs = <(CollectionStatus?, String)>[
     (CollectionStatus.watching, '在看'),
     (CollectionStatus.wish, '想看'),
     (CollectionStatus.watched, '看过'),
     (CollectionStatus.onHold, '搁置'),
+    (CollectionStatus.dropped, '抛弃'),
     (null, '全部'),
   ];
+
+  Future<void> _pickStatus(AnimeSubject subject, CollectionEntry entry) async {
+    final choice = await showKonekoStatusSheet(
+      context: context,
+      subjectTitle: subject.title,
+      currentStatus: entry.status,
+    );
+    if (!mounted || choice == null) return;
+    if (choice.remove) {
+      ref.read(libraryProvider.notifier).removeSubject(entry.subjectId);
+      showKonekoBanner(context, '已将「${subject.title}」移出追番');
+    } else if (choice.status case final status?) {
+      if (status != entry.status) {
+        ref.read(libraryProvider.notifier).setStatus(entry.subjectId, status);
+        showKonekoBanner(
+          context,
+          '「${subject.title}」已移至「${status.label}」',
+          level: BannerLevel.success,
+        );
+      }
+    }
+  }
+
+  Future<void> _runSync(
+    Future<int> Function() action,
+    String label,
+  ) async {
+    if (_syncing) return;
+    setState(() => _syncing = true);
+    try {
+      final count = await action();
+      if (!mounted) return;
+      showKonekoBanner(
+        context,
+        '$label 同步完成（共 $count 条记录）',
+        level: BannerLevel.success,
+      );
+    } on Object catch (error) {
+      if (mounted) {
+        showKonekoBanner(
+          context,
+          featureError(error, '$label 同步失败，请检查账号配置与网络'),
+          level: BannerLevel.error,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
+  }
+
+  Future<void> _openManageSheet() async {
+    final sync = ref.read(trackingSyncProvider);
+    final secrets = await ref.read(secretsProvider)?.read();
+    if (!mounted) return;
+    final hasBangumi = (secrets?.bangumiToken.trim().isNotEmpty ?? false);
+    final hasWebDav = (secrets?.webdavUrl.trim().isNotEmpty ?? false);
+
+    await showKonekoSheet<void>(
+      context: context,
+      title: '追番管理与同步',
+      subtitle: '排序方式、Bangumi 与 WebDAV 云端同步',
+      detents: const [0.64, 0.86],
+      bodyBuilder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            final colorScheme = sheetContext.colorScheme;
+            return ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+              children: [
+                const ListHeader(title: '排序方式'),
+                KonekoCard(
+                  corner: 22,
+                  padding: const EdgeInsets.all(14),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final option in _LibrarySort.values)
+                        KonekoChip(
+                          label: option.label,
+                          height: 34,
+                          fontSize: 13,
+                          selected: _sort == option,
+                          backgroundColor: _sort == option
+                              ? colorScheme.primary
+                              : SurfaceLevel.block.colorOf(colorScheme),
+                          onPressed: () {
+                            setState(() => _sort = option);
+                            setSheetState(() {});
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+                const ListHeader(title: '同步服务（对齐 Kazumi）'),
+                generateGroup([
+                  DecorationListItem(
+                    leading: const GlyphIcon(KonekoGlyphs.sync),
+                    title: const Text('同步 Bangumi 收藏与进度'),
+                    subtitle: Text(
+                      hasBangumi ? '已配置访问令牌，点击立即双向同步' : '尚未配置 Access Token，点击去设置',
+                    ),
+                    trailing: _syncing
+                        ? const ActivityIndicator()
+                        : const GlyphIcon(Glyphs.chevronForward),
+                    onPressed: _syncing
+                        ? null
+                        : () {
+                            Navigator.of(sheetContext).pop();
+                            if (!hasBangumi || sync == null) {
+                              BaseNavigator.push<void>(
+                                context,
+                                const ServiceSettingsPage(),
+                              );
+                            } else {
+                              unawaited(_runSync(sync.syncBangumi, 'Bangumi'));
+                            }
+                          },
+                  ),
+                  DecorationListItem(
+                    leading: const GlyphIcon(KonekoGlyphs.cloud),
+                    title: const Text('同步 WebDAV 云端备份'),
+                    subtitle: Text(
+                      hasWebDav
+                          ? '已配置服务器，兼容 Kazumi 备份格式'
+                          : '尚未配置 WebDAV 服务器，点击去设置',
+                    ),
+                    trailing: _syncing
+                        ? const ActivityIndicator()
+                        : const GlyphIcon(Glyphs.chevronForward),
+                    onPressed: _syncing
+                        ? null
+                        : () {
+                            Navigator.of(sheetContext).pop();
+                            if (!hasWebDav || sync == null) {
+                              BaseNavigator.push<void>(
+                                context,
+                                const ServiceSettingsPage(),
+                              );
+                            } else {
+                              unawaited(_runSync(sync.syncWebDav, 'WebDAV'));
+                            }
+                          },
+                  ),
+                  DecorationListItem(
+                    leading: const GlyphIcon(KonekoGlyphs.user),
+                    title: const Text('账号与同步设置'),
+                    subtitle: const Text('管理 Bangumi Token、WebDAV 与屏蔽词'),
+                    trailing: const GlyphIcon(Glyphs.chevronForward),
+                    onPressed: () {
+                      Navigator.of(sheetContext).pop();
+                      BaseNavigator.push<void>(
+                        context,
+                        const ServiceSettingsPage(),
+                      );
+                    },
+                  ),
+                ]),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -62,14 +241,17 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
           subject.originalTitle.toLowerCase().contains(q);
     }).toList();
 
-    if (_sortByRecent) {
-      filtered.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-    } else {
-      filtered.sort((a, b) {
-        final sa = catalog.getSubjectById(a.subjectId)?.score ?? 0;
-        final sb = catalog.getSubjectById(b.subjectId)?.score ?? 0;
-        return sb.compareTo(sa);
-      });
+    switch (_sort) {
+      case _LibrarySort.recent:
+        filtered.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      case _LibrarySort.score:
+        filtered.sort((a, b) {
+          final sa = catalog.getSubjectById(a.subjectId)?.score ?? 0;
+          final sb = catalog.getSubjectById(b.subjectId)?.score ?? 0;
+          return sb.compareTo(sa);
+        });
+      case _LibrarySort.progress:
+        filtered.sort((a, b) => b.watchedEpisodes.compareTo(a.watchedEpisodes));
     }
 
     return KonekoScaffold(
@@ -77,25 +259,17 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
       actions: [
         IconButtonData(
           glyph: Glyphs.search,
-          tooltip: '筛选收藏',
-          onPressed: () => setState(() => _showSearch = !_showSearch),
+          tooltip: '搜索追番库',
+          onPressed: () => setState(() {
+            _showSearch = !_showSearch;
+            if (!_showSearch) _query = '';
+          }),
         ),
         IconButtonData(
-          glyph: Glyphs.sort,
-          tooltip: _sortByRecent ? '当前：最近观看' : '当前：按评分排序',
-          onPressed: () {
-            setState(() => _sortByRecent = !_sortByRecent);
-            showKonekoBanner(
-              context,
-              _sortByRecent ? '已切换为：最近观看排序' : '已切换为：评分优先排序',
-            );
-          },
-        ),
-        IconButtonData(
-          glyph: KonekoGlyphs.sync,
-          tooltip: '同步 Bangumi',
-          onPressed: () =>
-              BaseNavigator.push<void>(context, const ServiceSettingsPage()),
+          glyph: KonekoGlyphs.tune,
+          tooltip: '排序与同步设置',
+          isLoading: _syncing,
+          onPressed: _openManageSheet,
         ),
       ],
       body: LayoutBuilder(
@@ -194,18 +368,10 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                                     (entry.watchedEpisodes > 0
                                         ? entry.watchedEpisodes
                                         : 1),
-                                hist?.lastRuleId ?? 'rule_yhdmp',
-                                hist?.lastRuleName ?? '樱花源 · XPath',
+                                hist?.lastRuleId ?? '',
+                                hist?.lastRuleName ?? '',
                               ),
-                              onCycleStatus: () {
-                                const values = CollectionStatus.values;
-                                final next =
-                                    values[(values.indexOf(entry.status) + 1) %
-                                        4];
-                                ref
-                                    .read(libraryProvider.notifier)
-                                    .setStatus(entry.subjectId, next);
-                              },
+                              onPickStatus: () => _pickStatus(subject, entry),
                             );
                           },
                         )
@@ -239,18 +405,10 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                                     (entry.watchedEpisodes > 0
                                         ? entry.watchedEpisodes
                                         : 1),
-                                hist?.lastRuleId ?? 'rule_yhdmp',
-                                hist?.lastRuleName ?? '樱花源 · XPath',
+                                hist?.lastRuleId ?? '',
+                                hist?.lastRuleName ?? '',
                               ),
-                              onCycleStatus: () {
-                                const values = CollectionStatus.values;
-                                final next =
-                                    values[(values.indexOf(entry.status) + 1) %
-                                        4];
-                                ref
-                                    .read(libraryProvider.notifier)
-                                    .setStatus(entry.subjectId, next);
-                              },
+                              onPickStatus: () => _pickStatus(subject, entry),
                             );
                           }, childCount: filtered.length),
                         ),
@@ -294,7 +452,7 @@ class _FlClashWatchCard extends StatelessWidget {
     required this.history,
     required this.onOpenDetail,
     required this.onQuickPlay,
-    required this.onCycleStatus,
+    required this.onPickStatus,
   });
 
   final AnimeSubject subject;
@@ -302,7 +460,7 @@ class _FlClashWatchCard extends StatelessWidget {
   final MergedHistoryEntry? history;
   final VoidCallback onOpenDetail;
   final VoidCallback onQuickPlay;
-  final VoidCallback onCycleStatus;
+  final VoidCallback onPickStatus;
 
   @override
   Widget build(BuildContext context) {
@@ -313,7 +471,9 @@ class _FlClashWatchCard extends StatelessWidget {
 
     final String progressText;
     if (entry.watchedEpisodes <= 0) {
-      progressText = '尚未开始 · 更新至第 ${subject.airedEpisodes} 话';
+      progressText = subject.airedEpisodes > 0
+          ? '尚未开始 · 更新至第 ${subject.airedEpisodes} 话'
+          : '尚未开始观看';
     } else if (entry.watchedEpisodes >= total) {
       progressText = '已看完 · 共 $total 话';
     } else {
@@ -337,17 +497,18 @@ class _FlClashWatchCard extends StatelessWidget {
                   subject: subject,
                   borderRadius: AppRadius.all(16),
                   overlayBadges: [
-                    Positioned(
-                      right: 4,
-                      bottom: 4,
-                      child: KonekoChip(
-                        label: subject.score.toStringAsFixed(1),
-                        height: 18,
-                        fontSize: 9.5,
-                        backgroundColor: Colors.black.withValues(alpha: 0.62),
-                        foregroundColor: Colors.white,
+                    if (subject.score > 0)
+                      Positioned(
+                        right: 4,
+                        bottom: 4,
+                        child: KonekoChip(
+                          label: subject.score.toStringAsFixed(1),
+                          height: 18,
+                          fontSize: 9.5,
+                          backgroundColor: Colors.black.withValues(alpha: 0.62),
+                          foregroundColor: Colors.white,
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ),
@@ -391,15 +552,20 @@ class _FlClashWatchCard extends StatelessWidget {
                             size: 12,
                             color: colorScheme.primary,
                           ),
-                          onPressed: onCycleStatus,
+                          onPressed: onPickStatus,
                         ),
-                        KonekoChip(
-                          label: subject.isCompleted
-                              ? '${subject.year} 年'
-                              : '更至 ${subject.airedEpisodes} 话',
-                          height: 24,
-                          fontSize: 11,
-                        ),
+                        if (subject.isCompleted && subject.year > 0)
+                          KonekoChip(
+                            label: '${subject.year} 年',
+                            height: 24,
+                            fontSize: 11,
+                          )
+                        else if (subject.airedEpisodes > 0)
+                          KonekoChip(
+                            label: '更至 ${subject.airedEpisodes} 话',
+                            height: 24,
+                            fontSize: 11,
+                          ),
                       ],
                     ),
                   ],

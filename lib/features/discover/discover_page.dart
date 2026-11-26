@@ -1,13 +1,20 @@
+import 'dart:async';
+
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:koneko/common/providers.dart';
 import 'package:koneko/features/detail/subject_detail_page.dart';
+import 'package:koneko/ui/koneko_glyphs.dart';
 import 'package:koneko/ui/koneko_scaffold.dart';
+import 'package:koneko/ui/koneko_sheet.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:koneko_contract/koneko_contract.dart';
+import 'package:prism_ui/icons/icons.dart';
 import 'package:prism_ui/prism_ui.dart';
 
-/// 06B · Discover & Search Page with full-pill SearchField & unified anime cards.
+/// Discover & Condition Search Page (Kazumi filter parity in pure FlClash Sheet style,
+/// intentionally without image-recognition search).
 class DiscoverPage extends ConsumerStatefulWidget {
   const DiscoverPage({super.key, this.showBack = true, this.bottomPadding = 0});
 
@@ -19,17 +26,87 @@ class DiscoverPage extends ConsumerStatefulWidget {
 }
 
 class _DiscoverPageState extends ConsumerState<DiscoverPage> {
-  static const _hotQueries = ['葬送的芙莉莲', '间谍过家家', '四月是你的谎言'];
-  static const _tags = ['全部', '奇幻', '治愈', '日常', '科幻', '悬疑', '音乐', '美食'];
+  static const _hotQueries = ['葬送的芙莉莲', '间谍过家家', '迷宫饭', '孤独摇滚'];
+  static const _quickTags = [
+    '奇幻',
+    '日常',
+    '恋爱',
+    '科幻',
+    '校园',
+    '喜剧',
+    '治愈',
+    '悬疑',
+    '动作',
+    '冒险',
+    '音乐',
+    '美食',
+    '原创',
+    '漫画改',
+    '轻小说改',
+    '游戏改',
+    '异世界',
+    '百合',
+    '运动',
+    '机战',
+  ];
+  static const _sortOptions = <(String, String)>[
+    ('heat', '热度优先'),
+    ('score', '评分优先'),
+    ('rank', '排名优先'),
+    ('match', '匹配度'),
+  ];
+  static const _scoreThresholds = <(double?, String)>[
+    (null, '不限'),
+    (6.0, '6.0+'),
+    (7.0, '7.0+'),
+    (7.5, '7.5+'),
+    (8.0, '8.0+'),
+    (8.5, '8.5+'),
+  ];
 
   final TextEditingController _controller = TextEditingController();
-  String _query = '';
-  String _tag = '全部';
+  SearchFilter _filter = const SearchFilter();
+  bool _hideWatched = false;
+  bool _hideDropped = false;
+
+  List<AnimeSubject>? _remoteResults;
+  bool _searching = false;
+  bool _loadingMore = false;
+  bool _hasMore = false;
+  String? _searchError;
+  int _requestId = 0;
+  Timer? _debounce;
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _controller.dispose();
     super.dispose();
+  }
+
+  bool get _hasQueryOrFilter =>
+      _filter.keyword.trim().isNotEmpty || _filter.hasActiveFilters;
+
+  String _sortLabel(String sort) => _sortOptions
+      .firstWhere((e) => e.$1 == sort, orElse: () => ('heat', '热度优先'))
+      .$2;
+
+  void _onKeywordChanged(String value) {
+    final next = _filter.copyWith(keyword: value);
+    setState(() => _filter = next);
+    _debounce?.cancel();
+    if (!next.hasActiveFilters && value.trim().isEmpty) {
+      setState(() {
+        _remoteResults = null;
+        _searchError = null;
+        _searching = false;
+        _hasMore = false;
+      });
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 350), () {
+      if (mounted) unawaited(_executeSearch(next));
+    });
   }
 
   void _applyQuery(String q) {
@@ -37,7 +114,450 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
       text: q,
       selection: TextSelection.collapsed(offset: q.length),
     );
-    setState(() => _query = q);
+    final next = _filter.copyWith(keyword: q);
+    setState(() => _filter = next);
+    unawaited(_executeSearch(next));
+  }
+
+  Future<void> _executeSearch(SearchFilter filter, {bool append = false}) async {
+    final online = ref.read(onlineCatalogProvider);
+    if (online == null) {
+      setState(() {
+        _remoteResults = null;
+        _searching = false;
+        _loadingMore = false;
+        _hasMore = false;
+        _searchError = null;
+      });
+      return;
+    }
+
+    final token = ++_requestId;
+    final offset = append ? (_remoteResults?.length ?? 0) : 0;
+    setState(() {
+      if (append) {
+        _loadingMore = true;
+      } else {
+        _searching = true;
+        _searchError = null;
+      }
+    });
+
+    try {
+      final page = await online.searchFiltered(
+        filter,
+        offset: offset,
+        limit: 30,
+      );
+      if (!mounted || token != _requestId) return;
+      setState(() {
+        if (append) {
+          final merged = <int, AnimeSubject>{
+            for (final item in _remoteResults ?? const <AnimeSubject>[])
+              item.subjectId: item,
+            for (final item in page) item.subjectId: item,
+          };
+          _remoteResults = merged.values.toList();
+        } else {
+          _remoteResults = page;
+        }
+        _hasMore = page.length >= 30;
+        _searching = false;
+        _loadingMore = false;
+      });
+    } on Object {
+      if (!mounted || token != _requestId) return;
+      setState(() {
+        _searching = false;
+        _loadingMore = false;
+        if (!append) {
+          _searchError = '条件搜索失败，请检查网络后重试';
+        }
+      });
+      if (append && mounted) {
+        showKonekoBanner(context, '加载更多结果失败', level: BannerLevel.error);
+      }
+    }
+  }
+
+  Future<void> _openFilterSheet() async {
+    var draft = _filter;
+    var draftHideWatched = _hideWatched;
+    var draftHideDropped = _hideDropped;
+    final customTag = TextEditingController();
+    final now = DateTime.now();
+    final recentSeasons = <AnimeSeason>[];
+    var y = now.year;
+    var q = ((now.month - 1) ~/ 3) + 1;
+    for (var i = 0; i < 8; i++) {
+      recentSeasons.add(AnimeSeason(year: y, quarter: q));
+      q--;
+      if (q < 1) {
+        q = 4;
+        y--;
+      }
+    }
+    final recentYears = List<int>.generate(10, (i) => now.year - i);
+
+    final applied = await showKonekoSheet<bool>(
+      context: context,
+      title: '按条件搜索',
+      subtitle: '题材标签、放送时间、评分与排序',
+      detents: const [0.78, 0.94],
+      bodyBuilder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            final colorScheme = sheetContext.colorScheme;
+            void addCustomTag() {
+              final tag = customTag.text.trim();
+              if (tag.isEmpty || draft.tags.contains(tag)) return;
+              draft = draft.copyWith(tags: [...draft.tags, tag]);
+              customTag.clear();
+              setSheetState(() {});
+            }
+
+            final allTags = <String>{..._quickTags, ...draft.tags};
+
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+              children: [
+                // Sort
+                const ListHeader(title: '排序方式'),
+                KonekoCard(
+                  corner: 22,
+                  padding: const EdgeInsets.all(14),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final (value, label) in _sortOptions)
+                        KonekoChip(
+                          label: label,
+                          height: 34,
+                          fontSize: 13,
+                          selected: draft.sort == value,
+                          backgroundColor: draft.sort == value
+                              ? colorScheme.primary
+                              : SurfaceLevel.block.colorOf(colorScheme),
+                          onPressed: () {
+                            draft = draft.copyWith(sort: value);
+                            setSheetState(() {});
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+
+                // Tags
+                ListHeader(
+                  title: '题材标签',
+                  caption: draft.tags.isEmpty
+                      ? '可多选'
+                      : '已选：${draft.tags.join('、')}',
+                ),
+                KonekoCard(
+                  corner: 22,
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    spacing: 12,
+                    children: [
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          for (final tag in allTags)
+                            KonekoChip(
+                              label: tag,
+                              height: 32,
+                              fontSize: 12.5,
+                              selected: draft.tags.contains(tag),
+                              backgroundColor: draft.tags.contains(tag)
+                                  ? colorScheme.primary
+                                  : SurfaceLevel.block.colorOf(colorScheme),
+                              onPressed: () {
+                                final nextTags = draft.tags.contains(tag)
+                                    ? draft.tags
+                                          .where((t) => t != tag)
+                                          .toList()
+                                    : [...draft.tags, tag];
+                                draft = draft.copyWith(tags: nextTags);
+                                setSheetState(() {});
+                              },
+                            ),
+                        ],
+                      ),
+                      Row(
+                        spacing: 8,
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: customTag,
+                              autocorrect: false,
+                              decoration: const InputDecoration(
+                                hintText: '输入自定义标签（如：京阿尼、剧场版）',
+                              ),
+                              onSubmitted: (_) => addCustomTag(),
+                            ),
+                          ),
+                          KonekoChip(
+                            label: '添加',
+                            height: 36,
+                            fontSize: 13,
+                            backgroundColor: colorScheme.primary.withValues(
+                              alpha: 0.14,
+                            ),
+                            foregroundColor: colorScheme.primary,
+                            onPressed: addCustomTag,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Broadcast Season / Year
+                const ListHeader(title: '放送季度与年份'),
+                KonekoCard(
+                  corner: 22,
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    spacing: 10,
+                    children: [
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          KonekoChip(
+                            label: '不限时间',
+                            height: 32,
+                            fontSize: 12.5,
+                            selected:
+                                draft.season == null && draft.year == null,
+                            backgroundColor:
+                                draft.season == null && draft.year == null
+                                ? colorScheme.primary
+                                : SurfaceLevel.block.colorOf(colorScheme),
+                            onPressed: () {
+                              draft = draft.copyWith(season: null, year: null);
+                              setSheetState(() {});
+                            },
+                          ),
+                          for (final s in recentSeasons)
+                            KonekoChip(
+                              label: s.shortLabel,
+                              height: 32,
+                              fontSize: 12.5,
+                              selected: draft.season == s,
+                              backgroundColor: draft.season == s
+                                  ? colorScheme.primary
+                                  : SurfaceLevel.block.colorOf(colorScheme),
+                              onPressed: () {
+                                draft = draft.copyWith(
+                                  season: draft.season == s ? null : s,
+                                  year: null,
+                                );
+                                setSheetState(() {});
+                              },
+                            ),
+                        ],
+                      ),
+                      Text(
+                        '按年份',
+                        style: AppTextStyle.caption1
+                            .of(sheetContext, emphasized: true)
+                            .copyWith(color: colorScheme.onSurfaceVariant),
+                      ),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          for (final year in recentYears)
+                            KonekoChip(
+                              label: '$year',
+                              height: 30,
+                              fontSize: 12,
+                              selected: draft.year == year,
+                              backgroundColor: draft.year == year
+                                  ? colorScheme.primary
+                                  : SurfaceLevel.block.colorOf(colorScheme),
+                              onPressed: () {
+                                draft = draft.copyWith(
+                                  year: draft.year == year ? null : year,
+                                  season: null,
+                                );
+                                setSheetState(() {});
+                              },
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Weekdays & Min Score
+                const ListHeader(title: '星期与最低评分'),
+                KonekoCard(
+                  corner: 22,
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    spacing: 12,
+                    children: [
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          for (var day = 1; day <= 7; day++)
+                            KonekoChip(
+                              label: '周${'一二三四五六日'[day - 1]}',
+                              height: 30,
+                              fontSize: 12,
+                              selected: draft.weekdays.contains(day),
+                              backgroundColor: draft.weekdays.contains(day)
+                                  ? colorScheme.primary
+                                  : SurfaceLevel.block.colorOf(colorScheme),
+                              onPressed: () {
+                                final next = draft.weekdays.toSet();
+                                if (!next.add(day)) next.remove(day);
+                                draft = draft.copyWith(
+                                  weekdays: next.toList()..sort(),
+                                );
+                                setSheetState(() {});
+                              },
+                            ),
+                        ],
+                      ),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          for (final (score, label) in _scoreThresholds)
+                            KonekoChip(
+                              label: score == null ? '评分不限' : '评分 $label',
+                              height: 30,
+                              fontSize: 12,
+                              selected: draft.minScore == score,
+                              backgroundColor: draft.minScore == score
+                                  ? colorScheme.primary
+                                  : SurfaceLevel.block.colorOf(colorScheme),
+                              onPressed: () {
+                                draft = draft.copyWith(minScore: score);
+                                setSheetState(() {});
+                              },
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Collection visibility
+                const ListHeader(title: '收藏状态过滤'),
+                generateGroup([
+                  DecorationListItem(
+                    title: const Text('隐藏看过的番剧'),
+                    trailing: Switch(
+                      value: draftHideWatched,
+                      onChanged: (value) {
+                        draftHideWatched = value;
+                        setSheetState(() {});
+                      },
+                    ),
+                    onPressed: () {
+                      draftHideWatched = !draftHideWatched;
+                      setSheetState(() {});
+                    },
+                  ),
+                  DecorationListItem(
+                    title: const Text('隐藏抛弃的番剧'),
+                    trailing: Switch(
+                      value: draftHideDropped,
+                      onChanged: (value) {
+                        draftHideDropped = value;
+                        setSheetState(() {});
+                      },
+                    ),
+                    onPressed: () {
+                      draftHideDropped = !draftHideDropped;
+                      setSheetState(() {});
+                    },
+                  ),
+                ]),
+              ],
+            );
+          },
+        );
+      },
+      footerBuilder: (sheetContext) => Row(
+        spacing: 12,
+        children: [
+          TextButton(
+            onPressed: () {
+              draft = SearchFilter(keyword: draft.keyword);
+              draftHideWatched = false;
+              draftHideDropped = false;
+              Navigator.of(sheetContext).pop(true);
+            },
+            child: const Text('重置条件'),
+          ),
+          Expanded(
+            child: FilledButton(
+              onPressed: () => Navigator.of(sheetContext).pop(true),
+              child: const Text('应用筛选'),
+            ),
+          ),
+        ],
+      ),
+    );
+    customTag.dispose();
+
+    if (!mounted || applied != true) return;
+    setState(() {
+      _filter = draft;
+      _hideWatched = draftHideWatched;
+      _hideDropped = draftHideDropped;
+    });
+    if (_hasQueryOrFilter) {
+      await _executeSearch(draft);
+    } else {
+      setState(() {
+        _remoteResults = null;
+        _searchError = null;
+        _hasMore = false;
+      });
+    }
+  }
+
+  List<AnimeSubject> _localFallback(CatalogRepository catalog) {
+    final base = catalog.search(_filter.keyword);
+    final filtered = base.where((s) {
+      if (_filter.tags.isNotEmpty &&
+          !_filter.tags.every(
+            (t) => s.tags.any((st) => st.contains(t)),
+          )) {
+        return false;
+      }
+      if (_filter.year != null && s.year != _filter.year) return false;
+      if (_filter.season != null && s.year != _filter.season!.year) {
+        return false;
+      }
+      if (_filter.minScore != null && s.score < _filter.minScore!) {
+        return false;
+      }
+      if (_filter.weekdays.isNotEmpty &&
+          !_filter.weekdays.contains(s.weekday)) {
+        return false;
+      }
+      return true;
+    }).toList();
+    if (_filter.sort == 'score') {
+      filtered.sort((a, b) => b.score.compareTo(a.score));
+    } else if (_filter.sort == 'rank') {
+      filtered.sort((a, b) => a.rank.compareTo(b.rank));
+    }
+    return filtered;
   }
 
   @override
@@ -46,18 +566,39 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
     ref.watch(catalogUpdatesProvider);
     final catalog = ref.watch(catalogRepositoryProvider);
     final library = ref.watch(libraryProvider);
+    final statusMap = <int, CollectionStatus>{
+      for (final e in library) e.subjectId: e.status,
+    };
     final trackingIds = {
       for (final e in library)
         if (e.status == CollectionStatus.watching) e.subjectId,
     };
-    final results = catalog.search(_query, tag: _tag);
-    final lookup = ref.watch(searchCatalogProvider(_query.trim()));
-    final feed = ref.watch(loadHomeCatalogProvider);
-    final status = _query.trim().isEmpty ? feed : lookup;
+
+    final rawList = _hasQueryOrFilter
+        ? (_remoteResults ?? _localFallback(catalog))
+        : catalog.getTrending();
+    final results = rawList.where((s) {
+      final status = statusMap[s.subjectId];
+      if (_hideWatched && status == CollectionStatus.watched) return false;
+      if (_hideDropped && status == CollectionStatus.dropped) return false;
+      return true;
+    }).toList();
+
+    final filterCount =
+        _filter.activeFilterCount +
+        (_hideWatched ? 1 : 0) +
+        (_hideDropped ? 1 : 0);
 
     return KonekoScaffold(
       title: '发现搜索',
       showBack: widget.showBack,
+      actions: [
+        IconButtonData(
+          glyph: KonekoGlyphs.tune,
+          tooltip: filterCount > 0 ? '按条件筛选（已选 $filterCount 项）' : '按条件筛选',
+          onPressed: _openFilterSheet,
+        ),
+      ],
       body: LayoutBuilder(
         builder: (context, constraints) {
           final width = constraints.maxWidth;
@@ -70,6 +611,7 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
               : 2;
 
           return CustomScrollView(
+            scrollCacheExtent: const ScrollCacheExtent.pixels(600),
             slivers: [
               const KonekoScrollStart(),
               SliverToBoxAdapter(
@@ -79,10 +621,11 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
                     controller: _controller,
                     fill: SurfaceLevel.card.colorOf(colorScheme),
                     hintText: '搜索 Bangumi 番名或原名…',
-                    onChanged: (v) => setState(() => _query = v),
+                    onChanged: _onKeywordChanged,
                   ),
                 ),
               ),
+              // Condition search bar & active filter summary (Kazumi parity in FlClash style)
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
@@ -90,81 +633,148 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      for (final hot in _hotQueries)
+                      KonekoChip(
+                        label: filterCount > 0
+                            ? '按条件查找 · 已选 $filterCount 项'
+                            : '按条件查找',
+                        height: 32,
+                        fontSize: 12.5,
+                        selected: filterCount > 0,
+                        backgroundColor: filterCount > 0
+                            ? colorScheme.primary
+                            : SurfaceLevel.card.colorOf(colorScheme),
+                        leading: GlyphIcon(
+                          KonekoGlyphs.tune,
+                          size: 13,
+                          color: filterCount > 0
+                              ? colorScheme.onPrimary
+                              : colorScheme.primary,
+                        ),
+                        onPressed: _openFilterSheet,
+                      ),
+                      if (_filter.sort != 'heat')
                         KonekoChip(
-                          label: '# $hot',
-                          height: 28,
+                          label: _sortLabel(_filter.sort),
+                          height: 32,
                           fontSize: 12,
-                          backgroundColor: SurfaceLevel.card.colorOf(
-                            colorScheme,
+                          onPressed: _openFilterSheet,
+                        ),
+                      for (final tag in _filter.tags)
+                        KonekoChip(
+                          label: tag,
+                          height: 32,
+                          fontSize: 12,
+                          backgroundColor: colorScheme.primary.withValues(
+                            alpha: 0.14,
                           ),
-                          onPressed: () => _applyQuery(hot),
+                          foregroundColor: colorScheme.primary,
+                          onPressed: _openFilterSheet,
+                        ),
+                      if (_filter.season case final season?)
+                        KonekoChip(
+                          label: season.shortLabel,
+                          height: 32,
+                          fontSize: 12,
+                          onPressed: _openFilterSheet,
+                        )
+                      else if (_filter.year case final year?)
+                        KonekoChip(
+                          label: '$year 年',
+                          height: 32,
+                          fontSize: 12,
+                          onPressed: _openFilterSheet,
+                        ),
+                      if (_filter.minScore case final minScore?)
+                        KonekoChip(
+                          label: '评分 ${minScore.toStringAsFixed(1)}+',
+                          height: 32,
+                          fontSize: 12,
+                          onPressed: _openFilterSheet,
+                        ),
+                      if (filterCount > 0)
+                        KonekoChip(
+                          label: '清空条件',
+                          height: 32,
+                          fontSize: 12,
+                          onPressed: () {
+                            final reset = SearchFilter(
+                              keyword: _filter.keyword,
+                            );
+                            setState(() {
+                              _filter = reset;
+                              _hideWatched = false;
+                              _hideDropped = false;
+                            });
+                            if (_hasQueryOrFilter) {
+                              unawaited(_executeSearch(reset));
+                            } else {
+                              setState(() {
+                                _remoteResults = null;
+                                _hasMore = false;
+                              });
+                            }
+                          },
                         ),
                     ],
                   ),
                 ),
               ),
-              SliverToBoxAdapter(
-                child: SizedBox(
-                  height: 36,
-                  child: ListView.separated(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    scrollDirection: Axis.horizontal,
-                    itemCount: _tags.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 8),
-                    itemBuilder: (_, index) {
-                      final t = _tags[index];
-                      final selected = t == _tag;
-                      return KonekoChip(
-                        label: t,
-                        height: 34,
-                        fontSize: 13,
-                        selected: selected,
-                        backgroundColor: selected
-                            ? colorScheme.primary
-                            : SurfaceLevel.card.colorOf(colorScheme),
-                        onPressed: () => setState(() => _tag = t),
-                      );
-                    },
+              if (!_hasQueryOrFilter)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final hot in _hotQueries)
+                          KonekoChip(
+                            label: '# $hot',
+                            height: 28,
+                            fontSize: 12,
+                            backgroundColor: SurfaceLevel.card.colorOf(
+                              colorScheme,
+                            ),
+                            onPressed: () => _applyQuery(hot),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              if (results.isEmpty)
+              if (_searching)
+                const SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Center(child: ActivityIndicator()),
+                )
+              else if (_searchError != null && results.isEmpty)
                 SliverFillRemaining(
                   hasScrollBody: false,
                   child: Center(
-                    child: status.isLoading
-                        ? const ActivityIndicator()
-                        : status.hasError
-                        ? TextButton(
-                            onPressed: () {
-                              if (_query.trim().isEmpty) {
-                                ref.invalidate(loadHomeCatalogProvider);
-                              } else {
-                                ref.invalidate(
-                                  searchCatalogProvider(_query.trim()),
-                                );
-                              }
-                            },
-                            child: const Text('搜索失败，点此重试'),
-                          )
-                        : Text(
-                            _query.trim().isEmpty
-                                ? '输入番名开始搜索'
-                                : '未找到匹配「$_query」的番剧',
-                            style: AppTextStyle.subheadline
-                                .of(context)
-                                .copyWith(color: colorScheme.onSurfaceVariant),
-                          ),
+                    child: TextButton(
+                      onPressed: () => unawaited(_executeSearch(_filter)),
+                      child: Text(_searchError!),
+                    ),
                   ),
                 )
-              else
+              else if (results.isEmpty)
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Center(
+                    child: Text(
+                      _hasQueryOrFilter ? '未找到符合条件的番剧' : '输入番名或点击「按条件查找」开始探索',
+                      style: AppTextStyle.subheadline
+                          .of(context)
+                          .copyWith(color: colorScheme.onSurfaceVariant),
+                    ),
+                  ),
+                )
+              else ...[
                 SliverPadding(
                   padding: EdgeInsets.fromLTRB(
                     16,
-                    14,
+                    8,
                     16,
-                    24 + widget.bottomPadding,
+                    _hasMore ? 12 : 24 + widget.bottomPadding,
                   ),
                   sliver: SliverGrid(
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
@@ -186,6 +796,34 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
                     }, childCount: results.length),
                   ),
                 ),
+                if (_hasMore)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        16,
+                        4,
+                        16,
+                        24 + widget.bottomPadding,
+                      ),
+                      child: Center(
+                        child: KonekoChip(
+                          label: _loadingMore ? '正在加载...' : '加载更多结果',
+                          height: 36,
+                          fontSize: 13,
+                          backgroundColor: colorScheme.primary.withValues(
+                            alpha: 0.14,
+                          ),
+                          foregroundColor: colorScheme.primary,
+                          onPressed: _loadingMore
+                              ? null
+                              : () => unawaited(
+                                  _executeSearch(_filter, append: true),
+                                ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ],
           );
         },

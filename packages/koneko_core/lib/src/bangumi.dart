@@ -59,6 +59,7 @@ class BangumiCatalog implements OnlineCatalog {
   final _comments = <int, List<SubjectComment>>{};
   final _commentTotals = <int, int>{};
   final _week = <int, List<int>>{};
+  final _seasonCalendars = <String, Map<int, List<int>>>{};
   final _queries = <String, List<int>>{};
   List<int> _trending = [];
   Future<void>? _refresh;
@@ -185,6 +186,107 @@ class BangumiCatalog implements OnlineCatalog {
     _queries[key] = _readSubjects(jsonObject(response.data)['data']);
     if (_queries.length > 40) _queries.remove(_queries.keys.first);
     _notify();
+  }
+
+  @override
+  Future<List<AnimeSubject>> searchFiltered(
+    SearchFilter filter, {
+    int offset = 0,
+    int limit = 30,
+  }) async {
+    final filterMap = <String, Object?>{
+      'type': [2],
+      'nsfw': false,
+    };
+    if (filter.tags.isNotEmpty) {
+      filterMap['tag'] = filter.tags;
+    }
+    if (filter.sort == 'rank') {
+      filterMap['rank'] = ['>0', '<=99999'];
+    }
+    if (filter.season case final season?) {
+      final (start, end) = season.dateRange;
+      filterMap['air_date'] = ['>=$start', '<$end'];
+    } else if (filter.year case final year?) {
+      filterMap['air_date'] = ['>=$year-01-01', '<${year + 1}-01-01'];
+    }
+    if (filter.minScore case final minScore? when minScore > 0) {
+      filterMap['rating'] = ['>=$minScore', '<=10'];
+    }
+    if (filter.weekdays.isNotEmpty) {
+      final days = filter.weekdays.toSet().toList()..sort();
+      filterMap['air_weekday'] = days;
+    }
+
+    final response = await _client.post<dynamic>(
+      '$_base/v0/search/subjects',
+      queryParameters: {'limit': limit, 'offset': offset},
+      data: {
+        'keyword': filter.keyword.trim(),
+        'sort': filter.sort,
+        'filter': filterMap,
+      },
+    );
+    final ids = _readSubjects(jsonObject(response.data)['data']);
+    _notify();
+    return _items(ids);
+  }
+
+  @override
+  Future<Map<int, List<AnimeSubject>>> loadSeasonCalendar(
+    AnimeSeason season,
+  ) async {
+    if (season.isCurrent) {
+      if (_week.isEmpty) {
+        await refresh();
+      }
+      return {
+        for (var d = 1; d <= 7; d++) d: _items(_week[d] ?? const []),
+      };
+    }
+
+    final cached = _seasonCalendars[season.code];
+    if (cached != null) {
+      return {
+        for (var d = 1; d <= 7; d++) d: _items(cached[d] ?? const []),
+      };
+    }
+
+    final (start, end) = season.dateRange;
+    final response = await _client.post<dynamic>(
+      '$_base/v0/search/subjects',
+      queryParameters: {'limit': 100, 'offset': 0},
+      data: {
+        'keyword': '',
+        'sort': 'rank',
+        'filter': {
+          'type': [2],
+          'tag': ['日本'],
+          'air_date': ['>=$start', '<$end'],
+          'rank': ['>0', '<=99999'],
+          'nsfw': false,
+        },
+      },
+    );
+    final ids = _readSubjects(jsonObject(response.data)['data']);
+    final grouped = <int, List<int>>{for (var d = 1; d <= 7; d++) d: []};
+    for (final id in ids) {
+      final raw = _subjects[id];
+      final dateStr = jsonString(raw?['date']).isNotEmpty
+          ? jsonString(raw?['date'])
+          : jsonString(raw?['air_date']);
+      final parsed = DateTime.tryParse(dateStr);
+      final day = parsed?.weekday ?? 1;
+      grouped[day]!.add(id);
+    }
+    _seasonCalendars[season.code] = grouped;
+    if (_seasonCalendars.length > 12) {
+      _seasonCalendars.remove(_seasonCalendars.keys.first);
+    }
+    _notify();
+    return {
+      for (var d = 1; d <= 7; d++) d: _items(grouped[d] ?? const []),
+    };
   }
 
   @override
