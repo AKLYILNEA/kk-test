@@ -1,0 +1,7 @@
+name: koneko_contract
+description: Pure Dart domain models and repository contracts for Koneko (strict UI/Core boundary).
+version: 0.0.1
+publish_to: 'none'
+
+environment:
+  sdk: '>=3.10.0 <4.0.0'

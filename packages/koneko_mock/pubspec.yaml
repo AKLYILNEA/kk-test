@@ -1,0 +1,11 @@
+name: koneko_mock
+description: Deterministic offline mock data and Kazumi/Animeko simulation for Koneko UI-First MVP.
+version: 0.0.1
+publish_to: 'none'
+
+environment:
+  sdk: '>=3.10.0 <4.0.0'
+
+dependencies:
+  koneko_contract:
+    path: ../koneko_contract
