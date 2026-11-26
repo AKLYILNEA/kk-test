@@ -1,5 +1,3 @@
-library koneko_contract;
-
 /// Collection tracking state aligned with Bangumi & Animeko.
 enum CollectionStatus {
   watching('在看'),

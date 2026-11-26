@@ -1,5 +1,3 @@
-library koneko_mock;
-
 import 'dart:math' as math;
 
 import 'package:koneko_contract/koneko_contract.dart';

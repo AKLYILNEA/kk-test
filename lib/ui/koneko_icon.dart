@@ -39,13 +39,13 @@ abstract final class KonekoIcons {
   static const IconData layers = LucideIcons.layers;
   static const IconData server = LucideIcons.server;
   static const IconData gauge = LucideIcons.gauge;
-  static const IconData cloudSync = LucideIcons.cloudUpload;
+  static const IconData cloudSync = LucideIcons.cloud;
   static const IconData history = LucideIcons.history;
   static const IconData search = LucideIcons.search;
   static const IconData sliders = LucideIcons.slidersHorizontal;
   static const IconData palette = LucideIcons.palette;
   static const IconData type = LucideIcons.type;
-  static const IconData message = LucideIcons.messageSquareText;
+  static const IconData message = LucideIcons.messageSquare;
   static const IconData volume = LucideIcons.volume2;
   static const IconData sun = LucideIcons.sun;
   static const IconData maximize = LucideIcons.maximize2;
@@ -59,7 +59,7 @@ abstract final class KonekoIcons {
   static const IconData refresh = LucideIcons.refreshCw;
   static const IconData info = LucideIcons.info;
   static const IconData externalLink = LucideIcons.externalLink;
-  static const IconData code = LucideIcons.codeXml;
+  static const IconData code = LucideIcons.code;
   static const IconData puzzle = LucideIcons.puzzle;
   static const IconData bookOpen = LucideIcons.bookOpen;
 }

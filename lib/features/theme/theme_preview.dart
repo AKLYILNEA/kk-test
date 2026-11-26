@@ -455,7 +455,7 @@ class _MiniScreenPainter extends CustomPainter {
     double opacity = 1,
     MaskFilter? blur,
   }) {
-    final alpha = Color.getAlphaFromOpacity(opacity);
+    final alpha = (opacity * 255).round().clamp(0, 255);
     if (alpha == 0) return;
     final u = g.unit;
     final m = g.margin;

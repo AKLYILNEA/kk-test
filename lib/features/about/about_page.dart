@@ -38,8 +38,8 @@ class _AboutPageState extends State<AboutPage>
     vsync: this,
   );
 
+  static const double _heroExtent = 280.0;
   double _scrollOffset = 0.0;
-  double _heroExtent = 280.0;
   bool _checkingUpdate = false;
 
   @override

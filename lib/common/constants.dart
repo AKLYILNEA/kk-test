@@ -54,8 +54,7 @@ enum TabAnimationMode {
 }
 
 double systemTextScaleOf(BuildContext context) {
-  MediaQuery.textScalerOf(context);
-  return WidgetsBinding.instance.platformDispatcher.textScaleFactor;
+  return MediaQuery.textScalerOf(context).scale(1.0);
 }
 
 String formatDurationShort(int seconds) {
