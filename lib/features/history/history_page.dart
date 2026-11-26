@@ -15,10 +15,9 @@ import 'package:koneko_contract/koneko_contract.dart';
 import 'package:prism_ui/icons/icons.dart';
 import 'package:prism_ui/prism_ui.dart';
 
-enum _HistoryFilter { all, mergedMultiSource, recent }
+enum _HistoryFilter { all, today, week }
 
-/// 06A · Animeko-style Merged Watch History Page.
-/// Strictly groups all rule sources for the same anime under ONE card by subjectId.
+/// Watch history page: keeps one clean card per anime across rule switches.
 class HistoryPage extends ConsumerStatefulWidget {
   const HistoryPage({super.key, this.showBack = false, this.bottomPadding = 0});
 
@@ -48,7 +47,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
       if (mounted) {
         showKonekoBanner(
           context,
-          '导入 $count 条记录，同番剧历史已合并',
+          '已导入 $count 条观看历史',
           level: BannerLevel.success,
         );
       }
@@ -95,16 +94,16 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
     final entries = ref.watch(historyProvider);
 
     final visible = entries.where((entry) {
+      final diff = DateTime.now().difference(entry.updatedAt);
       return switch (_filter) {
         _HistoryFilter.all => true,
-        _HistoryFilter.mergedMultiSource => entry.mergedSourceCount > 1,
-        _HistoryFilter.recent =>
-          DateTime.now().difference(entry.updatedAt).inHours <= 24,
+        _HistoryFilter.today => diff.inHours <= 24,
+        _HistoryFilter.week => diff.inDays <= 7,
       };
     }).toList();
 
     return KonekoScaffold(
-      title: '历史记录',
+      title: '观看历史',
       showBack: widget.showBack,
       actions: [
         IconButtonData(
@@ -119,6 +118,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
         ),
       ],
       body: CustomScrollView(
+        cacheExtent: 600,
         slivers: [
           const KonekoScrollStart(),
           SliverToBoxAdapter(
@@ -126,9 +126,9 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
               child: SegmentedControl<_HistoryFilter>(
                 segments: const [
-                  (_HistoryFilter.all, '全部记录'),
-                  (_HistoryFilter.mergedMultiSource, '多源合并'),
-                  (_HistoryFilter.recent, '24 小时内'),
+                  (_HistoryFilter.all, '全部'),
+                  (_HistoryFilter.today, '今天'),
+                  (_HistoryFilter.week, '近 7 天'),
                 ],
                 value: _filter,
                 onChanged: (v) => setState(() => _filter = v),
@@ -281,11 +281,11 @@ class _MergedHistoryCard extends StatelessWidget {
                         ),
                         if (entry.mergedSourceCount > 1)
                           KonekoChip(
-                            label: '合并 ${entry.mergedSourceCount} 源',
+                            label: '${entry.mergedSourceCount} 个播放源',
                             height: 24,
                             fontSize: 11,
                             leading: GlyphIcon(
-                              KonekoGlyphs.split,
+                              KonekoGlyphs.layers,
                               size: 11,
                               color: colorScheme.primary,
                             ),
@@ -326,7 +326,7 @@ class _MergedHistoryCard extends StatelessWidget {
                 spacing: 8,
                 children: [
                   Text(
-                    '已合并的分源记录（点选任意源无缝续播）',
+                    '其他播放源进度（点击即可切换续播）',
                     style: AppTextStyle.caption1
                         .of(context, emphasized: true)
                         .copyWith(color: colorScheme.onSurfaceVariant),

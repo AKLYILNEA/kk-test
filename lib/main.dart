@@ -15,6 +15,10 @@ import 'package:prism_ui/prism_ui.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Generous memory cache prevents cover eviction & reloads while scrolling.
+  PaintingBinding.instance.imageCache
+    ..maximumSize = 500
+    ..maximumSizeBytes = 256 << 20;
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   await FontManager.init();
   unawaited(MiuixBgEffectController.warmUp());

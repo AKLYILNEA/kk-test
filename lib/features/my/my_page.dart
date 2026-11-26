@@ -72,7 +72,7 @@ class MyPage extends ConsumerWidget {
                             ),
                             const SizedBox(height: 3),
                             Text(
-                              '追番 ${library.length} 部 · 合并历史 ${history.length} 部',
+                              '追番 ${library.length} 部 · 观看历史 ${history.length} 部',
                               style: AppTextStyle.caption1
                                   .of(context)
                                   .copyWith(
@@ -100,8 +100,8 @@ class MyPage extends ConsumerWidget {
                         KonekoGlyphs.history,
                         color: colorScheme.primary,
                       ),
-                      title: const Text('合并历史记录'),
-                      subtitle: Text('已按番剧合并 ${history.length} 组多源记录'),
+                      title: const Text('观看历史'),
+                      subtitle: Text('共 ${history.length} 部番剧进度'),
                       trailing: const GlyphIcon(Glyphs.chevronForward),
                       onPressed: () => BaseNavigator.push<void>(
                         context,

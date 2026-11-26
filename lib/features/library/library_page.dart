@@ -107,6 +107,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
               : 1;
 
           return CustomScrollView(
+            cacheExtent: 600,
             slivers: [
               const KonekoScrollStart(),
               if (_showSearch)

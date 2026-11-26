@@ -1,7 +1,7 @@
 name: koneko
 description: Koneko — Pure prism_ui cross-platform anime tracker & player (UI-First MVP, Kazumi core & Animeko UX ready).
 publish_to: 'none'
-version: 0.0.3+3
+version: 0.0.4+4
 
 environment:
   sdk: '>=3.10.0 <4.0.0'
@@ -12,8 +12,10 @@ dependencies:
     sdk: flutter
   flutter_localizations:
     sdk: flutter
+  cached_network_image: ^3.4.1
   collection: ^1.19.1
   file_picker: ^13.3.3
+  flutter_cache_manager: ^3.4.1
   flutter_riverpod: ^3.4.3
   flutter_svg: ^2.3.0
   package_info_plus: ^10.2.2

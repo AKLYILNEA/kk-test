@@ -64,6 +64,7 @@ class _SchedulePageState extends ConsumerState<SchedulePage> {
         builder: (context, constraints) {
           final isWide = constraints.maxWidth >= 760;
           return CustomScrollView(
+            cacheExtent: 600,
             slivers: [
               const KonekoScrollStart(),
               SliverToBoxAdapter(

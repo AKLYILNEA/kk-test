@@ -33,7 +33,7 @@ class HomeShell extends ConsumerWidget {
     SidebarDestination(glyph: KonekoGlyphs.calendar, label: '时间表'),
     SidebarDestination(glyph: KonekoGlyphs.heart, label: '追番'),
     SidebarDestination(glyph: Glyphs.search, label: '发现搜索'),
-    SidebarDestination(glyph: KonekoGlyphs.history, label: '历史记录'),
+    SidebarDestination(glyph: KonekoGlyphs.history, label: '观看历史'),
     SidebarDestination(glyph: KonekoGlyphs.puzzle, label: '规则管理'),
     SidebarDestination(glyph: KonekoGlyphs.palette, label: '外观主题'),
     SidebarDestination(glyph: KonekoGlyphs.info, label: '关于'),

@@ -47,6 +47,20 @@ final loadCatalogSubjectProvider = FutureProvider.autoDispose.family<void, int>(
   },
 );
 
+final subjectCommentsProvider = FutureProvider.autoDispose
+    .family<SubjectCommentsPage, int>((ref, subjectId) async {
+      final online = ref.watch(onlineCatalogProvider);
+      if (online != null) {
+        return online.loadComments(subjectId, offset: 0, limit: 20);
+      }
+      final mock = ref.watch(catalogRepositoryProvider).getComments(subjectId);
+      return SubjectCommentsPage(
+        items: mock,
+        total: mock.length,
+        hasMore: false,
+      );
+    });
+
 final searchCatalogProvider = FutureProvider.autoDispose.family<void, String>((
   ref,
   query,

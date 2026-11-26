@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:koneko/common/constants.dart';
 import 'package:koneko/common/providers.dart';
+import 'package:koneko/features/detail/subject_detail_page.dart';
 import 'package:koneko/features/discover/discover_page.dart';
 import 'package:koneko/main.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
@@ -194,6 +195,28 @@ void main() {
     await tester.tap(_barAction('返回'));
     await tester.pumpAndSettle();
     expect(page, findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('SubjectDetailPage shows prominent play action, expandable summary and comments tab', (
+    tester,
+  ) async {
+    _setViewport(tester, const Size(420, 880));
+    await tester.pumpWidget(_testApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('星海旅人：北境编年史').first);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SubjectDetailPage), findsOneWidget);
+    expect(find.textContaining('播放 · 第'), findsOneWidget);
+    final commentsTab = find.textContaining('评论吐槽');
+    await tester.ensureVisible(commentsTab);
+    await tester.pumpAndSettle();
+    await tester.tap(commentsTab);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Bangumi 吐槽箱'), findsOneWidget);
+    expect(find.text('星屑旅人'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

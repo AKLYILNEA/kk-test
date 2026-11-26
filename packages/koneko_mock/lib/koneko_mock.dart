@@ -383,6 +383,31 @@ class MockCatalogRepository implements CatalogRepository {
       const DanmakuItem(timeSeconds: 31, text: '这一话节奏好舒服，完全看不够', colorHex: 0xFFFFE57F, lane: 0),
     ];
   }
+
+  @override
+  List<SubjectComment> getComments(int subjectId) {
+    final now = DateTime.now();
+    return [
+      SubjectComment(
+        userName: '星屑旅人',
+        content: '这一季的节奏把控和美术氛围非常舒服，配乐与空镜质感拉满，每周最期待更新的一部。',
+        rate: 9,
+        updatedAt: now.subtract(const Duration(hours: 3)),
+      ),
+      SubjectComment(
+        userName: '夜航电车',
+        content: '前半段铺垫细腻，人物互动自然不尴尬，作画稳定性在本季新番里数一数二。',
+        rate: 8,
+        updatedAt: now.subtract(const Duration(days: 1)),
+      ),
+      SubjectComment(
+        userName: '青瓷茶馆',
+        content: '声优演出很有感染力，剧情推进松弛有度，非常适合周末一口气补完！',
+        rate: 9,
+        updatedAt: now.subtract(const Duration(days: 3)),
+      ),
+    ];
+  }
 }
 
 class MockRuleRepository implements RuleRepository {

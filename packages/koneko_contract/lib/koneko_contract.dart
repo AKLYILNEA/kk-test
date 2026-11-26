@@ -275,6 +275,34 @@ class DanmakuItem {
   final int lane;
 }
 
+class SubjectComment {
+  const SubjectComment({
+    required this.userName,
+    required this.content,
+    required this.rate,
+    required this.updatedAt,
+    this.avatarUrl,
+  });
+
+  final String userName;
+  final String content;
+  final int rate;
+  final DateTime updatedAt;
+  final String? avatarUrl;
+}
+
+class SubjectCommentsPage {
+  const SubjectCommentsPage({
+    required this.items,
+    required this.total,
+    this.hasMore = false,
+  });
+
+  final List<SubjectComment> items;
+  final int total;
+  final bool hasMore;
+}
+
 abstract interface class CatalogRepository {
   List<AnimeSubject> getAllSubjects();
   AnimeSubject? getSubjectById(int subjectId);
@@ -288,6 +316,7 @@ abstract interface class CatalogRepository {
   });
   List<RuleSourceProbe> probeSources(int subjectId);
   List<DanmakuItem> getDanmaku(int subjectId, int episodeNumber);
+  List<SubjectComment> getComments(int subjectId);
 }
 
 abstract interface class RuleRepository {

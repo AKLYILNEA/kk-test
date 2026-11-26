@@ -13,7 +13,7 @@ Dio networkClient() => Dio(
     sendTimeout: const Duration(seconds: 12),
     headers: {
       'user-agent':
-          'AKLYILNEA/Koneko/0.0.3 (https://github.com/AKLYILNEA/kk-test)',
+          'AKLYILNEA/Koneko/0.0.4 (https://github.com/AKLYILNEA/kk-test)',
     },
   ),
 );
@@ -47,6 +47,7 @@ class BangumiCatalog implements OnlineCatalog {
   }
 
   static const _base = 'https://api.bgm.tv';
+  static const _nextBase = 'https://next.bgm.tv';
   static const _cacheKey = 'koneko_bangumi_cache_v1';
   final SharedPreferences _preferences;
   final Dio _client;
@@ -55,6 +56,8 @@ class BangumiCatalog implements OnlineCatalog {
   final _details = <int, Future<void>>{};
   final _episodes = <int, List<Map<String, dynamic>>>{};
   final _related = <int, List<int>>{};
+  final _comments = <int, List<SubjectComment>>{};
+  final _commentTotals = <int, int>{};
   final _week = <int, List<int>>{};
   final _queries = <String, List<int>>{};
   List<int> _trending = [];
@@ -319,9 +322,31 @@ class BangumiCatalog implements OnlineCatalog {
     if (data == null) return null;
     final rating = jsonObject(data['rating']);
     final cover = jsonObject(data['images']);
-    final url = const ['large', 'common', 'medium', 'small']
+    // Prefer Bangumi `common` (400-600px, ~1/5 size of `large`) for Kazumi-speed loading,
+    // falling back to `large` / `medium` / `small`.
+    final url = const ['common', 'large', 'medium', 'small']
         .map((key) => jsonString(cover[key]))
         .firstWhere((url) => url.startsWith('https://'), orElse: () => '');
+    var studio = '';
+    for (final entry in jsonList(data['infobox'])) {
+      final map = jsonObject(entry);
+      final key = jsonString(map['key']);
+      if (key == '动画制作' || key == '制作') {
+        final rawVal = map['value'];
+        if (rawVal is String && rawVal.trim().isNotEmpty) {
+          studio = rawVal.trim();
+          break;
+        }
+        if (rawVal is List && rawVal.isNotEmpty) {
+          final first = rawVal.first;
+          final text = first is Map ? jsonString(first['v']) : '$first';
+          if (text.trim().isNotEmpty) {
+            studio = text.trim();
+            break;
+          }
+        }
+      }
+    }
     final date = DateTime.tryParse(
       jsonString(data['date']).isNotEmpty
           ? jsonString(data['date'])
@@ -361,7 +386,7 @@ class BangumiCatalog implements OnlineCatalog {
       airedEpisodes: aired,
       totalEpisodes: total,
       tags: tags.isEmpty ? const ['动画'] : tags,
-      studio: '',
+      studio: studio,
       poster: const PosterPalette(
         primaryHex: 0xff35426a,
         secondaryHex: 0xff6578a4,
@@ -410,4 +435,63 @@ class BangumiCatalog implements OnlineCatalog {
 
   @override
   List<DanmakuItem> getDanmaku(int subjectId, int episodeNumber) => const [];
+
+  @override
+  List<SubjectComment> getComments(int subjectId) =>
+      List.unmodifiable(_comments[subjectId] ?? const []);
+
+  @override
+  Future<SubjectCommentsPage> loadComments(
+    int subjectId, {
+    int offset = 0,
+    int limit = 20,
+  }) async {
+    final response = await _client.get<dynamic>(
+      '$_nextBase/p1/subjects/$subjectId/comments',
+      queryParameters: {'limit': limit, 'offset': offset},
+    );
+    final payload = jsonObject(response.data);
+    final total = jsonInt(payload['total']);
+    final parsed = <SubjectComment>[];
+    for (final raw in jsonList(payload['data'])) {
+      final item = jsonObject(raw);
+      final content = jsonString(item['comment']).trim();
+      if (content.isEmpty) continue;
+      final user = jsonObject(item['user']);
+      final avatar = jsonObject(user['avatar']);
+      final avatarUrl = const ['medium', 'large', 'small']
+          .map((k) => jsonString(avatar[k]))
+          .firstWhere((u) => u.startsWith('http'), orElse: () => '');
+      final nickname = jsonString(user['nickname']).trim();
+      final username = jsonString(user['username']).trim();
+      final updatedSec = jsonInt(item['updatedAt']);
+      parsed.add(
+        SubjectComment(
+          userName: nickname.isNotEmpty
+              ? nickname
+              : (username.isNotEmpty ? username : 'Bangumi 用户'),
+          content: content,
+          rate: jsonInt(item['rate']),
+          updatedAt: updatedSec > 0
+              ? DateTime.fromMillisecondsSinceEpoch(updatedSec * 1000)
+              : DateTime.now(),
+          avatarUrl: avatarUrl.isEmpty ? null : avatarUrl,
+        ),
+      );
+    }
+
+    final existing = offset == 0
+        ? <SubjectComment>[]
+        : List<SubjectComment>.from(_comments[subjectId] ?? const []);
+    existing.addAll(parsed);
+    _comments[subjectId] = existing;
+    _commentTotals[subjectId] = math.max(total, existing.length);
+
+    final hasMore = offset + parsed.length < total && parsed.isNotEmpty;
+    return SubjectCommentsPage(
+      items: List.unmodifiable(existing),
+      total: _commentTotals[subjectId] ?? existing.length,
+      hasMore: hasMore,
+    );
+  }
 }

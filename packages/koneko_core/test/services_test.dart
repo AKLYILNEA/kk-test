@@ -43,6 +43,11 @@ void main() {
         EpisodeWatchState.current,
       );
       expect(catalog.getSubjectById(414461)?.summary, '详情');
+      final comments = await catalog.loadComments(414461);
+      expect(comments.total, 1);
+      expect(comments.items.single.userName, '测试观众');
+      expect(comments.items.single.content, '非常好看！');
+      expect(comments.items.single.rate, 9);
       await Future<void>.delayed(Duration.zero);
       expect(
         BangumiCatalog(
@@ -295,6 +300,21 @@ class _FixtureAdapter implements HttpClientAdapter {
         'total': 1,
         'data': [
           {'sort': 1, 'name': '第一话', 'airdate': '2023-09-29'},
+        ],
+      },
+      '/p1/subjects/414461/comments' => {
+        'total': 1,
+        'data': [
+          {
+            'rate': 9,
+            'comment': '非常好看！',
+            'updatedAt': 1700000000,
+            'user': {
+              'username': 'viewer',
+              'nickname': '测试观众',
+              'avatar': {'medium': 'https://example.com/avatar.jpg'},
+            },
+          },
         ],
       },
       _ => throw StateError('Unexpected request ${options.uri}'),

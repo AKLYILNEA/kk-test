@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
+import 'package:koneko/ui/koneko_image.dart';
 import 'package:koneko_contract/koneko_contract.dart';
 import 'package:prism_ui/icons/icons.dart';
 import 'package:prism_ui/prism_ui.dart';
@@ -299,15 +300,20 @@ class KonekoPosterArt extends StatelessWidget {
       child: const SizedBox.expand(),
     );
     final url = subject.coverUrl;
-    final art = url == null
+    final art = url == null || url.isEmpty
         ? fallback
-        : Image.network(
-            url,
-            fit: BoxFit.cover,
-            gaplessPlayback: true,
-            frameBuilder: (_, image, frame, _) =>
-                frame == null ? fallback : image,
-            errorBuilder: (_, _, _) => fallback,
+        : LayoutBuilder(
+            builder: (context, constraints) {
+              final dpr = MediaQuery.devicePixelRatioOf(context);
+              final maxW = constraints.maxWidth.isFinite && constraints.maxWidth > 0
+                  ? (constraints.maxWidth * dpr).round().clamp(160, 720)
+                  : 420;
+              return KonekoNetworkImage(
+                url: url,
+                placeholder: fallback,
+                memCacheWidth: maxW,
+              );
+            },
           );
     final content = overlayBadges.isEmpty
         ? art

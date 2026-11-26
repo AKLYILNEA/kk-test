@@ -22,7 +22,20 @@ class HomePage extends ConsumerStatefulWidget {
 }
 
 class _HomePageState extends ConsumerState<HomePage> {
-  static const _tags = ['全部', '奇幻', '治愈', '日常', '科幻', '悬疑', '音乐'];
+  static const _tags = [
+    '全部',
+    '奇幻',
+    '治愈',
+    '日常',
+    '恋爱',
+    '校园',
+    '科幻',
+    '悬疑',
+    '喜剧',
+    '音乐',
+    '冒险',
+    '动作',
+  ];
   String _selectedTag = '全部';
 
   void _openDetail(AnimeSubject subject) {
@@ -99,6 +112,7 @@ class _HomePageState extends ConsumerState<HomePage> {
               : 2;
 
           return CustomScrollView(
+            cacheExtent: 800,
             slivers: [
               const KonekoScrollStart(),
               if (resumeSubject != null)
@@ -250,9 +264,10 @@ class _TopSummaryDeck extends StatelessWidget {
                           ),
                           foregroundColor: colorScheme.primary,
                         ),
-                        if (history != null && history!.mergedSourceCount > 1)
+                        if (history != null &&
+                            history!.lastRuleName.trim().isNotEmpty)
                           KonekoChip(
-                            label: '合并 ${history!.mergedSourceCount} 源',
+                            label: history!.lastRuleName,
                             height: 22,
                             fontSize: 10.5,
                           ),

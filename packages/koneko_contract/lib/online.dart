@@ -7,6 +7,11 @@ abstract interface class OnlineCatalog implements CatalogRepository {
   Future<void> refresh();
   Future<void> loadSubject(int id);
   Future<void> searchOnline(String query);
+  Future<SubjectCommentsPage> loadComments(
+    int subjectId, {
+    int offset = 0,
+    int limit = 20,
+  });
 }
 
 class RuleListing {

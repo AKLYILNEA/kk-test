@@ -1,15 +1,19 @@
 import 'package:collection/collection.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:koneko/common/constants.dart';
 import 'package:koneko/common/providers.dart';
 import 'package:koneko/features/player/player_page.dart';
 import 'package:koneko/features/rules/rules_page.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
+import 'package:koneko/ui/koneko_image.dart';
 import 'package:koneko/ui/koneko_scaffold.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:koneko_contract/koneko_contract.dart';
 import 'package:prism_ui/icons/icons.dart';
 import 'package:prism_ui/prism_ui.dart';
+
+enum _DetailSection { overview, comments }
 
 class SubjectDetailPage extends ConsumerStatefulWidget {
   const SubjectDetailPage({super.key, required this.subjectId});
@@ -23,6 +27,13 @@ class SubjectDetailPage extends ConsumerStatefulWidget {
 class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
   String _selectedRuleId = '';
   String _selectedRuleName = '';
+  _DetailSection _section = _DetailSection.overview;
+
+  // Pagination state for Bangumi comments beyond the first page.
+  List<SubjectComment>? _extraComments;
+  int? _extraTotal;
+  bool _extraHasMore = false;
+  bool _loadingMoreComments = false;
 
   void _playEpisode(AnimeSubject subject, int episodeNumber) {
     BaseNavigator.push<void>(
@@ -36,6 +47,34 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
     );
   }
 
+  Future<void> _loadMoreComments(int currentCount) async {
+    if (_loadingMoreComments) return;
+    final online = ref.read(onlineCatalogProvider);
+    if (online == null) return;
+    setState(() => _loadingMoreComments = true);
+    try {
+      final page = await online.loadComments(
+        widget.subjectId,
+        offset: currentCount,
+        limit: 20,
+      );
+      if (!mounted) return;
+      setState(() {
+        _extraComments = page.items;
+        _extraTotal = page.total;
+        _extraHasMore = page.hasMore;
+      });
+    } on Object {
+      if (mounted) {
+        showKonekoBanner(context, '加载更多评论失败，请稍后重试', level: BannerLevel.error);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _loadingMoreComments = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.watch(catalogUpdatesProvider);
@@ -44,6 +83,7 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
     final history = ref.watch(historyProvider);
 
     final load = ref.watch(loadCatalogSubjectProvider(widget.subjectId));
+    final commentsAsync = ref.watch(subjectCommentsProvider(widget.subjectId));
     final subject = catalog.getSubjectById(widget.subjectId);
     if (subject == null) {
       return KonekoScaffold(
@@ -71,6 +111,7 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
     final currentEp =
         hist?.lastEpisode ??
         ((entry?.watchedEpisodes ?? 0) > 0 ? entry!.watchedEpisodes : 1);
+    final hasHistory = hist != null || (entry?.watchedEpisodes ?? 0) > 0;
     final episodes = catalog.getEpisodes(
       subject.subjectId,
       watchedCount: entry?.watchedEpisodes ?? 0,
@@ -85,7 +126,7 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
                 RuleSourceProbe(
                   ruleId: rule.id,
                   ruleName: rule.name,
-                  lineLabel: '播放时匹配线路',
+                  lineLabel: '播放时自动匹配线路',
                   resolutionLabel: '',
                   latencyMs: rule.latencyMs,
                   availableEpisodes: 0,
@@ -96,6 +137,11 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
         .map(catalog.getSubjectById)
         .whereType<AnimeSubject>()
         .toList();
+
+    final commentCount =
+        _extraTotal ?? commentsAsync.value?.total ?? catalog.getComments(subject.subjectId).length;
+    final commentsTabLabel =
+        commentCount > 0 ? '评论吐槽 ($commentCount)' : '评论吐槽';
 
     return KonekoScaffold(
       title: '番剧详情',
@@ -114,7 +160,7 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
             subject: subject,
             entry: entry,
             currentEp: currentEp,
-            mergedSources: hist?.mergedSourceCount ?? 0,
+            hasHistory: hasHistory,
             onPlay: () => _playEpisode(subject, currentEp),
             onStatusChanged: (status) {
               ref
@@ -143,7 +189,7 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
                 _selectedRuleId = probe.ruleId;
                 _selectedRuleName = probe.ruleName;
               });
-              showKonekoBanner(context, '已切换默认播放源：${probe.ruleName}（进度自动同步）');
+              showKonekoBanner(context, '已选择播放源：${probe.ruleName}');
             },
           );
           final relatedCard = related.isEmpty
@@ -156,7 +202,34 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
                   ),
                 );
 
+          final commentsCard = _CommentsSectionCard(
+            commentsAsync: commentsAsync,
+            overrideItems: _extraComments,
+            overrideTotal: _extraTotal,
+            overrideHasMore: _extraComments != null ? _extraHasMore : null,
+            loadingMore: _loadingMoreComments,
+            onRefresh: () {
+              setState(() {
+                _extraComments = null;
+                _extraTotal = null;
+                _extraHasMore = false;
+              });
+              ref.invalidate(subjectCommentsProvider(widget.subjectId));
+            },
+            onLoadMore: (count) => _loadMoreComments(count),
+          );
+
+          final sectionSwitcher = SegmentedControl<_DetailSection>(
+            segments: [
+              (_DetailSection.overview, '选集与播放源'),
+              (_DetailSection.comments, commentsTabLabel),
+            ],
+            value: _section,
+            onChanged: (value) => setState(() => _section = value),
+          );
+
           return CustomScrollView(
+            cacheExtent: 600,
             slivers: [
               const KonekoScrollStart(),
               SliverPadding(
@@ -176,7 +249,15 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 spacing: 16,
-                                children: [heroCard, episodeCard, ?relatedCard],
+                                children: [
+                                  heroCard,
+                                  sectionSwitcher,
+                                  if (_section == _DetailSection.overview) ...[
+                                    episodeCard,
+                                    ?relatedCard,
+                                  ] else
+                                    commentsCard,
+                                ],
                               ),
                             ),
                             const SizedBox(width: 16),
@@ -195,9 +276,13 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
                           spacing: 14,
                           children: [
                             heroCard,
-                            episodeCard,
-                            sourcesCard,
-                            ?relatedCard,
+                            sectionSwitcher,
+                            if (_section == _DetailSection.overview) ...[
+                              episodeCard,
+                              sourcesCard,
+                              ?relatedCard,
+                            ] else
+                              commentsCard,
                           ],
                         ),
                 ),
@@ -210,12 +295,12 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
   }
 }
 
-class _HeroCard extends StatelessWidget {
+class _HeroCard extends StatefulWidget {
   const _HeroCard({
     required this.subject,
     required this.entry,
     required this.currentEp,
-    required this.mergedSources,
+    required this.hasHistory,
     required this.onPlay,
     required this.onStatusChanged,
   });
@@ -223,13 +308,26 @@ class _HeroCard extends StatelessWidget {
   final AnimeSubject subject;
   final CollectionEntry? entry;
   final int currentEp;
-  final int mergedSources;
+  final bool hasHistory;
   final VoidCallback onPlay;
   final ValueChanged<CollectionStatus> onStatusChanged;
 
   @override
+  State<_HeroCard> createState() => _HeroCardState();
+}
+
+class _HeroCardState extends State<_HeroCard> {
+  bool _summaryExpanded = false;
+
+  @override
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
+    final subject = widget.subject;
+    final summary = subject.summary.trim();
+    final summaryStyle = AppTextStyle.subheadline
+        .of(context)
+        .copyWith(color: colorScheme.onSurfaceVariant, height: 1.55);
+
     return KonekoCard(
       corner: 30,
       padding: const EdgeInsets.all(18),
@@ -240,8 +338,8 @@ class _HeroCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               SizedBox(
-                width: 96,
-                height: 136,
+                width: 102,
+                height: 144,
                 child: KonekoPosterArt(
                   subject: subject,
                   borderRadius: AppRadius.all(18),
@@ -254,42 +352,50 @@ class _HeroCard extends StatelessWidget {
                   children: [
                     Text(
                       subject.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: AppTextStyle.title2
                           .of(context, emphasized: true)
                           .copyWith(color: colorScheme.onSurface),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      subject.originalTitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyle.footnote
-                          .of(context)
-                          .copyWith(color: colorScheme.onSurfaceVariant),
-                    ),
+                    if (subject.originalTitle.trim().isNotEmpty &&
+                        subject.originalTitle.trim() != subject.title.trim()) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        subject.originalTitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyle.footnote
+                            .of(context)
+                            .copyWith(color: colorScheme.onSurfaceVariant),
+                      ),
+                    ],
                     const SizedBox(height: 10),
                     Wrap(
                       spacing: 6,
                       runSpacing: 6,
                       children: [
-                        KonekoChip(
-                          label: subject.score.toStringAsFixed(1),
-                          leading: const GlyphIcon(
-                            KonekoGlyphs.star,
-                            size: 12,
-                            color: Color(0xFFE09F24),
-                          ),
-                        ),
-                        KonekoChip(label: 'Rank #${subject.rank}'),
-                        KonekoChip(label: subject.studio),
-                        if (mergedSources > 1)
+                        if (subject.score > 0)
                           KonekoChip(
-                            label: '合并 $mergedSources 源',
-                            backgroundColor: colorScheme.primary.withValues(
-                              alpha: 0.14,
+                            label: subject.score.toStringAsFixed(1),
+                            leading: const GlyphIcon(
+                              KonekoGlyphs.star,
+                              size: 12,
+                              color: Color(0xFFE09F24),
                             ),
-                            foregroundColor: colorScheme.primary,
                           ),
+                        if (subject.rank > 0)
+                          KonekoChip(label: 'Rank #${subject.rank}'),
+                        if (subject.year > 0)
+                          KonekoChip(
+                            label: subject.seasonLabel.isNotEmpty
+                                ? subject.seasonLabel
+                                : '${subject.year} 年',
+                          ),
+                        if (subject.studio.trim().isNotEmpty)
+                          KonekoChip(label: subject.studio.trim()),
+                        if (subject.totalEpisodes > 0)
+                          KonekoChip(label: '共 ${subject.totalEpisodes} 话'),
                       ],
                     ),
                   ],
@@ -297,61 +403,174 @@ class _HeroCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 14),
-          Text(
-            subject.summary,
-            style: AppTextStyle.subheadline
-                .of(context)
-                .copyWith(color: colorScheme.onSurfaceVariant, height: 1.5),
-          ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              KonekoChip(
-                label: '播放第 $currentEp 话',
-                height: 38,
-                fontSize: 13.5,
-                leading: GlyphIcon(
-                  KonekoGlyphs.play,
-                  size: 14,
-                  color: colorScheme.onPrimary,
-                ),
-                backgroundColor: colorScheme.primary,
-                foregroundColor: colorScheme.onPrimary,
-                onPressed: onPlay,
+
+          // Primary Play Action + Quick Collection Status (placed ABOVE summary!)
+          const SizedBox(height: 16),
+          PressSurface(
+            fill: colorScheme.primary,
+            shape: AppShape.full,
+            clipsChild: true,
+            onPressed: widget.onPlay,
+            child: SizedBox(
+              height: 46,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                spacing: 8,
+                children: [
+                  GlyphIcon(
+                    KonekoGlyphs.play,
+                    size: 16,
+                    color: colorScheme.onPrimary,
+                  ),
+                  Text(
+                    widget.hasHistory
+                        ? '继续播放 · 第 ${widget.currentEp} 话'
+                        : '立即播放 · 第 ${widget.currentEp} 话',
+                    style: AppTextStyle.callout
+                        .of(context, emphasized: true)
+                        .copyWith(color: colorScheme.onPrimary),
+                  ),
+                ],
               ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            spacing: 8,
+            children: [
               for (final status in const [
                 CollectionStatus.watching,
                 CollectionStatus.wish,
                 CollectionStatus.watched,
                 CollectionStatus.onHold,
               ])
-                KonekoChip(
-                  label: status.label,
-                  height: 38,
-                  fontSize: 13,
-                  selected: entry?.status == status,
-                  onPressed: () => onStatusChanged(status),
+                Expanded(
+                  child: KonekoChip(
+                    label: status.label,
+                    height: 34,
+                    fontSize: 12.5,
+                    selected: widget.entry?.status == status,
+                    onPressed: () => widget.onStatusChanged(status),
+                  ),
                 ),
             ],
           ),
+
+          // Collapsible Summary Section
+          if (summary.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            KonekoBlock(
+              corner: 18,
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final painter = TextPainter(
+                    text: TextSpan(text: summary, style: summaryStyle),
+                    maxLines: 3,
+                    textDirection: Directionality.of(context),
+                    textScaler: MediaQuery.textScalerOf(context),
+                  )..layout(maxWidth: constraints.maxWidth);
+                  final overflows = painter.didExceedMaxLines;
+                  painter.dispose();
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      AnimatedSize(
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeOutCubic,
+                        alignment: Alignment.topCenter,
+                        child: Text(
+                          summary,
+                          maxLines: _summaryExpanded ? null : 3,
+                          overflow: _summaryExpanded
+                              ? TextOverflow.visible
+                              : TextOverflow.ellipsis,
+                          style: summaryStyle,
+                        ),
+                      ),
+                      if (overflows) ...[
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: KonekoChip(
+                            label: _summaryExpanded ? '收起简介' : '展开全部简介',
+                            height: 26,
+                            fontSize: 11.5,
+                            backgroundColor: colorScheme.primary.withValues(
+                              alpha: 0.12,
+                            ),
+                            foregroundColor: colorScheme.primary,
+                            trailing: Transform.rotate(
+                              angle: _summaryExpanded ? 3.14159 : 0,
+                              child: GlyphIcon(
+                                Glyphs.chevronDown,
+                                size: 12,
+                                color: colorScheme.primary,
+                              ),
+                            ),
+                            onPressed: () => setState(
+                              () => _summaryExpanded = !_summaryExpanded,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
+
+          if (subject.tags.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final tag in subject.tags.take(8))
+                  KonekoChip(label: tag, height: 24, fontSize: 11),
+              ],
+            ),
+          ],
         ],
       ),
     );
   }
 }
 
-class _EpisodeMatrixCard extends StatelessWidget {
+class _EpisodeMatrixCard extends StatefulWidget {
   const _EpisodeMatrixCard({required this.episodes, required this.onSelect});
 
   final List<EpisodeItem> episodes;
   final ValueChanged<EpisodeItem> onSelect;
 
   @override
+  State<_EpisodeMatrixCard> createState() => _EpisodeMatrixCardState();
+}
+
+class _EpisodeMatrixCardState extends State<_EpisodeMatrixCard> {
+  static const int _pageSize = 24;
+  int _pageIndex = 0;
+
+  @override
+  void didUpdateWidget(covariant _EpisodeMatrixCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final totalPages = (widget.episodes.length / _pageSize).ceil();
+    if (totalPages > 0 && _pageIndex >= totalPages) {
+      _pageIndex = 0;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
+    final episodes = widget.episodes;
+    final totalPages = (episodes.length / _pageSize).ceil();
+    final safePage = totalPages == 0 ? 0 : _pageIndex.clamp(0, totalPages - 1);
+    final start = safePage * _pageSize;
+    final visible = episodes.skip(start).take(_pageSize).toList();
+
     return KonekoCard(
       corner: 30,
       padding: const EdgeInsets.all(18),
@@ -376,12 +595,34 @@ class _EpisodeMatrixCard extends StatelessWidget {
               ),
             ],
           ),
+          if (totalPages > 1) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 30,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: totalPages,
+                separatorBuilder: (_, _) => const SizedBox(width: 6),
+                itemBuilder: (_, idx) {
+                  final from = idx * _pageSize + 1;
+                  final to = ((idx + 1) * _pageSize).clamp(1, episodes.length);
+                  return KonekoChip(
+                    label: '$from-$to',
+                    height: 28,
+                    fontSize: 11.5,
+                    selected: idx == safePage,
+                    onPressed: () => setState(() => _pageIndex = idx),
+                  );
+                },
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
-          if (episodes.isEmpty) const Text('Bangumi 暂无剧集资料，仍可在播放器选集。'),
+          if (episodes.isEmpty) const Text('Bangumi 暂无剧集资料，仍可在播放器内选集。'),
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: [for (final ep in episodes) _episodeCell(context, ep)],
+            children: [for (final ep in visible) _episodeCell(context, ep)],
           ),
         ],
       ),
@@ -421,7 +662,7 @@ class _EpisodeMatrixCard extends StatelessWidget {
         clipsChild: true,
         onPressed: ep.state == EpisodeWatchState.unaired
             ? null
-            : () => onSelect(ep),
+            : () => widget.onSelect(ep),
         child: Center(
           child: Text(
             label,
@@ -433,6 +674,232 @@ class _EpisodeMatrixCard extends StatelessWidget {
                 ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _CommentsSectionCard extends StatelessWidget {
+  const _CommentsSectionCard({
+    required this.commentsAsync,
+    required this.overrideItems,
+    required this.overrideTotal,
+    required this.overrideHasMore,
+    required this.loadingMore,
+    required this.onRefresh,
+    required this.onLoadMore,
+  });
+
+  final AsyncValue<SubjectCommentsPage> commentsAsync;
+  final List<SubjectComment>? overrideItems;
+  final int? overrideTotal;
+  final bool? overrideHasMore;
+  final bool loadingMore;
+  final VoidCallback onRefresh;
+  final ValueChanged<int> onLoadMore;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = context.colorScheme;
+    final basePage = commentsAsync.value;
+    final items = overrideItems ?? basePage?.items ?? const <SubjectComment>[];
+    final total = overrideTotal ?? basePage?.total ?? items.length;
+    final hasMore = overrideHasMore ?? basePage?.hasMore ?? false;
+
+    return KonekoCard(
+      corner: 30,
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  total > 0 ? 'Bangumi 吐槽箱 ($total)' : 'Bangumi 吐槽箱',
+                  style: AppTextStyle.headline
+                      .of(context, emphasized: true)
+                      .copyWith(color: colorScheme.onSurface),
+                ),
+              ),
+              KonekoChip(
+                label: '刷新',
+                height: 28,
+                fontSize: 12,
+                leading: GlyphIcon(
+                  KonekoGlyphs.refresh,
+                  size: 13,
+                  color: colorScheme.primary,
+                ),
+                onPressed: onRefresh,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (commentsAsync.isLoading && items.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 28),
+              child: Center(child: ActivityIndicator()),
+            )
+          else if (commentsAsync.hasError && items.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Center(
+                child: Column(
+                  spacing: 8,
+                  children: [
+                    Text(
+                      '评论加载失败，请检查网络后重试',
+                      style: AppTextStyle.footnote
+                          .of(context)
+                          .copyWith(color: colorScheme.onSurfaceVariant),
+                    ),
+                    KonekoChip(
+                      label: '重新加载',
+                      height: 32,
+                      fontSize: 12.5,
+                      backgroundColor: colorScheme.primary,
+                      foregroundColor: colorScheme.onPrimary,
+                      onPressed: onRefresh,
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else if (items.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Center(
+                child: Text(
+                  '暂时还没有吐槽评论',
+                  style: AppTextStyle.subheadline
+                      .of(context)
+                      .copyWith(color: colorScheme.onSurfaceVariant),
+                ),
+              ),
+            )
+          else ...[
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              spacing: 10,
+              children: [
+                for (final comment in items) _CommentTile(comment: comment),
+              ],
+            ),
+            if (hasMore) ...[
+              const SizedBox(height: 14),
+              Center(
+                child: KonekoChip(
+                  label: loadingMore ? '正在加载...' : '加载更多评论',
+                  height: 36,
+                  fontSize: 13,
+                  backgroundColor: colorScheme.primary.withValues(alpha: 0.14),
+                  foregroundColor: colorScheme.primary,
+                  onPressed: loadingMore ? null : () => onLoadMore(items.length),
+                ),
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _CommentTile extends StatefulWidget {
+  const _CommentTile({required this.comment});
+
+  final SubjectComment comment;
+
+  @override
+  State<_CommentTile> createState() => _CommentTileState();
+}
+
+class _CommentTileState extends State<_CommentTile> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = context.colorScheme;
+    final c = widget.comment;
+    final isLong = c.content.length > 140 || '\n'.allMatches(c.content).length >= 3;
+
+    return KonekoBlock(
+      corner: 18,
+      padding: const EdgeInsets.all(13),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              KonekoAvatar(
+                name: c.userName,
+                avatarUrl: c.avatarUrl,
+                size: 34,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      c.userName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyle.subheadline
+                          .of(context, emphasized: true)
+                          .copyWith(color: colorScheme.onSurface),
+                    ),
+                    Text(
+                      formatRelativeTime(c.updatedAt),
+                      style: AppTextStyle.caption2
+                          .of(context)
+                          .copyWith(color: colorScheme.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+              ),
+              if (c.rate > 0)
+                KonekoChip(
+                  label: '${c.rate}',
+                  height: 22,
+                  fontSize: 11,
+                  leading: const GlyphIcon(
+                    KonekoGlyphs.star,
+                    size: 11,
+                    color: Color(0xFFE09F24),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 9),
+          Text(
+            c.content,
+            maxLines: _expanded ? null : 4,
+            overflow: _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
+            style: AppTextStyle.footnote
+                .of(context)
+                .copyWith(color: colorScheme.onSurface, height: 1.5),
+          ),
+          if (isLong) ...[
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.centerRight,
+              child: PressSurface(
+                fill: Colors.transparent,
+                shape: AppShape.full,
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                onPressed: () => setState(() => _expanded = !_expanded),
+                child: Text(
+                  _expanded ? '收起' : '展开全文',
+                  style: AppTextStyle.caption1
+                      .of(context, emphasized: true)
+                      .copyWith(color: colorScheme.primary),
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -460,22 +927,34 @@ class _RuleSourcesCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            '规则播放源',
-            style: AppTextStyle.headline
-                .of(context, emphasized: true)
-                .copyWith(color: colorScheme.onSurface),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '播放源',
+                  style: AppTextStyle.headline
+                      .of(context, emphasized: true)
+                      .copyWith(color: colorScheme.onSurface),
+                ),
+              ),
+              KonekoChip(
+                label: '管理规则',
+                height: 28,
+                fontSize: 12,
+                onPressed: onManage,
+              ),
+            ],
           ),
           const SizedBox(height: 4),
           Text(
-            '兼容 Kazumi 规则 · 切换源自动保留同一番剧进度',
+            '切换播放源时自动保留当前观看进度',
             style: AppTextStyle.caption1
                 .of(context)
                 .copyWith(color: colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 12),
           if (probes.isEmpty)
-            TextButton(onPressed: onManage, child: const Text('添加播放规则')),
+            TextButton(onPressed: onManage, child: const Text('去导入 Kazumi 播放规则')),
           Column(
             spacing: 8,
             children: [
