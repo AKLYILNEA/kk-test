@@ -329,16 +329,15 @@ class KazumiSources implements PlaybackSources {
   }
 
   @override
-  Future<int?> verifyPlayable(
+  Future<MediaProbeStatus> probeMedia(
     PlayableMedia media, {
     Future<void>? cancelled,
   }) async {
     final uri = media.uri;
     if (uri.scheme != 'http' && uri.scheme != 'https') {
-      return 1;
+      return MediaProbeStatus.reachable;
     }
     const timeout = Duration(seconds: 2);
-    final sw = Stopwatch()..start();
     final cancelToken = CancelToken();
     final deadline = Timer(timeout, () => cancelToken.cancel('probe_timeout'));
     if (cancelled != null) {
@@ -363,60 +362,56 @@ class KazumiSources implements PlaybackSources {
         ),
       );
       final status = response.statusCode ?? 0;
-      if (status < 200 || status >= 400) {
-        cancelToken.cancel('status_$status');
-        return null;
-      }
+      if (status == 404 || status == 410) return MediaProbeStatus.invalid;
+      if (status < 200 || status >= 300) return MediaProbeStatus.inconclusive;
       final contentType =
           (response.headers.value(Headers.contentTypeHeader) ?? '')
               .toLowerCase();
       if (contentType.contains('text/html')) {
-        cancelToken.cancel('html_response');
-        return null;
+        return MediaProbeStatus.invalid;
       }
       final stream = response.data?.stream;
-      if (stream != null) {
-        final bytes = <int>[];
-        final completer = Completer<void>();
-        late final StreamSubscription<List<int>> sub;
-        sub = stream.listen(
-          (chunk) {
-            bytes.addAll(chunk);
-            if (bytes.length >= 256 && !completer.isCompleted) {
-              completer.complete();
-              unawaited(sub.cancel());
-            }
-          },
-          onDone: () {
-            if (!completer.isCompleted) completer.complete();
-          },
-          onError: (Object err) {
-            if (!completer.isCompleted) completer.completeError(err);
-          },
-          cancelOnError: true,
-        );
-        try {
-          await completer.future.timeout(timeout);
-        } finally {
-          await sub.cancel();
-          if (!cancelToken.isCancelled) cancelToken.cancel('verified');
-        }
-        if (bytes.isEmpty) return null;
-        final isHls =
-            uri.path.toLowerCase().endsWith('.m3u8') ||
-            contentType.contains('mpegurl');
-        if (isHls) {
-          final preview = utf8
-              .decode(bytes.take(256).toList(), allowMalformed: true)
-              .trimLeft();
-          if (!preview.startsWith('#EXTM3U')) {
-            return null;
+      if (stream == null) return MediaProbeStatus.inconclusive;
+      final bytes = <int>[];
+      final completer = Completer<void>();
+      late final StreamSubscription<List<int>> sub;
+      sub = stream.listen(
+        (chunk) {
+          bytes.addAll(chunk);
+          if (bytes.length >= 256 && !completer.isCompleted) {
+            completer.complete();
+            unawaited(sub.cancel());
           }
+        },
+        onDone: () {
+          if (!completer.isCompleted) completer.complete();
+        },
+        onError: (Object err) {
+          if (!completer.isCompleted) completer.completeError(err);
+        },
+        cancelOnError: true,
+      );
+      try {
+        await completer.future.timeout(timeout);
+      } finally {
+        await sub.cancel();
+        if (!cancelToken.isCancelled) cancelToken.cancel('verified');
+      }
+      if (bytes.isEmpty) return MediaProbeStatus.invalid;
+      final isHls =
+          uri.path.toLowerCase().endsWith('.m3u8') ||
+          contentType.contains('mpegurl');
+      if (isHls) {
+        final preview = utf8
+            .decode(bytes.take(256).toList(), allowMalformed: true)
+            .trimLeft();
+        if (!preview.startsWith('#EXTM3U')) {
+          return MediaProbeStatus.invalid;
         }
       }
-      return math.max(1, sw.elapsedMilliseconds);
+      return MediaProbeStatus.reachable;
     } on Object {
-      return null;
+      return MediaProbeStatus.inconclusive;
     } finally {
       deadline.cancel();
       if (!cancelToken.isCancelled) cancelToken.cancel();

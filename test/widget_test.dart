@@ -250,7 +250,7 @@ void main() {
 
       await tester.tap(find.text('关联'));
       await tester.pumpAndSettle();
-      expect(find.text('关联系列'), findsWidgets);
+      expect(find.textContaining('关联系列'), findsWidgets);
 
       await tester.drag(find.byType(PageView).last, const Offset(320, 0));
       await tester.pumpAndSettle();

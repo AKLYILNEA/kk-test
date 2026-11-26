@@ -107,6 +107,16 @@ void main() {
             response.write(
               '<div class="road"><a href="/video.mp4">第1集</a></div>',
             );
+          case '/live.m3u8':
+            response.headers.contentType = ContentType(
+              'application',
+              'vnd.apple.mpegurl',
+            );
+            response.write('#EXTM3U\n#EXTINF:4,\nsegment.ts');
+          case '/range-blocked.mp4':
+            response.statusCode = 416;
+          case '/error-page.mp4':
+            response.write('<html>source unavailable</html>');
           case '/api/search':
             response.headers.contentType = ContentType.json;
             response.write(
@@ -150,6 +160,22 @@ void main() {
       final selected = (await sources.lookup(_subject, 'fixture')).single;
       expect(selected.number, 1);
       expect((await sources.resolve(selected)).uri.path, '/video.mp4');
+      expect(
+        await sources.probeMedia(PlayableMedia(Uri.parse('$base/live.m3u8'))),
+        MediaProbeStatus.reachable,
+      );
+      expect(
+        await sources.probeMedia(
+          PlayableMedia(Uri.parse('$base/range-blocked.mp4')),
+        ),
+        MediaProbeStatus.inconclusive,
+      );
+      expect(
+        await sources.probeMedia(
+          PlayableMedia(Uri.parse('$base/error-page.mp4')),
+        ),
+        MediaProbeStatus.invalid,
+      );
       final loaded = await rules.importRules(jsonEncode(api));
       expect(loaded.last.apiType, 'API');
       expect(
@@ -441,10 +467,10 @@ class _DirectSource implements PlaybackSources {
     Future<void>? cancelled,
   }) async => PlayableMedia(episode.page);
   @override
-  Future<int?> verifyPlayable(
+  Future<MediaProbeStatus> probeMedia(
     PlayableMedia media, {
     Future<void>? cancelled,
-  }) async => 12;
+  }) async => MediaProbeStatus.reachable;
   @override
   Future<RuleProbeResult> probeRule(
     AnimeSubject subject,

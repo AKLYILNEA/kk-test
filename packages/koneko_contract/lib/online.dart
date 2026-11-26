@@ -281,13 +281,18 @@ class DanmakuEpisodeMatch {
   final String title;
 }
 
+enum MediaProbeStatus { reachable, inconclusive, invalid }
+
 abstract interface class PlaybackSources {
   Future<List<SourceEpisode>> lookup(AnimeSubject subject, String ruleId);
   Future<PlayableMedia> resolve(
     SourceEpisode episode, {
     Future<void>? cancelled,
   });
-  Future<int?> verifyPlayable(PlayableMedia media, {Future<void>? cancelled});
+  Future<MediaProbeStatus> probeMedia(
+    PlayableMedia media, {
+    Future<void>? cancelled,
+  });
   Future<RuleProbeResult> probeRule(
     AnimeSubject subject,
     String ruleId, {

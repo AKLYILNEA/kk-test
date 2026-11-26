@@ -70,6 +70,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   Timer? _hudTimer;
   Timer? _bufferTimer;
   bool _bufferDelayed = false;
+  Duration? _positionAtOpen;
   Completer<void>? _sourceCancellation;
   SourceEpisode? _source;
   List<SourceEpisode> _choices = const [];
@@ -263,7 +264,25 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     if (!mounted) return;
     final completed = status.completed && !_status.completed;
     final startedPlaying = status.playing && !_status.playing;
-    setState(() => _status = status);
+    final startingPosition = _positionAtOpen;
+    final started =
+        _loaded &&
+        startingPosition != null &&
+        !status.buffering &&
+        status.error == null &&
+        (status.position > startingPosition || status.completed);
+    setState(() {
+      _status = status;
+      if (started) _positionAtOpen = null;
+    });
+    if (_source case final source? when started) {
+      unawaited(
+        ref
+            .read(playbackSourcesProvider)
+            ?.rememberSelectedRule(widget.subjectId, source.ruleId)
+            .onError((Object _, StackTrace _) {}),
+      );
+    }
     _watchBuffering();
     if (completed) _checkpoint();
     if (startedPlaying) _armHudAutoHide();
@@ -277,14 +296,37 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     _bufferTimer?.cancel();
     _bufferTimer = null;
     _bufferDelayed = false;
+    _positionAtOpen = null;
     return ++_request;
   }
 
+  bool get _waitingForPlayback =>
+      _loaded &&
+      _status.error == null &&
+      (_status.buffering || _positionAtOpen != null);
+
+  void _playbackOpened(PlaybackSession session, SourceEpisode? source) {
+    setState(() {
+      _source = source;
+      if (source != null) {
+        _ruleId = source.ruleId;
+        _ruleName = source.ruleName;
+      }
+      _status = session.status;
+      _positionAtOpen = _status.position;
+      _loading = false;
+      _loadingHint = null;
+      _loaded = true;
+      _lastCheckpoint = -1;
+      _lastCompleted = false;
+    });
+    _watchBuffering();
+    _armHudAutoHide();
+    unawaited(_loadDanmaku());
+  }
+
   void _watchBuffering() {
-    if (!_loaded ||
-        !_pageActive ||
-        !_status.buffering ||
-        _status.error != null) {
+    if (!_pageActive || !_waitingForPlayback) {
       _bufferTimer?.cancel();
       _bufferTimer = null;
       if (_bufferDelayed) setState(() => _bufferDelayed = false);
@@ -473,25 +515,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           if (!_isCurrent(request)) return;
           if (!_pageActive) await session.setPlaying(false);
           if (!_isCurrent(request)) return;
-          unawaited(
-            resolver
-                .rememberSelectedRule(widget.subjectId, ruleId)
-                .onError((Object _, StackTrace _) {}),
-          );
-          setState(() {
-            _source = episodeSource;
-            _ruleId = episodeSource.ruleId;
-            _ruleName = episodeSource.ruleName;
-            _status = session.status;
-            _loading = false;
-            _loadingHint = null;
-            _loaded = true;
-            _lastCheckpoint = -1;
-            _lastCompleted = false;
-          });
-          _watchBuffering();
-          _armHudAutoHide();
-          unawaited(_loadDanmaku());
+          _playbackOpened(session, episodeSource);
           return;
         } on Object catch (err) {
           lastErr = err;
@@ -525,14 +549,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       if (!_isCurrent(request)) return;
       if (!_pageActive) await session.setPlaying(false);
       if (!_isCurrent(request)) return;
-      setState(() {
-        _status = session.status;
-        _loaded = true;
-        _loading = false;
-      });
-      _watchBuffering();
-      _armHudAutoHide();
-      unawaited(_loadDanmaku());
+      _playbackOpened(session, null);
     } on Object catch (error) {
       if (!_isCurrent(request)) return;
       setState(() {
@@ -674,26 +691,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
               if (!_isCurrent(request)) return;
               if (!_pageActive) await session.setPlaying(false);
               if (!_isCurrent(request)) return;
-              unawaited(
-                resolver
-                    .rememberSelectedRule(widget.subjectId, id)
-                    .onError((Object _, StackTrace _) {}),
-              );
-              setState(() {
-                _episode = episode;
-                _source = episodeSource;
-                _ruleId = episodeSource.ruleId;
-                _ruleName = episodeSource.ruleName;
-                _status = session.status;
-                _loading = false;
-                _loadingHint = null;
-                _loaded = true;
-                _lastCheckpoint = -1;
-                _lastCompleted = false;
-              });
-              _watchBuffering();
-              _armHudAutoHide();
-              unawaited(_loadDanmaku());
+              _playbackOpened(session, episodeSource);
               return;
             } on Object catch (err) {
               lineProblem = err;
@@ -826,17 +824,22 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
               try {
                 final media = await resolveLine(line);
                 if (media == null || !isSearching()) return;
-                final verified = await resolver
-                    .verifyPlayable(media, cancelled: preparation.future)
-                    .timeout(const Duration(seconds: 2), onTimeout: () => null);
+                final mediaStatus = await resolver
+                    .probeMedia(media, cancelled: preparation.future)
+                    .timeout(
+                      const Duration(seconds: 2),
+                      onTimeout: () => MediaProbeStatus.inconclusive,
+                    );
                 if (!isSearching()) return;
+                if (mediaStatus == MediaProbeStatus.invalid) continue;
+                final verified = mediaStatus == MediaProbeStatus.reachable;
                 offer((
                   options: options,
                   line: line,
                   media: media,
                   hit: hit,
-                ), verified: verified != null);
-                if (verified != null) return;
+                ), verified: verified);
+                if (verified) return;
               } on Object {
                 continue;
               }
@@ -878,23 +881,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     if (!_isCurrent(request)) return;
     if (!_pageActive) await session.setPlaying(false);
     if (!_isCurrent(request)) return;
-    setState(() {
-      _source = line;
-      _status = session.status;
-      _loading = false;
-      _loadingHint = null;
-      _loaded = true;
-      _lastCheckpoint = -1;
-      _lastCompleted = false;
-    });
-    unawaited(
-      resolver
-          .rememberSelectedRule(widget.subjectId, line.ruleId)
-          .onError((Object _, StackTrace _) {}),
-    );
-    _watchBuffering();
-    _armHudAutoHide();
-    unawaited(_loadDanmaku());
+    _playbackOpened(session, line);
   }
 
   void _checkpoint() {
@@ -1251,7 +1238,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     final status = _status;
     final error =
         _error ??
-        (_loaded && status.duration == Duration.zero && status.error != null
+        (_loaded &&
+                status.error != null &&
+                (status.duration == Duration.zero || _positionAtOpen != null)
             ? '播放失败'
             : _bufferDelayed
             ? '缓冲时间较长'
@@ -1416,7 +1405,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
             ],
           ),
         ),
-        if (error == null && (_loading || (_loaded && status.buffering)))
+        if (error == null && (_loading || _waitingForPlayback))
           Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
