@@ -124,21 +124,23 @@ class _ThemePageState extends ConsumerState<ThemePage> {
             // Pure Black
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: generateGroup([
-                DecorationListItem(
-                  leading: const GlyphIcon(KonekoGlyphs.pureBlack),
-                  title: const Text('纯黑模式'),
-                  subtitle: const Text('深色模式下启用 OLED 纯黑背景'),
-                  trailing: Switch(
-                    value: settings.pureBlack,
-                    onChanged: (v) =>
-                        notifier.update((s) => s.copyWith(pureBlack: v)),
+              child: KonekoGroup(
+                items: [
+                  DecorationListItem(
+                    leading: const GlyphIcon(KonekoGlyphs.pureBlack),
+                    title: const Text('纯黑模式'),
+                    subtitle: const Text('深色模式下启用 OLED 纯黑背景'),
+                    trailing: Switch(
+                      value: settings.pureBlack,
+                      onChanged: (v) =>
+                          notifier.update((s) => s.copyWith(pureBlack: v)),
+                    ),
+                    onPressed: () => notifier.update(
+                      (s) => s.copyWith(pureBlack: !s.pureBlack),
+                    ),
                   ),
-                  onPressed: () => notifier.update(
-                    (s) => s.copyWith(pureBlack: !s.pureBlack),
-                  ),
-                ),
-              ]),
+                ],
+              ),
             ),
             const SizedBox(height: 16),
 
@@ -332,37 +334,39 @@ class _ThemePageState extends ConsumerState<ThemePage> {
                 valueListenable: FontManager.fontFamilyNotifier,
                 builder: (context, family, _) {
                   final name = FontManager.selectedName ?? '系统默认';
-                  return generateGroup([
-                    DecorationListItem(
-                      leading: Text(
-                        'Aa',
-                        style: AppTextStyle.headline
-                            .of(context, emphasized: true)
-                            .copyWith(
-                              fontFamily: family,
-                              color: colorScheme.primary,
-                            ),
+                  return KonekoGroup(
+                    items: [
+                      DecorationListItem(
+                        leading: Text(
+                          'Aa',
+                          style: AppTextStyle.headline
+                              .of(context, emphasized: true)
+                              .copyWith(
+                                fontFamily: family,
+                                color: colorScheme.primary,
+                              ),
+                        ),
+                        title: Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontFamily: family),
+                        ),
+                        subtitle: const Text('支持导入本地 TTF / OTF，切换后零重启生效'),
+                        trailing: const GlyphIcon(Glyphs.chevronForward),
+                        onPressed: () => BaseNavigator.push<void>(
+                          context,
+                          const FontFamilyPage(),
+                        ),
                       ),
-                      title: Text(
-                        name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontFamily: family),
+                      const DecorationListItem(
+                        leading: EmojiText('🐱', style: TextStyle(fontSize: 20)),
+                        title: Text('Emoji 字体'),
+                        subtitle: Text('全局固定使用 Twemoji 渲染，无需额外配置'),
+                        trailing: KonekoChip(label: 'Twemoji 默认'),
                       ),
-                      subtitle: const Text('支持导入本地 TTF / OTF，切换后零重启生效'),
-                      trailing: const GlyphIcon(Glyphs.chevronForward),
-                      onPressed: () => BaseNavigator.push<void>(
-                        context,
-                        const FontFamilyPage(),
-                      ),
-                    ),
-                    const DecorationListItem(
-                      leading: EmojiText('🐱', style: TextStyle(fontSize: 20)),
-                      title: Text('Emoji 字体'),
-                      subtitle: Text('全局固定使用 Twemoji 渲染，无需额外配置'),
-                      trailing: KonekoChip(label: 'Twemoji 默认'),
-                    ),
-                  ]);
+                    ],
+                  );
                 },
               ),
             ),

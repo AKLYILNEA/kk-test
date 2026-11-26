@@ -8,6 +8,7 @@ import 'package:koneko/features/detail/subject_detail_page.dart';
 import 'package:koneko/features/discover/discover_page.dart';
 import 'package:koneko/main.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
+import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:koneko_contract/koneko_contract.dart';
 import 'package:koneko_mock/koneko_mock.dart';
 import 'package:prism_ui/prism_ui.dart';
@@ -222,13 +223,15 @@ void main() {
     await tester.pumpWidget(_testApp());
     await tester.pumpAndSettle();
 
-    // Home top deck no longer shows cluttery "已启用规则" stat
+    // Home top deck no longer shows cluttery "已启用规则" stat and top-right has History shortcut
     expect(find.text('已启用规则'), findsNothing);
+    expect(_barAction('观看历史'), findsOneWidget);
 
     await tester.tap(find.text('星海旅人：北境编年史').first);
     await tester.pumpAndSettle();
 
     expect(find.byType(SubjectDetailPage), findsOneWidget);
+    expect(find.byType(KonekoStarRating), findsOneWidget);
     expect(find.textContaining('播放 · 第'), findsOneWidget);
 
     // Selecting and tapping again cancels the specified playback source

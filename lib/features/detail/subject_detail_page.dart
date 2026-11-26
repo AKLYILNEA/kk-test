@@ -453,8 +453,8 @@ class _HeroCardState extends State<_HeroCard> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               SizedBox(
-                width: 102,
-                height: 144,
+                width: 104,
+                height: 148,
                 child: KonekoPosterArt(
                   subject: subject,
                   borderRadius: AppRadius.all(18),
@@ -462,63 +462,109 @@ class _HeroCardState extends State<_HeroCard> {
               ),
               const SizedBox(width: 16),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      subject.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyle.title2
-                          .of(context, emphasized: true)
-                          .copyWith(color: colorScheme.onSurface),
-                    ),
-                    if (subject.originalTitle.trim().isNotEmpty &&
-                        subject.originalTitle.trim() !=
-                            subject.title.trim()) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        subject.originalTitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTextStyle.footnote
-                            .of(context)
-                            .copyWith(color: colorScheme.onSurfaceVariant),
-                      ),
-                    ],
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: [
-                        if (subject.score > 0)
-                          KonekoChip(
-                            label: subject.score.toStringAsFixed(1),
-                            leading: const GlyphIcon(
-                              KonekoGlyphs.star,
-                              size: 12,
-                              color: Color(0xFFE09F24),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 148),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            subject.title,
+                            style: AppTextStyle.title3
+                                .of(context, emphasized: true)
+                                .copyWith(
+                                  color: colorScheme.onSurface,
+                                  height: 1.26,
+                                ),
+                          ),
+                          if (subject.originalTitle.trim().isNotEmpty &&
+                              subject.originalTitle.trim() !=
+                                  subject.title.trim()) ...[
+                            const SizedBox(height: 5),
+                            Text(
+                              subject.originalTitle,
+                              style: AppTextStyle.footnote
+                                  .of(context)
+                                  .copyWith(
+                                    color: colorScheme.onSurfaceVariant,
+                                    height: 1.32,
+                                  ),
                             ),
-                          ),
-                        if (subject.rank > 0)
-                          KonekoChip(label: 'Rank #${subject.rank}'),
-                        if (subject.year > 0)
-                          KonekoChip(
-                            label: subject.seasonLabel.isNotEmpty
-                                ? subject.seasonLabel
-                                : '${subject.year} 年',
-                          ),
-                        if (subject.studio.trim().isNotEmpty)
-                          KonekoChip(label: subject.studio.trim()),
-                        if (subject.totalEpisodes > 0)
-                          KonekoChip(label: '共 ${subject.totalEpisodes} 话'),
+                          ],
+                        ],
+                      ),
+                      if (subject.score > 0 || subject.rank > 0) ...[
+                        const SizedBox(height: 12),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          spacing: 6,
+                          children: [
+                            if (subject.score > 0)
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                spacing: 7,
+                                children: [
+                                  KonekoStarRating(
+                                    score: subject.score,
+                                    starSize: 16,
+                                    spacing: 2,
+                                  ),
+                                  Text(
+                                    subject.score.toStringAsFixed(1),
+                                    style: AppTextStyle.headline
+                                        .of(context, emphasized: true)
+                                        .copyWith(
+                                          color: colorScheme.onSurface,
+                                          fontFeatures: const [
+                                            FontFeature.tabularFigures(),
+                                          ],
+                                        ),
+                                  ),
+                                ],
+                              ),
+                            if (subject.rank > 0)
+                              KonekoChip(
+                                label: 'Bangumi Rank #${subject.rank}',
+                                height: 22,
+                                fontSize: 11,
+                                backgroundColor: colorScheme.primary.withValues(
+                                  alpha: 0.12,
+                                ),
+                                foregroundColor: colorScheme.primary,
+                              ),
+                          ],
+                        ),
                       ],
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ],
           ),
+          if (subject.year > 0 ||
+              subject.studio.trim().isNotEmpty ||
+              subject.totalEpisodes > 0) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                if (subject.year > 0)
+                  KonekoChip(
+                    label: subject.seasonLabel.isNotEmpty
+                        ? subject.seasonLabel
+                        : '${subject.year} 年',
+                  ),
+                if (subject.studio.trim().isNotEmpty)
+                  KonekoChip(label: subject.studio.trim()),
+                if (subject.totalEpisodes > 0)
+                  KonekoChip(label: '共 ${subject.totalEpisodes} 话'),
+              ],
+            ),
+          ],
           const SizedBox(height: 16),
           PressSurface(
             fill: colorScheme.primary,
@@ -1311,7 +1357,8 @@ class _RelatedSeriesCard extends StatelessWidget {
     final colorScheme = context.colorScheme;
     return KonekoCard(
       corner: 30,
-      padding: const EdgeInsets.fromLTRB(0, 18, 0, 6),
+      clip: true,
+      padding: const EdgeInsets.fromLTRB(0, 18, 0, 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1329,7 +1376,6 @@ class _RelatedSeriesCard extends StatelessWidget {
             height: 238,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
-              clipBehavior: Clip.none,
               padding: const EdgeInsets.fromLTRB(18, 6, 18, 22),
               itemCount: subjects.length,
               separatorBuilder: (_, _) => const SizedBox(width: 12),

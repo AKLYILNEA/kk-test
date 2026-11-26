@@ -267,12 +267,193 @@ class DanmakuItem {
     required this.text,
     required this.colorHex,
     required this.lane,
+    this.source = '',
   });
 
   final double timeSeconds;
   final String text;
   final int colorHex;
   final int lane;
+
+  /// Source tag from DanDanPlay aggregated feed (e.g. `[BiliBili]`, `[Gamer]`, `[AcFun]`, or DanDanPlay).
+  final String source;
+}
+
+/// Persistent Kazumi-aligned Danmaku display, typography & source settings.
+class DanmakuSettings {
+  const DanmakuSettings({
+    this.fontSize = 16.0,
+    this.fontWeight = 4,
+    this.strokeEnabled = true,
+    this.strokeWidth = 1.5,
+    this.opacity = 0.9,
+    this.area = 0.5,
+    this.duration = 8.0,
+    this.lineHeight = 1.2,
+    this.showScroll = true,
+    this.showTop = true,
+    this.showBottom = true,
+    this.massiveMode = false,
+    this.colorful = true,
+    this.sourceBilibili = true,
+    this.sourceGamer = true,
+    this.sourceDandan = true,
+  });
+
+  final double fontSize;
+  final int fontWeight;
+  final bool strokeEnabled;
+  final double strokeWidth;
+  final double opacity;
+
+  /// Display area ratio (0.25 = 1/4屏, 0.5 = 半屏, 0.75 = 3/4屏, 1.0 = 全屏).
+  final double area;
+  final double duration;
+  final double lineHeight;
+  final bool showScroll;
+  final bool showTop;
+  final bool showBottom;
+  final bool massiveMode;
+  final bool colorful;
+  final bool sourceBilibili;
+  final bool sourceGamer;
+  final bool sourceDandan;
+
+  bool allowsSource(String rawSource) {
+    final lower = rawSource.toLowerCase();
+    if (lower.contains('bilibili')) return sourceBilibili;
+    if (lower.contains('gamer') || lower.contains('bahamut')) {
+      return sourceGamer;
+    }
+    return sourceDandan;
+  }
+
+  DanmakuSettings copyWith({
+    double? fontSize,
+    int? fontWeight,
+    bool? strokeEnabled,
+    double? strokeWidth,
+    double? opacity,
+    double? area,
+    double? duration,
+    double? lineHeight,
+    bool? showScroll,
+    bool? showTop,
+    bool? showBottom,
+    bool? massiveMode,
+    bool? colorful,
+    bool? sourceBilibili,
+    bool? sourceGamer,
+    bool? sourceDandan,
+  }) {
+    return DanmakuSettings(
+      fontSize: fontSize ?? this.fontSize,
+      fontWeight: fontWeight ?? this.fontWeight,
+      strokeEnabled: strokeEnabled ?? this.strokeEnabled,
+      strokeWidth: strokeWidth ?? this.strokeWidth,
+      opacity: opacity ?? this.opacity,
+      area: area ?? this.area,
+      duration: duration ?? this.duration,
+      lineHeight: lineHeight ?? this.lineHeight,
+      showScroll: showScroll ?? this.showScroll,
+      showTop: showTop ?? this.showTop,
+      showBottom: showBottom ?? this.showBottom,
+      massiveMode: massiveMode ?? this.massiveMode,
+      colorful: colorful ?? this.colorful,
+      sourceBilibili: sourceBilibili ?? this.sourceBilibili,
+      sourceGamer: sourceGamer ?? this.sourceGamer,
+      sourceDandan: sourceDandan ?? this.sourceDandan,
+    );
+  }
+
+  Map<String, Object?> toJson() => {
+    'fontSize': fontSize,
+    'fontWeight': fontWeight,
+    'strokeEnabled': strokeEnabled,
+    'strokeWidth': strokeWidth,
+    'opacity': opacity,
+    'area': area,
+    'duration': duration,
+    'lineHeight': lineHeight,
+    'showScroll': showScroll,
+    'showTop': showTop,
+    'showBottom': showBottom,
+    'massiveMode': massiveMode,
+    'colorful': colorful,
+    'sourceBilibili': sourceBilibili,
+    'sourceGamer': sourceGamer,
+    'sourceDandan': sourceDandan,
+  };
+
+  static DanmakuSettings fromJson(Map<String, dynamic> map) {
+    double numOr(String k, double fallback, double min, double max) =>
+        map[k] is num
+            ? (map[k] as num).toDouble().clamp(min, max)
+            : fallback;
+    int intOr(String k, int fallback, int min, int max) => map[k] is num
+        ? (map[k] as num).toInt().clamp(min, max).toInt()
+        : fallback;
+    bool boolOr(String k, bool fallback) =>
+        map[k] is bool ? map[k] as bool : fallback;
+    return DanmakuSettings(
+      fontSize: numOr('fontSize', 16.0, 10.0, 38.0),
+      fontWeight: intOr('fontWeight', 4, 1, 9),
+      strokeEnabled: boolOr('strokeEnabled', true),
+      strokeWidth: numOr('strokeWidth', 1.5, 0.1, 3.0),
+      opacity: numOr('opacity', 0.9, 0.1, 1.0),
+      area: numOr('area', 0.5, 0.125, 1.0),
+      duration: numOr('duration', 8.0, 2.0, 16.0),
+      lineHeight: numOr('lineHeight', 1.2, 0.8, 2.4),
+      showScroll: boolOr('showScroll', true),
+      showTop: boolOr('showTop', true),
+      showBottom: boolOr('showBottom', true),
+      massiveMode: boolOr('massiveMode', false),
+      colorful: boolOr('colorful', true),
+      sourceBilibili: boolOr('sourceBilibili', true),
+      sourceGamer: boolOr('sourceGamer', true),
+      sourceDandan: boolOr('sourceDandan', true),
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is DanmakuSettings &&
+      other.fontSize == fontSize &&
+      other.fontWeight == fontWeight &&
+      other.strokeEnabled == strokeEnabled &&
+      other.strokeWidth == strokeWidth &&
+      other.opacity == opacity &&
+      other.area == area &&
+      other.duration == duration &&
+      other.lineHeight == lineHeight &&
+      other.showScroll == showScroll &&
+      other.showTop == showTop &&
+      other.showBottom == showBottom &&
+      other.massiveMode == massiveMode &&
+      other.colorful == colorful &&
+      other.sourceBilibili == sourceBilibili &&
+      other.sourceGamer == sourceGamer &&
+      other.sourceDandan == sourceDandan;
+
+  @override
+  int get hashCode => Object.hash(
+    fontSize,
+    fontWeight,
+    strokeEnabled,
+    strokeWidth,
+    opacity,
+    area,
+    duration,
+    lineHeight,
+    showScroll,
+    showTop,
+    showBottom,
+    massiveMode,
+    colorful,
+    sourceBilibili,
+    sourceGamer,
+    sourceDandan,
+  );
 }
 
 class SubjectComment {

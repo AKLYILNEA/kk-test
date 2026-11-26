@@ -144,69 +144,71 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                   ),
                 ),
                 const ListHeader(title: '同步服务（对齐 Kazumi）'),
-                generateGroup([
-                  DecorationListItem(
-                    leading: const GlyphIcon(KonekoGlyphs.sync),
-                    title: const Text('同步 Bangumi 收藏与进度'),
-                    subtitle: Text(
-                      hasBangumi ? '已配置访问令牌，点击立即双向同步' : '尚未配置 Access Token，点击去设置',
+                KonekoGroup(
+                  items: [
+                    DecorationListItem(
+                      leading: const GlyphIcon(KonekoGlyphs.sync),
+                      title: const Text('同步 Bangumi 收藏与进度'),
+                      subtitle: Text(
+                        hasBangumi ? '已配置访问令牌，点击立即双向同步' : '尚未配置 Access Token，点击去设置',
+                      ),
+                      trailing: _syncing
+                          ? const ActivityIndicator()
+                          : const GlyphIcon(Glyphs.chevronForward),
+                      onPressed: _syncing
+                          ? null
+                          : () {
+                              Navigator.of(sheetContext).pop();
+                              if (!hasBangumi || sync == null) {
+                                BaseNavigator.push<void>(
+                                  context,
+                                  const ServiceSettingsPage(),
+                                );
+                              } else {
+                                unawaited(_runSync(sync.syncBangumi, 'Bangumi'));
+                              }
+                            },
                     ),
-                    trailing: _syncing
-                        ? const ActivityIndicator()
-                        : const GlyphIcon(Glyphs.chevronForward),
-                    onPressed: _syncing
-                        ? null
-                        : () {
-                            Navigator.of(sheetContext).pop();
-                            if (!hasBangumi || sync == null) {
-                              BaseNavigator.push<void>(
-                                context,
-                                const ServiceSettingsPage(),
-                              );
-                            } else {
-                              unawaited(_runSync(sync.syncBangumi, 'Bangumi'));
-                            }
-                          },
-                  ),
-                  DecorationListItem(
-                    leading: const GlyphIcon(KonekoGlyphs.cloud),
-                    title: const Text('同步 WebDAV 云端备份'),
-                    subtitle: Text(
-                      hasWebDav
-                          ? '已配置服务器，兼容 Kazumi 备份格式'
-                          : '尚未配置 WebDAV 服务器，点击去设置',
+                    DecorationListItem(
+                      leading: const GlyphIcon(KonekoGlyphs.cloud),
+                      title: const Text('同步 WebDAV 云端备份'),
+                      subtitle: Text(
+                        hasWebDav
+                            ? '已配置服务器，兼容 Kazumi 备份格式'
+                            : '尚未配置 WebDAV 服务器，点击去设置',
+                      ),
+                      trailing: _syncing
+                          ? const ActivityIndicator()
+                          : const GlyphIcon(Glyphs.chevronForward),
+                      onPressed: _syncing
+                          ? null
+                          : () {
+                              Navigator.of(sheetContext).pop();
+                              if (!hasWebDav || sync == null) {
+                                BaseNavigator.push<void>(
+                                  context,
+                                  const ServiceSettingsPage(),
+                                );
+                              } else {
+                                unawaited(_runSync(sync.syncWebDav, 'WebDAV'));
+                              }
+                            },
                     ),
-                    trailing: _syncing
-                        ? const ActivityIndicator()
-                        : const GlyphIcon(Glyphs.chevronForward),
-                    onPressed: _syncing
-                        ? null
-                        : () {
-                            Navigator.of(sheetContext).pop();
-                            if (!hasWebDav || sync == null) {
-                              BaseNavigator.push<void>(
-                                context,
-                                const ServiceSettingsPage(),
-                              );
-                            } else {
-                              unawaited(_runSync(sync.syncWebDav, 'WebDAV'));
-                            }
-                          },
-                  ),
-                  DecorationListItem(
-                    leading: const GlyphIcon(KonekoGlyphs.user),
-                    title: const Text('账号与同步设置'),
-                    subtitle: const Text('管理 Bangumi Token、WebDAV 与屏蔽词'),
-                    trailing: const GlyphIcon(Glyphs.chevronForward),
-                    onPressed: () {
-                      Navigator.of(sheetContext).pop();
-                      BaseNavigator.push<void>(
-                        context,
-                        const ServiceSettingsPage(),
-                      );
-                    },
-                  ),
-                ]),
+                    DecorationListItem(
+                      leading: const GlyphIcon(KonekoGlyphs.user),
+                      title: const Text('账号与同步设置'),
+                      subtitle: const Text('管理 Bangumi Token、WebDAV 与屏蔽词'),
+                      trailing: const GlyphIcon(Glyphs.chevronForward),
+                      onPressed: () {
+                        Navigator.of(sheetContext).pop();
+                        BaseNavigator.push<void>(
+                          context,
+                          const ServiceSettingsPage(),
+                        );
+                      },
+                    ),
+                  ],
+                ),
               ],
             );
           },
@@ -326,14 +328,13 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                       crossAxisCount: columns,
                       crossAxisSpacing: 10,
                       mainAxisSpacing: 12,
-                      childAspectRatio: 0.56,
+                      childAspectRatio: 0.67,
                     ),
                     delegate: SliverChildBuilderDelegate((context, index) {
                       final entry = filtered[index];
                       final subject = catalog.getSubjectById(entry.subjectId)!;
-                      return UnifiedAnimeCard(
+                      return KonekoPosterCard(
                         subject: subject,
-                        showMetaLine: false,
                         corner: 18,
                         statusBadgeLabel: entry.status.label,
                         onStatusTap: () => _pickStatus(subject, entry),

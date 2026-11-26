@@ -26,7 +26,9 @@ final videoViewportProvider = Provider<Widget Function(PlaybackSession)?>(
   (_) => null,
 );
 final danmakuViewportProvider =
-    Provider<Widget Function(List<DanmakuItem>, PlaybackStatus)?>((_) => null);
+    Provider<Widget Function(List<DanmakuItem>, PlaybackStatus, DanmakuSettings)?>(
+      (_) => null,
+    );
 final verifyWebViewBuilderProvider =
     Provider<
       Widget Function(

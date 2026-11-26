@@ -41,7 +41,8 @@ Future<void> main() async {
         }),
         videoViewportProvider.overrideWithValue(NativePlayback.viewport),
         danmakuViewportProvider.overrideWithValue(
-          (items, status) => NativeDanmaku(items: items, status: status),
+          (items, status, settings) =>
+              NativeDanmaku(items: items, status: status, settings: settings),
         ),
         verifyWebViewBuilderProvider.overrideWithValue(
           (initialUrl, onReady) => InteractiveVerifyWebView(

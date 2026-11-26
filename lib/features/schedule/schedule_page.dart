@@ -159,51 +159,53 @@ class _SchedulePageState extends ConsumerState<SchedulePage> {
 
                 // Visibility filter section (Kazumi parity)
                 const ListHeader(title: '显示范围'),
-                generateGroup([
-                  DecorationListItem(
-                    title: const Text('只看正在追的番剧'),
-                    subtitle: const Text('仅显示追番状态为「在看」的条目'),
-                    trailing: Switch(
-                      value: _onlyWatching,
-                      onChanged: (value) {
-                        setState(() => _onlyWatching = value);
+                KonekoGroup(
+                  items: [
+                    DecorationListItem(
+                      title: const Text('只看正在追的番剧'),
+                      subtitle: const Text('仅显示追番状态为「在看」的条目'),
+                      trailing: Switch(
+                        value: _onlyWatching,
+                        onChanged: (value) {
+                          setState(() => _onlyWatching = value);
+                          setSheetState(() {});
+                        },
+                      ),
+                      onPressed: () {
+                        setState(() => _onlyWatching = !_onlyWatching);
                         setSheetState(() {});
                       },
                     ),
-                    onPressed: () {
-                      setState(() => _onlyWatching = !_onlyWatching);
-                      setSheetState(() {});
-                    },
-                  ),
-                  DecorationListItem(
-                    title: const Text('隐藏看过的番剧'),
-                    trailing: Switch(
-                      value: _hideWatched,
-                      onChanged: (value) {
-                        setState(() => _hideWatched = value);
+                    DecorationListItem(
+                      title: const Text('隐藏看过的番剧'),
+                      trailing: Switch(
+                        value: _hideWatched,
+                        onChanged: (value) {
+                          setState(() => _hideWatched = value);
+                          setSheetState(() {});
+                        },
+                      ),
+                      onPressed: () {
+                        setState(() => _hideWatched = !_hideWatched);
                         setSheetState(() {});
                       },
                     ),
-                    onPressed: () {
-                      setState(() => _hideWatched = !_hideWatched);
-                      setSheetState(() {});
-                    },
-                  ),
-                  DecorationListItem(
-                    title: const Text('隐藏抛弃的番剧'),
-                    trailing: Switch(
-                      value: _hideDropped,
-                      onChanged: (value) {
-                        setState(() => _hideDropped = value);
+                    DecorationListItem(
+                      title: const Text('隐藏抛弃的番剧'),
+                      trailing: Switch(
+                        value: _hideDropped,
+                        onChanged: (value) {
+                          setState(() => _hideDropped = value);
+                          setSheetState(() {});
+                        },
+                      ),
+                      onPressed: () {
+                        setState(() => _hideDropped = !_hideDropped);
                         setSheetState(() {});
                       },
                     ),
-                    onPressed: () {
-                      setState(() => _hideDropped = !_hideDropped);
-                      setSheetState(() {});
-                    },
-                  ),
-                ]),
+                  ],
+                ),
 
                 // Year & Season Picker (Kazumi parity)
                 ListHeader(

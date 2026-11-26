@@ -190,19 +190,21 @@ Future<CollectionStatusChoice?> showKonekoStatusSheet({
         shrinkWrap: true,
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
         children: [
-          generateGroup([
-            for (final status in CollectionStatus.values)
-              DecorationListItem(
-                title: Text(status.label),
-                subtitle: Text(descriptions[status] ?? ''),
-                trailing: currentStatus == status
-                    ? GlyphIcon(Glyphs.check, color: colorScheme.primary)
-                    : null,
-                onPressed: () => Navigator.of(
-                  sheetContext,
-                ).pop(CollectionStatusChoice.set(status)),
-              ),
-          ]),
+          KonekoGroup(
+            items: [
+              for (final status in CollectionStatus.values)
+                DecorationListItem(
+                  title: Text(status.label),
+                  subtitle: Text(descriptions[status] ?? ''),
+                  trailing: currentStatus == status
+                      ? GlyphIcon(Glyphs.check, color: colorScheme.primary)
+                      : null,
+                  onPressed: () => Navigator.of(
+                    sheetContext,
+                  ).pop(CollectionStatusChoice.set(status)),
+                ),
+            ],
+          ),
           if (currentStatus != null) ...[
             const SizedBox(height: 12),
             KonekoBlock(

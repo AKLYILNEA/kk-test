@@ -97,6 +97,7 @@ class DandanplaySource implements DanmakuSource {
       final seconds = double.tryParse(parameters.first);
       if (seconds == null || !seconds.isFinite || seconds < 0) continue;
       final mode = int.tryParse(parameters[1]) ?? 1;
+      final source = parameters.length > 3 ? parameters[3].trim() : '';
       items.add(
         DanmakuItem(
           timeSeconds: seconds,
@@ -107,6 +108,7 @@ class DandanplaySource implements DanmakuSource {
               : mode == 4
               ? -2
               : items.length % 6,
+          source: source,
         ),
       );
     }

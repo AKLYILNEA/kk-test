@@ -157,6 +157,292 @@ class KonekoBlock extends StatelessWidget {
   }
 }
 
+/// Elevated wrapper around `prism_ui`'s [generateGroup] so grouped list sections
+/// share the exact same soft FlClash drop shadows as [KonekoCard].
+class KonekoGroup extends StatelessWidget {
+  const KonekoGroup({super.key, required this.items});
+
+  final Iterable<Widget> items;
+
+  @override
+  Widget build(BuildContext context) {
+    final list = items.toList();
+    if (list.isEmpty) return const SizedBox.shrink();
+    final colorScheme = context.colorScheme;
+    return DecoratedBox(
+      decoration: ShapeDecoration(
+        shape: AppShape.xl,
+        shadows: konekoCardShadows(colorScheme),
+      ),
+      child: generateGroup(list),
+    );
+  }
+}
+
+/// Elevated replacement for `prism_ui`'s [generateSection] with soft card shadows.
+class KonekoSection extends StatelessWidget {
+  const KonekoSection({
+    super.key,
+    this.title,
+    this.caption,
+    required this.items,
+    this.actions = const [],
+    this.footer,
+  });
+
+  final String? title;
+  final String? caption;
+  final Iterable<Widget> items;
+  final List<IconButtonData> actions;
+  final String? footer;
+
+  @override
+  Widget build(BuildContext context) {
+    final list = items.toList();
+    if (list.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (title != null)
+          ListHeader(title: title!, caption: caption, actions: actions)
+        else
+          const ListSectionGap(),
+        KonekoGroup(items: list),
+        if (footer != null) ListFooter(text: footer!),
+      ],
+    );
+  }
+}
+
+/// Kazumi-style 5-star fractional painted rating indicator mapping a 0..10
+/// Bangumi score onto 5 partially-filled gold stars.
+class KonekoStarRating extends StatelessWidget {
+  const KonekoStarRating({
+    super.key,
+    required this.score,
+    this.starSize = 15,
+    this.spacing = 2,
+  });
+
+  /// Bangumi score on a 0..10 scale.
+  final double score;
+  final double starSize;
+  final double spacing;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = context.colorScheme;
+    final fillStars = (score / 2.0).clamp(0.0, 5.0);
+    return CustomPaint(
+      size: Size(starSize * 5 + spacing * 4, starSize),
+      painter: _StarRatingPainter(
+        fillStars: fillStars,
+        starSize: starSize,
+        spacing: spacing,
+        activeColor: const Color(0xFFFFB423),
+        inactiveColor: colorScheme.onSurfaceVariant.withValues(alpha: 0.22),
+      ),
+    );
+  }
+}
+
+class _StarRatingPainter extends CustomPainter {
+  const _StarRatingPainter({
+    required this.fillStars,
+    required this.starSize,
+    required this.spacing,
+    required this.activeColor,
+    required this.inactiveColor,
+  });
+
+  final double fillStars;
+  final double starSize;
+  final double spacing;
+  final Color activeColor;
+  final Color inactiveColor;
+
+  Path _starPath(Offset center, double outerR) {
+    final innerR = outerR * 0.44;
+    final path = Path();
+    for (var i = 0; i < 10; i++) {
+      final angle = -math.pi / 2 + i * math.pi / 5;
+      final r = i.isEven ? outerR : innerR;
+      final pt = Offset(
+        center.dx + math.cos(angle) * r,
+        center.dy + math.sin(angle) * r,
+      );
+      if (i == 0) {
+        path.moveTo(pt.dx, pt.dy);
+      } else {
+        path.lineTo(pt.dx, pt.dy);
+      }
+    }
+    path.close();
+    return path;
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final outerR = starSize * 0.48;
+    final cy = size.height / 2;
+    final inactivePaint = Paint()..color = inactiveColor;
+    final activePaint = Paint()..color = activeColor;
+
+    for (var i = 0; i < 5; i++) {
+      final left = i * (starSize + spacing);
+      final center = Offset(left + starSize / 2, cy);
+      final path = _starPath(center, outerR);
+      canvas.drawPath(path, inactivePaint);
+
+      final starFill = (fillStars - i).clamp(0.0, 1.0);
+      if (starFill <= 0) continue;
+      if (starFill >= 1.0) {
+        canvas.drawPath(path, activePaint);
+      } else {
+        canvas.save();
+        canvas.clipRect(
+          Rect.fromLTWH(left, 0, starSize * starFill, size.height),
+        );
+        canvas.drawPath(path, activePaint);
+        canvas.restore();
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_StarRatingPainter oldDelegate) =>
+      oldDelegate.fillStars != fillStars ||
+      oldDelegate.activeColor != activeColor ||
+      oldDelegate.inactiveColor != inactiveColor ||
+      oldDelegate.starSize != starSize;
+}
+
+/// Full-bleed poster card designed for the Library grid: eliminates mismatched
+/// white footer boxes and awkward empty whitespace on short titles by laying
+/// crisp white typography over a soft bottom gradient scrim inside a uniform
+/// elevated superellipse poster.
+class KonekoPosterCard extends StatelessWidget {
+  const KonekoPosterCard({
+    super.key,
+    required this.subject,
+    required this.onTap,
+    this.statusBadgeLabel,
+    this.onStatusTap,
+    this.corner = 18,
+  });
+
+  final AnimeSubject subject;
+  final VoidCallback onTap;
+  final String? statusBadgeLabel;
+  final VoidCallback? onStatusTap;
+  final double corner;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = context.colorScheme;
+    final shape = SuperellipseBorder(borderRadius: AppRadius.all(corner));
+    return DecoratedBox(
+      decoration: ShapeDecoration(
+        shape: shape,
+        shadows: konekoCardShadows(colorScheme),
+      ),
+      child: PressSurface(
+        fill: SurfaceLevel.card.colorOf(colorScheme),
+        shape: shape,
+        clipsChild: true,
+        onPressed: onTap,
+        child: KonekoPosterArt(
+          subject: subject,
+          overlayBadges: [
+            // Smooth bottom scrim for crisp title legibility regardless of cover art
+            Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      stops: const [0.46, 0.76, 1.0],
+                      colors: [
+                        Colors.transparent,
+                        Colors.black.withValues(alpha: 0.42),
+                        Colors.black.withValues(alpha: 0.84),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            if (subject.score > 0)
+              Positioned(
+                top: 7,
+                left: 7,
+                child: KonekoChip(
+                  label: subject.score.toStringAsFixed(1),
+                  height: 20,
+                  fontSize: 10,
+                  leading: const GlyphIcon(
+                    KonekoGlyphs.star,
+                    size: 10,
+                    color: Color(0xFFFFC145),
+                  ),
+                  backgroundColor: Colors.black.withValues(alpha: 0.56),
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            if (statusBadgeLabel != null)
+              Positioned(
+                top: 7,
+                right: 7,
+                child: KonekoChip(
+                  label: statusBadgeLabel!,
+                  height: 21,
+                  fontSize: 10,
+                  backgroundColor: Colors.black.withValues(alpha: 0.62),
+                  foregroundColor: Colors.white,
+                  trailing: onStatusTap != null
+                      ? const GlyphIcon(
+                          Glyphs.chevronDown,
+                          size: 9.5,
+                          color: Colors.white,
+                        )
+                      : null,
+                  onPressed: onStatusTap,
+                ),
+              ),
+            Positioned(
+              left: 9,
+              right: 9,
+              bottom: 8,
+              child: IgnorePointer(
+                child: Text(
+                  subject.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyle.caption1
+                      .of(context, emphasized: true)
+                      .copyWith(
+                        fontSize: 12.5,
+                        height: 1.24,
+                        color: Colors.white,
+                        shadows: [
+                          Shadow(
+                            color: Colors.black.withValues(alpha: 0.55),
+                            blurRadius: 4,
+                            offset: const Offset(0, 1),
+                          ),
+                        ],
+                      ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Elevated wrapper for page-level [SegmentedControl] so sliders share the
 /// exact same soft shadow language as cards and top chip bars.
 class KonekoSegmentedBar<T extends Object> extends StatelessWidget {

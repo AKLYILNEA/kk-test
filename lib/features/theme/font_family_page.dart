@@ -108,7 +108,7 @@ class _FontFamilyPageState extends State<FontFamilyPage> {
                       ),
                     ),
 
-                    generateSection(
+                    KonekoSection(
                       title: '默认字体',
                       items: [
                         DecorationListItem(
@@ -126,7 +126,7 @@ class _FontFamilyPageState extends State<FontFamilyPage> {
                       ],
                     ),
 
-                    generateSection(
+                    KonekoSection(
                       title: '已导入字体 (${fonts.length})',
                       footer: fonts.isEmpty
                           ? '点击右上角「导入字体」选择设备中的 .ttf 或 .otf 文件，导入后支持实时预览与一键秒切。'

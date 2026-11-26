@@ -10,6 +10,7 @@ import 'package:koneko/features/my/service_settings_page.dart';
 import 'package:koneko/features/rules/rules_page.dart';
 import 'package:koneko/features/theme/font_family_page.dart';
 import 'package:koneko/features/theme/theme_page.dart';
+import 'package:koneko/ui/koneko_danmaku_sheet.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
 import 'package:koneko/ui/koneko_scaffold.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
@@ -92,7 +93,7 @@ class MyPage extends ConsumerWidget {
                 ),
 
                 // Content & Kazumi Core Modules
-                generateSection(
+                KonekoSection(
                   title: '番剧与规则引擎',
                   items: [
                     DecorationListItem(
@@ -120,6 +121,16 @@ class MyPage extends ConsumerWidget {
                         context,
                         const RulesPage(showBack: true),
                       ),
+                    ),
+                    DecorationListItem(
+                      leading: GlyphIcon(
+                        KonekoGlyphs.danmaku,
+                        color: colorScheme.primary,
+                      ),
+                      title: const Text('弹幕设置'),
+                      subtitle: const Text('字号、字重描边、半屏区域与多站来源过滤'),
+                      trailing: const GlyphIcon(Glyphs.chevronForward),
+                      onPressed: () => showKonekoDanmakuSettingsSheet(context),
                     ),
                     DecorationListItem(
                       leading: GlyphIcon(
@@ -151,7 +162,7 @@ class MyPage extends ConsumerWidget {
                 ),
 
                 // FlClash Theme & Instant Font Manager
-                generateSection(
+                KonekoSection(
                   title: '外观与排版（FlClash 规范）',
                   items: [
                     DecorationListItem(
@@ -190,7 +201,7 @@ class MyPage extends ConsumerWidget {
                 ),
 
                 // About MIUIX
-                generateSection(
+                KonekoSection(
                   title: '关于应用',
                   items: [
                     DecorationListItem(

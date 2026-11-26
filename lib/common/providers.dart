@@ -178,6 +178,50 @@ final themeSettingsProvider =
       ThemeSettingsNotifier.new,
     );
 
+class DanmakuSettingsNotifier extends Notifier<DanmakuSettings> {
+  static const _prefKey = 'koneko_danmaku_settings_v1';
+
+  @override
+  DanmakuSettings build() {
+    unawaited(_load());
+    return const DanmakuSettings();
+  }
+
+  Future<void> _load() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_prefKey);
+      if (raw == null || raw.isEmpty) return;
+      final map = json.decode(raw);
+      if (map is Map<String, dynamic>) {
+        state = DanmakuSettings.fromJson(map);
+      }
+    } catch (_) {}
+  }
+
+  void update(DanmakuSettings Function(DanmakuSettings current) updater) {
+    state = updater(state);
+    unawaited(_save(state));
+  }
+
+  void reset() {
+    state = const DanmakuSettings();
+    unawaited(_save(state));
+  }
+
+  Future<void> _save(DanmakuSettings settings) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_prefKey, json.encode(settings.toJson()));
+    } catch (_) {}
+  }
+}
+
+final danmakuSettingsProvider =
+    NotifierProvider<DanmakuSettingsNotifier, DanmakuSettings>(
+      DanmakuSettingsNotifier.new,
+    );
+
 /// Generates a [ColorScheme] using prism_ui's HCT seeded scheme, matching FlClash.
 ColorScheme buildKonekoColorScheme({
   required Brightness brightness,

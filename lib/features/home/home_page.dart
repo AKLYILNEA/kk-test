@@ -4,6 +4,7 @@ import 'package:koneko/common/constants.dart';
 import 'package:koneko/common/providers.dart';
 import 'package:koneko/features/detail/subject_detail_page.dart';
 import 'package:koneko/features/discover/discover_page.dart';
+import 'package:koneko/features/history/history_page.dart';
 import 'package:koneko/features/player/player_page.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
 import 'package:koneko/ui/koneko_scaffold.dart';
@@ -91,10 +92,11 @@ class _HomePageState extends ConsumerState<HomePage> {
           },
         ),
         IconButtonData(
-          glyph: KonekoGlyphs.refresh,
-          tooltip: '刷新榜单',
-          isLoading: loading.isLoading && subjects.isEmpty,
-          onPressed: () => ref.invalidate(loadHomeCatalogProvider),
+          glyph: KonekoGlyphs.history,
+          tooltip: '观看历史',
+          onPressed: () {
+            BaseNavigator.push<void>(context, const HistoryPage(showBack: true));
+          },
         ),
       ],
       body: LayoutBuilder(

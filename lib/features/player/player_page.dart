@@ -15,6 +15,7 @@ import 'package:koneko/features/my/service_settings_page.dart';
 import 'package:koneko/features/player/rule_verify_page.dart';
 import 'package:koneko/features/rules/rules_page.dart';
 import 'package:koneko/ui/koneko_comments.dart';
+import 'package:koneko/ui/koneko_danmaku_sheet.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
 import 'package:koneko/ui/koneko_sheet.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
@@ -607,6 +608,30 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     }
   }
 
+  String _danmakuSummary() {
+    var bili = 0;
+    var gamer = 0;
+    var other = 0;
+    for (final item in _danmaku) {
+      final s = item.source.toLowerCase();
+      if (s.contains('bilibili')) {
+        bili++;
+      } else if (s.contains('gamer') || s.contains('bahamut')) {
+        gamer++;
+      } else {
+        other++;
+      }
+    }
+    final parts = <String>[
+      if (bili > 0) 'B站 $bili',
+      if (gamer > 0) '巴哈 $gamer',
+      if (other > 0) '弹弹 $other',
+    ];
+    return parts.isEmpty
+        ? '已加载 ${_danmaku.length} 条弹幕'
+        : '共 ${_danmaku.length} 条 · ${parts.join(' / ')}';
+  }
+
   Future<void> _loadDanmaku({int? overrideEpisodeId}) async {
     final token = ++_danmakuRequest;
     if (!_showDanmaku) return;
@@ -742,25 +767,27 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                       ? ListView(
                           padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
                           children: [
-                            generateGroup([
-                              for (final ep in selectedAnime!.episodes)
-                                DecorationListItem(
-                                  title: Text(ep.title),
-                                  subtitle: Text('第 ${ep.episodeNumber} 话'),
-                                  trailing: const GlyphIcon(
-                                    Glyphs.chevronForward,
+                            KonekoGroup(
+                              items: [
+                                for (final ep in selectedAnime!.episodes)
+                                  DecorationListItem(
+                                    title: Text(ep.title),
+                                    subtitle: Text('第 ${ep.episodeNumber} 话'),
+                                    trailing: const GlyphIcon(
+                                      Glyphs.chevronForward,
+                                    ),
+                                    onPressed: () {
+                                      Navigator.of(sheetContext).pop();
+                                      setState(() => _showDanmaku = true);
+                                      unawaited(
+                                        _loadDanmaku(
+                                          overrideEpisodeId: ep.episodeId,
+                                        ),
+                                      );
+                                    },
                                   ),
-                                  onPressed: () {
-                                    Navigator.of(sheetContext).pop();
-                                    setState(() => _showDanmaku = true);
-                                    unawaited(
-                                      _loadDanmaku(
-                                        overrideEpisodeId: ep.episodeId,
-                                      ),
-                                    );
-                                  },
-                                ),
-                            ]),
+                              ],
+                            ),
                           ],
                         )
                       : matches.isEmpty
@@ -775,20 +802,23 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                       : ListView(
                           padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
                           children: [
-                            generateGroup([
-                              for (final anime in matches)
-                                DecorationListItem(
-                                  title: Text(anime.title),
-                                  subtitle: Text(
-                                    '${anime.typeDescription.isNotEmpty ? '${anime.typeDescription} · ' : ''}共 ${anime.episodes.length} 集',
+                            KonekoGroup(
+                              items: [
+                                for (final anime in matches)
+                                  DecorationListItem(
+                                    title: Text(anime.title),
+                                    subtitle: Text(
+                                      '${anime.typeDescription.isNotEmpty ? '${anime.typeDescription} · ' : ''}共 ${anime.episodes.length} 集',
+                                    ),
+                                    trailing: const GlyphIcon(
+                                      Glyphs.chevronForward,
+                                    ),
+                                    onPressed: () => setSheetState(
+                                      () => selectedAnime = anime,
+                                    ),
                                   ),
-                                  trailing: const GlyphIcon(
-                                    Glyphs.chevronForward,
-                                  ),
-                                  onPressed: () =>
-                                      setSheetState(() => selectedAnime = anime),
-                                ),
-                            ]),
+                              ],
+                            ),
                           ],
                         ),
                 ),
@@ -897,6 +927,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     final session = _session;
     final viewport = ref.watch(videoViewportProvider);
     final overlay = ref.watch(danmakuViewportProvider);
+    final danmakuSettings = ref.watch(danmakuSettingsProvider);
     final status = _status;
     final error =
         _error ??
@@ -913,6 +944,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       session: session,
       viewport: viewport,
       overlay: overlay,
+      danmakuSettings: danmakuSettings,
       status: status,
       error: error,
       offline: offline,
@@ -1016,7 +1048,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     required List<RulePluginMeta> rules,
     required PlaybackSession? session,
     required Widget Function(PlaybackSession)? viewport,
-    required Widget Function(List<DanmakuItem>, PlaybackStatus)? overlay,
+    required Widget Function(List<DanmakuItem>, PlaybackStatus, DanmakuSettings)?
+    overlay,
+    required DanmakuSettings danmakuSettings,
     required PlaybackStatus status,
     required String? error,
     required bool offline,
@@ -1049,7 +1083,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                 ),
               if (_showDanmaku && _danmaku.isNotEmpty && overlay != null)
                 Positioned.fill(
-                  child: IgnorePointer(child: overlay(_danmaku, status)),
+                  child: IgnorePointer(
+                    child: overlay(_danmaku, status, danmakuSettings),
+                  ),
                 ),
             ],
           ),
@@ -1538,7 +1574,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '弹幕（弹弹Play）',
+                          '弹幕（聚合 B站 / 巴哈 / 弹弹Play）',
                           style: AppTextStyle.headline
                               .of(context, emphasized: true)
                               .copyWith(color: colorScheme.onSurface),
@@ -1549,7 +1585,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                               : _danmakuError ??
                                     (_showDanmaku
                                         ? (_danmaku.isNotEmpty
-                                            ? '已加载 ${_danmaku.length} 条弹幕'
+                                            ? _danmakuSummary()
                                             : '暂无弹幕')
                                         : '弹幕已关闭'),
                           style: AppTextStyle.caption1
@@ -1572,6 +1608,20 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                 spacing: 8,
                 runSpacing: 8,
                 children: [
+                  KonekoChip(
+                    label: '弹幕设置',
+                    height: 30,
+                    fontSize: 12,
+                    leading: GlyphIcon(
+                      KonekoGlyphs.tune,
+                      size: 13,
+                      color: colorScheme.onPrimary,
+                    ),
+                    backgroundColor: colorScheme.primary,
+                    foregroundColor: colorScheme.onPrimary,
+                    onPressed: () =>
+                        unawaited(showKonekoDanmakuSettingsSheet(context)),
+                  ),
                   KonekoChip(
                     label: '重新拉取',
                     height: 30,
@@ -2249,9 +2299,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                 children: [
                   Text(
                     _danmakuError ??
-                        (_danmaku.isEmpty
-                            ? '当前话暂无弹幕'
-                            : '已加载 ${_danmaku.length} 条弹幕'),
+                        (_danmaku.isEmpty ? '当前话暂无弹幕' : _danmakuSummary()),
                     style: _style(context),
                   ),
                   _HudAction(
@@ -2262,12 +2310,23 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                       if (_showDanmaku) unawaited(_loadDanmaku());
                     },
                   ),
+                  _HudAction(
+                    label: '弹幕样式与区域设置',
+                    onTap: () async {
+                      setState(() => _drawerOpen = false);
+                      await _setFullscreen(false);
+                      if (mounted) {
+                        unawaited(showKonekoDanmakuSettingsSheet(context));
+                      }
+                    },
+                  ),
                   _HudAction(label: '重新加载弹幕', onTap: _loadDanmaku),
                   _HudAction(
                     label: '手动匹配弹幕',
-                    onTap: () {
+                    onTap: () async {
                       setState(() => _drawerOpen = false);
-                      unawaited(_openDanmakuSearchSheet());
+                      await _setFullscreen(false);
+                      if (mounted) unawaited(_openDanmakuSearchSheet());
                     },
                   ),
                 ],

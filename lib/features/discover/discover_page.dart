@@ -25,7 +25,20 @@ class DiscoverPage extends ConsumerStatefulWidget {
 }
 
 class _DiscoverPageState extends ConsumerState<DiscoverPage> {
-  static const _hotQueries = ['葬送的芙莉莲', '间谍过家家', '迷宫饭', '孤独摇滚'];
+  static const _hotQueries = [
+    '葬送的芙莉莲',
+    '败犬女主太多了',
+    '胆大党',
+    '药屋少女的呢喃',
+    '孤独摇滚',
+    '间谍过家家',
+    '迷宫饭',
+    '进击的巨人',
+    '辉夜大小姐',
+    '紫罗兰永恒花园',
+    '命运石之门',
+    '物语系列',
+  ];
   static const _quickTags = [
     '奇幻',
     '日常',
@@ -39,14 +52,36 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
     '冒险',
     '音乐',
     '美食',
+    '催泪',
+    '推理',
+    '智斗',
+    '热血',
+    '搞笑',
+    '黑暗',
+    '致郁',
+    '后宫',
+    '轻百合',
+    '百合',
+    '运动',
+    '机战',
+    '赛博朋克',
+    '时间穿越',
+    '异世界',
+    '乐队',
     '原创',
     '漫画改',
     '轻小说改',
     '游戏改',
-    '异世界',
-    '百合',
-    '运动',
-    '机战',
+    '剧场版',
+    'OVA',
+    '泡面番',
+    '京阿尼',
+    'MAPPA',
+    'WIT STUDIO',
+    'CloverWorks',
+    'A-1 Pictures',
+    '骨头社',
+    'SHAFT',
   ];
   static const _sortOptions = <(String, String)>[
     ('heat', '热度优先'),
@@ -454,36 +489,38 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
 
                 // Collection visibility
                 const ListHeader(title: '收藏状态过滤'),
-                generateGroup([
-                  DecorationListItem(
-                    title: const Text('隐藏看过的番剧'),
-                    trailing: Switch(
-                      value: draftHideWatched,
-                      onChanged: (value) {
-                        draftHideWatched = value;
+                KonekoGroup(
+                  items: [
+                    DecorationListItem(
+                      title: const Text('隐藏看过的番剧'),
+                      trailing: Switch(
+                        value: draftHideWatched,
+                        onChanged: (value) {
+                          draftHideWatched = value;
+                          setSheetState(() {});
+                        },
+                      ),
+                      onPressed: () {
+                        draftHideWatched = !draftHideWatched;
                         setSheetState(() {});
                       },
                     ),
-                    onPressed: () {
-                      draftHideWatched = !draftHideWatched;
-                      setSheetState(() {});
-                    },
-                  ),
-                  DecorationListItem(
-                    title: const Text('隐藏抛弃的番剧'),
-                    trailing: Switch(
-                      value: draftHideDropped,
-                      onChanged: (value) {
-                        draftHideDropped = value;
+                    DecorationListItem(
+                      title: const Text('隐藏抛弃的番剧'),
+                      trailing: Switch(
+                        value: draftHideDropped,
+                        onChanged: (value) {
+                          draftHideDropped = value;
+                          setSheetState(() {});
+                        },
+                      ),
+                      onPressed: () {
+                        draftHideDropped = !draftHideDropped;
                         setSheetState(() {});
                       },
                     ),
-                    onPressed: () {
-                      draftHideDropped = !draftHideDropped;
-                      setSheetState(() {});
-                    },
-                  ),
-                ]),
+                  ],
+                ),
               ],
             );
           },
@@ -750,21 +787,62 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-                    child: Wrap(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       spacing: 8,
-                      runSpacing: 8,
                       children: [
-                        for (final hot in _hotQueries)
-                          KonekoChip(
-                            label: '# $hot',
-                            height: 28,
-                            fontSize: 12,
-                            elevated: true,
-                            backgroundColor: SurfaceLevel.card.colorOf(
-                              colorScheme,
-                            ),
-                            onPressed: () => _applyQuery(hot),
-                          ),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            for (final hot in _hotQueries)
+                              KonekoChip(
+                                label: '# $hot',
+                                height: 28,
+                                fontSize: 12,
+                                elevated: true,
+                                backgroundColor: SurfaceLevel.card.colorOf(
+                                  colorScheme,
+                                ),
+                                onPressed: () => _applyQuery(hot),
+                              ),
+                          ],
+                        ),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            for (final tag in const [
+                              '奇幻',
+                              '恋爱',
+                              '日常',
+                              '校园',
+                              '科幻',
+                              '悬疑',
+                              '治愈',
+                              '喜剧',
+                              '动作',
+                              '催泪',
+                              '剧场版',
+                              '京阿尼',
+                            ])
+                              KonekoChip(
+                                label: tag,
+                                height: 28,
+                                fontSize: 12,
+                                elevated: true,
+                                backgroundColor: SurfaceLevel.card.colorOf(
+                                  colorScheme,
+                                ),
+                                foregroundColor: colorScheme.primary,
+                                onPressed: () {
+                                  final next = _filter.copyWith(tags: [tag]);
+                                  setState(() => _filter = next);
+                                  unawaited(_executeSearch(next));
+                                },
+                              ),
+                          ],
+                        ),
                       ],
                     ),
                   ),

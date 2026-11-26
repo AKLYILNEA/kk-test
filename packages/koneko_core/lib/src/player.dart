@@ -136,10 +136,16 @@ class NativePlayback implements PlaybackSession {
 }
 
 class NativeDanmaku extends StatefulWidget {
-  const NativeDanmaku({super.key, required this.items, required this.status});
+  const NativeDanmaku({
+    super.key,
+    required this.items,
+    required this.status,
+    this.settings = const DanmakuSettings(),
+  });
 
   final List<DanmakuItem> items;
   final PlaybackStatus status;
+  final DanmakuSettings settings;
 
   @override
   State<NativeDanmaku> createState() => _NativeDanmakuState();
@@ -151,6 +157,20 @@ class _NativeDanmakuState extends State<NativeDanmaku> {
   double _previous = -1;
   int _next = 0;
   bool _scheduled = false;
+
+  canvas.DanmakuOption _buildOption(DanmakuSettings s) => canvas.DanmakuOption(
+    area: s.area.clamp(0.125, 1.0),
+    fontSize: s.fontSize.clamp(10.0, 38.0),
+    fontWeight: s.fontWeight.clamp(1, 9).toInt(),
+    opacity: s.opacity.clamp(0.1, 1.0),
+    duration: s.duration.clamp(2.0, 16.0),
+    lineHeight: s.lineHeight.clamp(0.8, 2.4),
+    strokeWidth: s.strokeEnabled ? s.strokeWidth.clamp(0.1, 3.0) : 0.0,
+    hideScroll: !s.showScroll,
+    hideTop: !s.showTop,
+    hideBottom: !s.showBottom,
+    massiveMode: s.massiveMode,
+  );
 
   @override
   void initState() {
@@ -176,6 +196,9 @@ class _NativeDanmakuState extends State<NativeDanmaku> {
       _previous = -1;
       _next = 0;
     }
+    if (oldWidget.settings != widget.settings) {
+      _controller?.updateOption(_buildOption(widget.settings));
+    }
     _scheduleUpdate();
   }
 
@@ -199,6 +222,7 @@ class _NativeDanmakuState extends State<NativeDanmaku> {
     if (controller == null || !mounted) return;
     final status = widget.status;
     final items = widget.items;
+    final settings = widget.settings;
     final playing = status.playing && !status.buffering;
 
     if (playing != controller.running) {
@@ -226,11 +250,12 @@ class _NativeDanmakuState extends State<NativeDanmaku> {
     var emitted = 0;
     while (_next < items.length && items[_next].timeSeconds <= now) {
       final item = items[_next++];
+      if (!settings.allowsSource(item.source)) continue;
       if (emitted++ >= 16) continue;
       controller.addDanmaku(
         canvas.DanmakuContentItem<void>(
           item.text,
-          color: Color(item.colorHex),
+          color: Color(settings.colorful ? item.colorHex : 0xFFFFFFFF),
           type: _typeOf(item),
         ),
       );
@@ -241,13 +266,7 @@ class _NativeDanmakuState extends State<NativeDanmaku> {
   @override
   Widget build(BuildContext context) => SizedBox.expand(
     child: canvas.DanmakuScreen<void>(
-      option: const canvas.DanmakuOption(
-        area: 0.68,
-        fontSize: 16,
-        opacity: 0.9,
-        duration: 8,
-        strokeWidth: 1.5,
-      ),
+      option: _buildOption(widget.settings),
       createdController: (controller) {
         _controller = controller;
         _scheduleUpdate();
