@@ -18,7 +18,7 @@ class AnimeSeason {
 
   String get seasonName => const ['冬', '春', '夏', '秋'][(quarter - 1).clamp(0, 3)];
 
-  String get label => '$year ${seasonName}季新番';
+  String get label => '$year $seasonName季新番';
 
   String get shortLabel => '$year $seasonName';
 
