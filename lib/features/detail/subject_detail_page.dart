@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:koneko/common/constants.dart';
 import 'package:koneko/common/providers.dart';
+import 'package:koneko/features/detail/subject_metadata_tabs.dart';
 import 'package:koneko/features/player/player_page.dart';
 import 'package:koneko/features/player/rule_verify_page.dart';
 import 'package:koneko/features/rules/rules_page.dart';
@@ -16,7 +17,7 @@ import 'package:koneko_contract/koneko_contract.dart';
 import 'package:prism_ui/icons/icons.dart';
 import 'package:prism_ui/prism_ui.dart';
 
-enum _DetailSection { overview, comments }
+enum _DetailSection { play, overview, characters, relations, credits, comments }
 
 class SubjectDetailPage extends ConsumerStatefulWidget {
   const SubjectDetailPage({super.key, required this.subjectId});
@@ -30,7 +31,8 @@ class SubjectDetailPage extends ConsumerStatefulWidget {
 class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
   String _selectedRuleId = '';
   String _selectedRuleName = '';
-  _DetailSection _section = _DetailSection.overview;
+  int _sectionIndex = 0;
+  final _pages = PageController();
 
   // Live parallel probe results per enabled rule (mirrors PlayerPage).
   final Map<String, RuleProbeResult> _liveProbes = {};
@@ -46,6 +48,7 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
   @override
   void dispose() {
     _probeGeneration++;
+    _pages.dispose();
     super.dispose();
   }
 
@@ -225,18 +228,11 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
     final mockProbes = hasLiveResolver
         ? const <RuleSourceProbe>[]
         : catalog.probeSources(subject.subjectId);
-    final related = subject.relatedIds
-        .map(catalog.getSubjectById)
-        .whereType<AnimeSubject>()
-        .toList();
-
     final commentCount =
         _extraTotal ??
         commentsAsync.value?.total ??
         catalog.getComments(subject.subjectId).length;
-    final commentsTabLabel = commentCount > 0
-        ? '评论吐槽 ($commentCount)'
-        : '评论吐槽';
+    final commentsTabLabel = commentCount > 0 ? '评论吐槽 ($commentCount)' : '评论吐槽';
 
     return KonekoScaffold(
       title: '番剧详情',
@@ -307,16 +303,6 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
               }
             },
           );
-          final relatedCard = related.isEmpty
-              ? null
-              : _RelatedSeriesCard(
-                  subjects: related,
-                  onOpen: (s) => BaseNavigator.push<void>(
-                    context,
-                    SubjectDetailPage(subjectId: s.subjectId),
-                  ),
-                );
-
           final commentsCard = _CommentsSectionCard(
             commentsAsync: commentsAsync,
             overrideItems: _extraComments,
@@ -334,75 +320,112 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
             onLoadMore: (count) => _loadMoreComments(count),
           );
 
-          final sectionSwitcher = KonekoSegmentedBar<_DetailSection>(
-            segments: [
-              const (_DetailSection.overview, '选集与播放源'),
-              (_DetailSection.comments, commentsTabLabel),
-            ],
-            value: _section,
-            onChanged: (value) => setState(() => _section = value),
+          final tabs = KonekoAutoScrollChipBar(
+            labels: ['播放', '简介', '角色', '关联', '制作人员', commentsTabLabel],
+            selectedIndex: _sectionIndex,
+            onSelected: (index) {
+              if ((index - _sectionIndex).abs() != 1 ||
+                  context.disableAnimations) {
+                _pages.jumpToPage(index);
+              } else {
+                unawaited(
+                  _pages.animateToPage(
+                    index,
+                    duration: const Duration(milliseconds: 250),
+                    curve: Curves.easeOutCubic,
+                  ),
+                );
+              }
+            },
           );
 
-          return CustomScrollView(
-            scrollCacheExtent: const ScrollCacheExtent.pixels(600),
-            slivers: [
-              const KonekoScrollStart(),
-              SliverPadding(
-                padding: EdgeInsets.fromLTRB(
-                  16,
-                  6,
-                  16,
-                  28 + MediaQuery.paddingOf(context).bottom,
+          final playCards = isWide
+              ? Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  spacing: 16,
+                  children: [
+                    Expanded(flex: 12, child: episodeCard),
+                    Expanded(flex: 7, child: sourcesCard),
+                  ],
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  spacing: 14,
+                  children: [episodeCard, sourcesCard],
+                );
+
+          // Leave the toolbar's inset fixed so the pinned tabs stay tappable.
+          return Padding(
+            padding: EdgeInsets.only(top: context.contentTopPadding),
+            child: NestedScrollView(
+              headerSliverBuilder: (context, _) => [
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+                  sliver: SliverToBoxAdapter(child: heroCard),
                 ),
-                sliver: SliverToBoxAdapter(
-                  child: isWide
-                      ? Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              flex: 12,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                spacing: 16,
-                                children: [
-                                  heroCard,
-                                  sectionSwitcher,
-                                  if (_section == _DetailSection.overview) ...[
-                                    episodeCard,
-                                    ?relatedCard,
-                                  ] else
-                                    commentsCard,
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              flex: 7,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                spacing: 16,
-                                children: [sourcesCard],
-                              ),
-                            ),
-                          ],
-                        )
-                      : Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          spacing: 14,
-                          children: [
-                            heroCard,
-                            sectionSwitcher,
-                            if (_section == _DetailSection.overview) ...[
-                              episodeCard,
-                              sourcesCard,
-                              ?relatedCard,
-                            ] else
-                              commentsCard,
-                          ],
+                SliverOverlapAbsorber(
+                  handle: NestedScrollView.sliverOverlapAbsorberHandleFor(
+                    context,
+                  ),
+                  sliver: PinnedHeaderSliver(
+                    child: ColoredBox(
+                      color: SurfaceLevel.page.colorOf(context.colorScheme),
+                      child: tabs,
+                    ),
+                  ),
+                ),
+              ],
+              body: PageView.builder(
+                controller: _pages,
+                itemCount: _DetailSection.values.length,
+                onPageChanged: (index) => setState(() => _sectionIndex = index),
+                itemBuilder: (context, index) {
+                  final section = _DetailSection.values[index];
+                  final content = switch (section) {
+                    _DetailSection.play => SliverToBoxAdapter(child: playCards),
+                    _DetailSection.overview => SliverToBoxAdapter(
+                      child: _OverviewCard(subject: subject),
+                    ),
+                    _DetailSection.characters => SubjectCharactersSliver(
+                      subjectId: subject.subjectId,
+                    ),
+                    _DetailSection.relations => SubjectRelationsSliver(
+                      subjectId: subject.subjectId,
+                      onOpenAnime: (id) => BaseNavigator.push<void>(
+                        context,
+                        SubjectDetailPage(subjectId: id),
+                      ),
+                    ),
+                    _DetailSection.credits => SubjectCreditsSliver(
+                      subjectId: subject.subjectId,
+                    ),
+                    _DetailSection.comments => SliverToBoxAdapter(
+                      child: commentsCard,
+                    ),
+                  };
+                  return CustomScrollView(
+                    key: PageStorageKey(section),
+                    primary: true,
+                    slivers: [
+                      SliverOverlapInjector(
+                        handle: NestedScrollView.sliverOverlapAbsorberHandleFor(
+                          context,
                         ),
-                ),
+                      ),
+                      SliverPadding(
+                        padding: EdgeInsets.fromLTRB(
+                          16,
+                          10,
+                          16,
+                          28 + MediaQuery.paddingOf(context).bottom,
+                        ),
+                        sliver: content,
+                      ),
+                    ],
+                  );
+                },
               ),
-            ],
+            ),
           );
         },
       ),
@@ -410,7 +433,7 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
   }
 }
 
-class _HeroCard extends StatefulWidget {
+class _HeroCard extends StatelessWidget {
   const _HeroCard({
     required this.subject,
     required this.entry,
@@ -428,20 +451,8 @@ class _HeroCard extends StatefulWidget {
   final ValueChanged<CollectionStatus> onStatusChanged;
 
   @override
-  State<_HeroCard> createState() => _HeroCardState();
-}
-
-class _HeroCardState extends State<_HeroCard> {
-  bool _summaryExpanded = false;
-
-  @override
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
-    final subject = widget.subject;
-    final summary = subject.summary.trim();
-    final summaryStyle = AppTextStyle.subheadline
-        .of(context)
-        .copyWith(color: colorScheme.onSurfaceVariant, height: 1.55);
 
     return KonekoCard(
       corner: 30,
@@ -570,7 +581,7 @@ class _HeroCardState extends State<_HeroCard> {
             fill: colorScheme.primary,
             shape: AppShape.full,
             clipsChild: true,
-            onPressed: widget.onPlay,
+            onPressed: onPlay,
             child: SizedBox(
               height: 46,
               child: Row(
@@ -583,9 +594,9 @@ class _HeroCardState extends State<_HeroCard> {
                     color: colorScheme.onPrimary,
                   ),
                   Text(
-                    widget.hasHistory
-                        ? '继续播放 · 第 ${widget.currentEp} 话'
-                        : '立即播放 · 第 ${widget.currentEp} 话',
+                    hasHistory
+                        ? '继续播放 · 第 $currentEp 话'
+                        : '立即播放 · 第 $currentEp 话',
                     style: AppTextStyle.callout
                         .of(context, emphasized: true)
                         .copyWith(color: colorScheme.onPrimary),
@@ -609,87 +620,52 @@ class _HeroCardState extends State<_HeroCard> {
                     label: status.label,
                     height: 34,
                     fontSize: 12.5,
-                    selected: widget.entry?.status == status,
-                    onPressed: () => widget.onStatusChanged(status),
+                    selected: entry?.status == status,
+                    onPressed: () => onStatusChanged(status),
                   ),
                 ),
             ],
           ),
-          if (summary.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            KonekoBlock(
-              corner: 18,
-              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final painter = TextPainter(
-                    text: TextSpan(text: summary, style: summaryStyle),
-                    maxLines: 3,
-                    textDirection: Directionality.of(context),
-                    textScaler: MediaQuery.textScalerOf(context),
-                  )..layout(maxWidth: constraints.maxWidth);
-                  final overflows = painter.didExceedMaxLines;
-                  painter.dispose();
+        ],
+      ),
+    );
+  }
+}
 
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      AnimatedSize(
-                        duration: const Duration(milliseconds: 220),
-                        curve: Curves.easeOutCubic,
-                        alignment: Alignment.topCenter,
-                        child: Text(
-                          summary,
-                          maxLines: _summaryExpanded ? null : 3,
-                          overflow: _summaryExpanded
-                              ? TextOverflow.visible
-                              : TextOverflow.ellipsis,
-                          style: summaryStyle,
-                        ),
-                      ),
-                      if (overflows) ...[
-                        const SizedBox(height: 8),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: KonekoChip(
-                            label: _summaryExpanded ? '收起简介' : '展开全部简介',
-                            height: 26,
-                            fontSize: 11.5,
-                            backgroundColor: colorScheme.primary.withValues(
-                              alpha: 0.12,
-                            ),
-                            foregroundColor: colorScheme.primary,
-                            trailing: Transform.rotate(
-                              angle: _summaryExpanded ? 3.14159 : 0,
-                              child: GlyphIcon(
-                                Glyphs.chevronDown,
-                                size: 12,
-                                color: colorScheme.primary,
-                              ),
-                            ),
-                            onPressed: () => setState(
-                              () => _summaryExpanded = !_summaryExpanded,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  );
-                },
-              ),
-            ),
-          ],
-          if (subject.tags.isNotEmpty) ...[
-            const SizedBox(height: 12),
+class _OverviewCard extends StatelessWidget {
+  const _OverviewCard({required this.subject});
+
+  final AnimeSubject subject;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = context.colorScheme;
+    final summary = subject.summary.trim();
+    return KonekoCard(
+      corner: 24,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        spacing: 12,
+        children: [
+          Text(
+            '剧情简介',
+            style: AppTextStyle.headline.of(context, emphasized: true),
+          ),
+          Text(
+            summary.isEmpty ? '暂无剧情简介' : summary,
+            style: AppTextStyle.body
+                .of(context)
+                .copyWith(color: colorScheme.onSurfaceVariant, height: 1.55),
+          ),
+          if (subject.tags.isNotEmpty)
             Wrap(
               spacing: 6,
               runSpacing: 6,
               children: [
-                for (final tag in subject.tags.take(8))
-                  KonekoChip(label: tag, height: 24, fontSize: 11),
+                for (final tag in subject.tags)
+                  KonekoChip(label: tag, height: 26, fontSize: 12),
               ],
             ),
-          ],
         ],
       ),
     );
@@ -947,7 +923,9 @@ class _CommentsSectionCard extends StatelessWidget {
                   fontSize: 13,
                   backgroundColor: colorScheme.primary.withValues(alpha: 0.14),
                   foregroundColor: colorScheme.primary,
-                  onPressed: loadingMore ? null : () => onLoadMore(items.length),
+                  onPressed: loadingMore
+                      ? null
+                      : () => onLoadMore(items.length),
                 ),
               ),
             ],
@@ -985,11 +963,7 @@ class _CommentTileState extends State<_CommentTile> {
         children: [
           Row(
             children: [
-              KonekoAvatar(
-                name: c.userName,
-                avatarUrl: c.avatarUrl,
-                size: 34,
-              ),
+              KonekoAvatar(name: c.userName, avatarUrl: c.avatarUrl, size: 34),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -1197,9 +1171,7 @@ class _RuleSourcesCard extends StatelessWidget {
     final subtitle = switch (state) {
       RuleProbeState.searching => '检测中...',
       RuleProbeState.found =>
-        probe != null && probe.hits.isNotEmpty
-            ? probe.hits.first.title
-            : '可用',
+        probe != null && probe.hits.isNotEmpty ? probe.hits.first.title : '可用',
       RuleProbeState.noResult => '未收录',
       RuleProbeState.captchaRequired => '需要验证',
       RuleProbeState.error => probe?.message ?? '不可用',
@@ -1340,58 +1312,6 @@ class _RuleSourcesCard extends StatelessWidget {
                   ? colorScheme.onSuccessContainer
                   : colorScheme.onWarningContainer,
             ),
-        ],
-      ),
-    );
-  }
-}
-
-class _RelatedSeriesCard extends StatelessWidget {
-  const _RelatedSeriesCard({required this.subjects, required this.onOpen});
-
-  final List<AnimeSubject> subjects;
-  final ValueChanged<AnimeSubject> onOpen;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = context.colorScheme;
-    return KonekoCard(
-      corner: 30,
-      clip: true,
-      padding: const EdgeInsets.fromLTRB(0, 18, 0, 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 18),
-            child: Text(
-              '关联系列',
-              style: AppTextStyle.headline
-                  .of(context, emphasized: true)
-                  .copyWith(color: colorScheme.onSurface),
-            ),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 238,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.fromLTRB(18, 6, 18, 22),
-              itemCount: subjects.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 12),
-              itemBuilder: (_, index) {
-                final s = subjects[index];
-                return SizedBox(
-                  width: 122,
-                  child: UnifiedAnimeCard(
-                    subject: s,
-                    corner: 18,
-                    onTap: () => onOpen(s),
-                  ),
-                );
-              },
-            ),
-          ),
         ],
       ),
     );

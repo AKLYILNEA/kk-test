@@ -56,6 +56,9 @@ class BangumiCatalog implements OnlineCatalog {
   final _details = <int, Future<void>>{};
   final _episodes = <int, List<Map<String, dynamic>>>{};
   final _related = <int, List<int>>{};
+  final _relations = <int, Future<List<SubjectRelation>>>{};
+  final _characters = <int, Future<List<SubjectCharacter>>>{};
+  final _credits = <int, Future<List<SubjectPerson>>>{};
   final _comments = <int, List<SubjectComment>>{};
   final _commentTotals = <int, int>{};
   final _week = <int, List<int>>{};
@@ -277,16 +280,12 @@ class BangumiCatalog implements OnlineCatalog {
       if (_week.isEmpty) {
         await refresh();
       }
-      return {
-        for (var d = 1; d <= 7; d++) d: _items(_week[d] ?? const []),
-      };
+      return {for (var d = 1; d <= 7; d++) d: _items(_week[d] ?? const [])};
     }
 
     final cached = _seasonCalendars[season.code];
     if (cached != null) {
-      return {
-        for (var d = 1; d <= 7; d++) d: _items(cached[d] ?? const []),
-      };
+      return {for (var d = 1; d <= 7; d++) d: _items(cached[d] ?? const [])};
     }
 
     final (start, end) = season.dateRange;
@@ -321,9 +320,7 @@ class BangumiCatalog implements OnlineCatalog {
       _seasonCalendars.remove(_seasonCalendars.keys.first);
     }
     _notify();
-    return {
-      for (var d = 1; d <= 7; d++) d: _items(grouped[d] ?? const []),
-    };
+    return {for (var d = 1; d <= 7; d++) d: _items(grouped[d] ?? const [])};
   }
 
   @override
@@ -343,7 +340,7 @@ class BangumiCatalog implements OnlineCatalog {
     _notify();
     await Future.wait([
       _fetchEpisodes(id).onError((Object _, StackTrace _) {}),
-      _fetchRelated(id).onError((Object _, StackTrace _) {}),
+      loadRelations(id).onError((Object _, StackTrace _) => const []),
     ]);
     _notify();
   }
@@ -367,13 +364,122 @@ class BangumiCatalog implements OnlineCatalog {
     _episodes[id] = items;
   }
 
-  Future<void> _fetchRelated(int id) async {
-    final entries = jsonList(await get('/v0/subjects/$id/subjects'));
-    _related[id] = [
-      for (final data in entries)
-        if (jsonInt(jsonObject(data)['type']) == 2) ..._readSubjects([data]),
-    ];
+  Future<List<T>> _loadSubjectItems<T>(
+    Map<int, Future<List<T>>> cache,
+    int id,
+    Future<List<T>> Function() fetch,
+  ) {
+    if (cache.length >= 48 && !cache.containsKey(id)) {
+      cache.remove(cache.keys.first);
+    }
+    return cache.putIfAbsent(id, () async {
+      try {
+        return List.unmodifiable(await fetch());
+      } on Object {
+        cache.remove(id);
+        rethrow;
+      }
+    });
   }
+
+  String? _itemImage(Map<String, dynamic> item) {
+    final images = jsonObject(item['images']);
+    for (final key in ['medium', 'common', 'grid', 'small', 'large']) {
+      final value = jsonString(images[key]);
+      if (value.isNotEmpty) return value;
+    }
+    return null;
+  }
+
+  SubjectPerson _person(
+    Map<String, dynamic> item, {
+    List<String> credits = const [],
+  }) => SubjectPerson(
+    id: jsonInt(item['id']),
+    name: jsonString(item['name']),
+    imageUrl: _itemImage(item),
+    credits: credits,
+  );
+
+  @override
+  Future<List<SubjectCharacter>> loadCharacters(int id) =>
+      _loadSubjectItems(_characters, id, () async {
+        final rows = jsonList(
+          await get('/v0/subjects/$id/characters'),
+        ).map(jsonObject);
+        return [
+          for (final row in rows)
+            if (jsonInt(row['id']) > 0 && jsonString(row['name']).isNotEmpty)
+              SubjectCharacter(
+                id: jsonInt(row['id']),
+                name: jsonString(row['name']),
+                relation: jsonString(row['relation']),
+                imageUrl: _itemImage(row),
+                actors: [
+                  for (final actor in jsonList(row['actors']).map(jsonObject))
+                    if (jsonInt(actor['id']) > 0 &&
+                        jsonString(actor['name']).isNotEmpty)
+                      _person(actor),
+                ],
+              ),
+        ];
+      });
+
+  @override
+  Future<List<SubjectPerson>> loadCredits(int id) => _loadSubjectItems(
+    _credits,
+    id,
+    () async {
+      final rows = jsonList(
+        await get('/v0/subjects/$id/persons'),
+      ).map(jsonObject);
+      final people = <int, Map<String, dynamic>>{};
+      final credits = <int, Set<String>>{};
+      for (final row in rows) {
+        final personId = jsonInt(row['id']);
+        if (personId <= 0 || jsonString(row['name']).isEmpty) continue;
+        people.putIfAbsent(personId, () => row);
+        final relation = jsonString(row['relation']);
+        final episodes = jsonString(row['eps']).trim();
+        if (relation.isEmpty) continue;
+        (credits[personId] ??= {}).add(
+          episodes.isEmpty ? relation : '$relation · $episodes',
+        );
+      }
+      return [
+        for (final entry in people.entries)
+          _person(
+            entry.value,
+            credits: List.unmodifiable(credits[entry.key] ?? const <String>{}),
+          ),
+      ];
+    },
+  );
+
+  @override
+  Future<List<SubjectRelation>> loadRelations(int id) =>
+      _loadSubjectItems(_relations, id, () async {
+        final entries = jsonList(await get('/v0/subjects/$id/subjects'));
+        final rows = entries
+            .map(jsonObject)
+            .where((row) => jsonInt(row['id']) > 0);
+        _related[id] = _readSubjects(
+          rows.where((row) => jsonInt(row['type']) == 2).toList(),
+        );
+        return [
+          for (final row in rows)
+            SubjectRelation(
+              id: jsonInt(row['id']),
+              title: jsonString(row['name_cn']).trim().isEmpty
+                  ? jsonString(row['name'])
+                  : jsonString(row['name_cn']),
+              originalTitle: jsonString(row['name']),
+              relation: jsonString(row['relation']),
+              isAnime: jsonInt(row['type']) == 2,
+              imageUrl: _itemImage(row),
+            ),
+        ];
+      });
 
   void rememberExternal(Iterable<Map<String, dynamic>> subjects) {
     for (final subject in subjects) {

@@ -174,7 +174,7 @@ void main() {
       await tester.tap(_barAction('关闭搜索'));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('在看').first);
+      await tester.tap(_barAction('修改「星海旅人：北境编年史」的追番状态'));
       await tester.pumpAndSettle();
       expect(find.text('修改追番状态'), findsOneWidget);
       await tester.tap(find.text('想看').first);
@@ -216,67 +216,77 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('SubjectDetailPage shows prominent play action, toggleable source and comments tab', (
-    tester,
-  ) async {
-    _setViewport(tester, const Size(420, 880));
-    await tester.pumpWidget(_testApp());
-    await tester.pumpAndSettle();
+  testWidgets(
+    'SubjectDetailPage shows prominent play action, toggleable source and comments tab',
+    (tester) async {
+      _setViewport(tester, const Size(420, 880));
+      await tester.pumpWidget(_testApp());
+      await tester.pumpAndSettle();
 
-    // Home top deck no longer shows cluttery "已启用规则" stat and top-right has History shortcut
-    expect(find.text('已启用规则'), findsNothing);
-    expect(_barAction('观看历史'), findsOneWidget);
+      // Home top deck no longer shows cluttery "已启用规则" stat and top-right has History shortcut
+      expect(find.text('已启用规则'), findsNothing);
+      expect(_barAction('观看历史'), findsOneWidget);
 
-    await tester.tap(find.text('星海旅人：北境编年史').first);
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('星海旅人：北境编年史').first);
+      await tester.pumpAndSettle();
 
-    expect(find.byType(SubjectDetailPage), findsOneWidget);
-    expect(find.byType(KonekoStarRating), findsOneWidget);
-    expect(find.textContaining('播放 · 第'), findsOneWidget);
+      expect(find.byType(SubjectDetailPage), findsOneWidget);
+      expect(find.byType(KonekoStarRating), findsOneWidget);
+      expect(find.textContaining('播放 · 第'), findsOneWidget);
 
-    // Selecting and tapping again cancels the specified playback source
-    final firstRule = find.text('樱花源 · XPath');
-    await tester.ensureVisible(firstRule);
-    await tester.pumpAndSettle();
-    await tester.tap(firstRule);
-    await tester.pump(const Duration(seconds: 4));
-    await tester.pumpAndSettle();
-    expect(find.text('已指定'), findsOneWidget);
+      // Selecting and tapping again cancels the specified playback source
+      final firstRule = find.text('樱花源 · XPath');
+      await tester.ensureVisible(firstRule);
+      await tester.pumpAndSettle();
+      await tester.tap(firstRule);
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+      expect(find.text('已指定'), findsOneWidget);
 
-    await tester.tap(firstRule);
-    await tester.pump(const Duration(seconds: 4));
-    await tester.pumpAndSettle();
-    expect(find.text('已指定'), findsNothing);
+      await tester.tap(firstRule);
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+      expect(find.text('已指定'), findsNothing);
 
-    final commentsTab = find.textContaining('评论吐槽');
-    await tester.ensureVisible(commentsTab);
-    await tester.pumpAndSettle();
-    await tester.tap(commentsTab);
-    await tester.pumpAndSettle();
-    expect(find.textContaining('Bangumi 吐槽箱'), findsOneWidget);
-    expect(find.text('星屑旅人'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
+      await tester.tap(find.text('关联'));
+      await tester.pumpAndSettle();
+      expect(find.text('关联系列'), findsWidgets);
 
-  testWidgets('HistoryPage shows latest source with capsule play/next buttons and no multi-source badge', (
-    tester,
-  ) async {
-    _setViewport(tester, const Size(1100, 800));
-    await tester.pumpWidget(_testApp());
-    await tester.pumpAndSettle();
+      await tester.drag(find.byType(PageView).last, const Offset(320, 0));
+      await tester.pumpAndSettle();
+      expect(find.text('暂无角色'), findsOneWidget);
 
-    final historyTab = find.descendant(
-      of: find.byType(NavigationSidebar),
-      matching: find.text('观看历史'),
-    );
-    await tester.tap(historyTab);
-    await tester.pumpAndSettle();
+      final commentsTab = find.textContaining('评论吐槽');
+      await tester.ensureVisible(commentsTab);
+      await tester.pumpAndSettle();
+      await tester.tap(commentsTab);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Bangumi 吐槽箱'), findsOneWidget);
+      expect(find.text('星屑旅人'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
-    expect(find.textContaining('个播放源'), findsNothing);
-    expect(find.text('继续播放'), findsWidgets);
-    expect(find.text('下一话'), findsWidgets);
-    expect(tester.takeException(), isNull);
-  });
+  testWidgets(
+    'HistoryPage shows latest source with capsule play/next buttons and no multi-source badge',
+    (tester) async {
+      _setViewport(tester, const Size(1100, 800));
+      await tester.pumpWidget(_testApp());
+      await tester.pumpAndSettle();
+
+      final historyTab = find.descendant(
+        of: find.byType(NavigationSidebar),
+        matching: find.text('观看历史'),
+      );
+      await tester.tap(historyTab);
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('个播放源'), findsNothing);
+      expect(find.text('继续播放'), findsWidgets);
+      expect(find.text('下一话'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
 
 Finder _barAction(String tooltip) => find.byWidgetPredicate(

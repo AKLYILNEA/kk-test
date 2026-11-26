@@ -16,7 +16,8 @@ class AnimeSeason {
 
   int get startMonth => (quarter - 1) * 3 + 1;
 
-  String get seasonName => const ['冬', '春', '夏', '秋'][(quarter - 1).clamp(0, 3)];
+  String get seasonName =>
+      const ['冬', '春', '夏', '秋'][(quarter - 1).clamp(0, 3)];
 
   String get label => '$year $seasonName季新番';
 
@@ -105,11 +106,62 @@ class SearchFilter {
 }
 
 /// The cache-backed network capabilities are separate from synchronous reads.
+class SubjectPerson {
+  const SubjectPerson({
+    required this.id,
+    required this.name,
+    this.imageUrl,
+    this.credits = const [],
+  });
+
+  final int id;
+  final String name;
+  final String? imageUrl;
+  final List<String> credits;
+}
+
+class SubjectCharacter {
+  const SubjectCharacter({
+    required this.id,
+    required this.name,
+    required this.relation,
+    this.imageUrl,
+    this.actors = const [],
+  });
+
+  final int id;
+  final String name;
+  final String relation;
+  final String? imageUrl;
+  final List<SubjectPerson> actors;
+}
+
+class SubjectRelation {
+  const SubjectRelation({
+    required this.id,
+    required this.title,
+    required this.originalTitle,
+    required this.relation,
+    required this.isAnime,
+    this.imageUrl,
+  });
+
+  final int id;
+  final String title;
+  final String originalTitle;
+  final String relation;
+  final bool isAnime;
+  final String? imageUrl;
+}
+
 abstract interface class OnlineCatalog implements CatalogRepository {
   Stream<void> get changes;
   String get seasonTitle;
   Future<void> refresh();
   Future<void> loadSubject(int id);
+  Future<List<SubjectCharacter>> loadCharacters(int subjectId);
+  Future<List<SubjectPerson>> loadCredits(int subjectId);
+  Future<List<SubjectRelation>> loadRelations(int subjectId);
   Future<void> searchOnline(String query);
   Future<List<AnimeSubject>> searchFiltered(
     SearchFilter filter, {
@@ -231,8 +283,11 @@ class DanmakuEpisodeMatch {
 
 abstract interface class PlaybackSources {
   Future<List<SourceEpisode>> lookup(AnimeSubject subject, String ruleId);
-  Future<PlayableMedia> resolve(SourceEpisode episode);
-  Future<int?> verifyPlayable(PlayableMedia media);
+  Future<PlayableMedia> resolve(
+    SourceEpisode episode, {
+    Future<void>? cancelled,
+  });
+  Future<int?> verifyPlayable(PlayableMedia media, {Future<void>? cancelled});
   Future<RuleProbeResult> probeRule(
     AnimeSubject subject,
     String ruleId, {

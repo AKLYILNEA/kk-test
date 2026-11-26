@@ -44,6 +44,17 @@ void main() {
         EpisodeWatchState.current,
       );
       expect(catalog.getSubjectById(414461)?.summary, '详情');
+      final characters = await catalog.loadCharacters(414461);
+      expect(characters.single.relation, '主角');
+      expect(characters.single.actors.single.name, '声优');
+      final credits = await catalog.loadCredits(414461);
+      expect(credits.single.credits, ['导演', '分镜 · 1,2']);
+      final relations = await catalog.loadRelations(414461);
+      expect(relations.map((item) => item.relation), ['续集', '原作']);
+      expect(relations.first.isAnime, isTrue);
+      expect(relations.last.isAnime, isFalse);
+      expect(catalog.getSubjectById(414461)?.relatedIds, [414462]);
+
       final comments = await catalog.loadComments(414461);
       expect(comments.total, 1);
       expect(comments.items.single.userName, '测试观众');
@@ -359,7 +370,25 @@ class _FixtureAdapter implements HttpClientAdapter {
         'data': [_item],
       },
       '/v0/subjects/414461' => {..._item, 'summary': '详情'},
-      '/v0/subjects/414461/subjects' => [],
+      '/v0/subjects/414461/characters' => [
+        {
+          'id': 25,
+          'name': '角色',
+          'relation': '主角',
+          'actors': [
+            {'id': 29, 'name': '声优'},
+          ],
+        },
+      ],
+      '/v0/subjects/414461/persons' => [
+        {'id': 31, 'name': '制作人员', 'relation': '导演', 'eps': ''},
+        {'id': 31, 'name': '制作人员', 'relation': '分镜', 'eps': '1,2'},
+        {'id': 31, 'name': '制作人员', 'relation': '导演', 'eps': ''},
+      ],
+      '/v0/subjects/414461/subjects' => [
+        {'id': 414462, 'type': 2, 'name': '续集名称', 'relation': '续集'},
+        {'id': 121111, 'type': 1, 'name': '原作名称', 'relation': '原作'},
+      ],
       '/v0/episodes' => {
         'total': 1,
         'data': [
@@ -407,10 +436,15 @@ class _DirectSource implements PlaybackSources {
     String ruleId,
   ) async => const [];
   @override
-  Future<PlayableMedia> resolve(SourceEpisode episode) async =>
-      PlayableMedia(episode.page);
+  Future<PlayableMedia> resolve(
+    SourceEpisode episode, {
+    Future<void>? cancelled,
+  }) async => PlayableMedia(episode.page);
   @override
-  Future<int?> verifyPlayable(PlayableMedia media) async => 12;
+  Future<int?> verifyPlayable(
+    PlayableMedia media, {
+    Future<void>? cancelled,
+  }) async => 12;
   @override
   Future<RuleProbeResult> probeRule(
     AnimeSubject subject,

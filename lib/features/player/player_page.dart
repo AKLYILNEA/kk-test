@@ -13,6 +13,7 @@ import 'package:koneko/common/feature_feedback.dart';
 import 'package:koneko/common/providers.dart';
 import 'package:koneko/features/my/service_settings_page.dart';
 import 'package:koneko/features/player/rule_verify_page.dart';
+import 'package:koneko/features/player/source_race.dart';
 import 'package:koneko/features/rules/rules_page.dart';
 import 'package:koneko/ui/koneko_comments.dart';
 import 'package:koneko/ui/koneko_danmaku_sheet.dart';
@@ -26,6 +27,13 @@ import 'package:prism_ui/prism_ui.dart';
 enum _PanelTab { episodes, sources, comments }
 
 enum _DrawerTab { episodes, sources, danmaku }
+
+typedef _ResolvedSource = ({
+  RuleSearchHit hit,
+  List<SourceEpisode> options,
+  SourceEpisode line,
+  PlayableMedia media,
+});
 
 class PlayerPage extends ConsumerStatefulWidget {
   const PlayerPage({
@@ -60,10 +68,14 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   Timer? _saveTimer;
   Timer? _brightnessTimer;
   Timer? _hudTimer;
+  Timer? _bufferTimer;
+  bool _bufferDelayed = false;
+  Completer<void>? _sourceCancellation;
   SourceEpisode? _source;
   List<SourceEpisode> _choices = const [];
   List<DanmakuItem> _danmaku = const [];
   final Map<String, RuleProbeResult> _probes = {};
+  final _pendingProbes = <(String, String?), Future<RuleProbeResult>>{};
   final TextEditingController _sourceKeywordController =
       TextEditingController();
 
@@ -118,6 +130,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     final active = PageActivityScope.isActiveOf(context);
     if (_pageActive && !active) unawaited(_session?.setPlaying(false));
     _pageActive = active;
+    _watchBuffering();
   }
 
   @override
@@ -135,6 +148,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     }
     WidgetsBinding.instance.removeObserver(this);
     _request++;
+    _sourceCancellation?.complete();
+    _bufferTimer?.cancel();
     _danmakuRequest++;
     _probeGeneration++;
     _saveTimer?.cancel();
@@ -249,11 +264,59 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     final completed = status.completed && !_status.completed;
     final startedPlaying = status.playing && !_status.playing;
     setState(() => _status = status);
+    _watchBuffering();
     if (completed) _checkpoint();
     if (startedPlaying) _armHudAutoHide();
   }
 
   bool _isCurrent(int request) => mounted && request == _request;
+
+  int _beginSourceRequest() {
+    _sourceCancellation?.complete();
+    _sourceCancellation = Completer<void>();
+    _bufferTimer?.cancel();
+    _bufferTimer = null;
+    _bufferDelayed = false;
+    return ++_request;
+  }
+
+  void _watchBuffering() {
+    if (!_loaded ||
+        !_pageActive ||
+        !_status.buffering ||
+        _status.error != null) {
+      _bufferTimer?.cancel();
+      _bufferTimer = null;
+      if (_bufferDelayed) setState(() => _bufferDelayed = false);
+      return;
+    }
+    _bufferTimer ??= Timer(const Duration(seconds: 8), () {
+      if (mounted) setState(() => _bufferDelayed = true);
+    });
+  }
+
+  Future<RuleProbeResult> _probe(
+    PlaybackSources resolver,
+    AnimeSubject subject,
+    RulePluginMeta rule, {
+    String? keyword,
+  }) {
+    final key = (rule.id, keyword);
+    return _pendingProbes.putIfAbsent(key, () async {
+      try {
+        return await resolver.probeRule(subject, rule.id, keyword: keyword);
+      } on Object {
+        return RuleProbeResult(
+          ruleId: rule.id,
+          ruleName: rule.name,
+          state: RuleProbeState.error,
+          message: '连接失败',
+        );
+      } finally {
+        _pendingProbes.remove(key);
+      }
+    });
+  }
 
   Duration _resumeAt(int episode) {
     final history = ref
@@ -296,9 +359,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     final targetSubject = subject;
     await Future.wait(
       enabledRules.map((rule) async {
-        final result = await resolver.probeRule(
+        final result = await _probe(
+          resolver,
           targetSubject,
-          rule.id,
+          rule,
           keyword: customKeyword,
         );
         if (!mounted || gen != _probeGeneration) return;
@@ -307,7 +371,11 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     );
   }
 
-  Future<void> _verifyRule(String ruleId, String ruleName, Uri verifyUrl) async {
+  Future<void> _verifyRule(
+    String ruleId,
+    String ruleName,
+    Uri verifyUrl,
+  ) async {
     if (_fullscreen) {
       await _setFullscreen(false);
     }
@@ -351,16 +419,23 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     }
   }
 
-  static String _normTitle(String value) => value
-      .toLowerCase()
-      .replaceAll(RegExp(r'[\s\p{P}\p{S}]+', unicode: true), '');
+  static String _normTitle(String value) => value.toLowerCase().replaceAll(
+    RegExp(r'[\s\p{P}\p{S}]+', unicode: true),
+    '',
+  );
 
-  Future<void> _openHit(String ruleId, String ruleName, RuleSearchHit hit) async {
+  Future<void> _openHit(
+    String ruleId,
+    String ruleName,
+    RuleSearchHit hit,
+  ) async {
     final session = _session;
     final resolver = ref.read(playbackSourcesProvider);
     if (session == null || resolver == null) return;
     _checkpoint();
-    final request = ++_request;
+    final request = _beginSourceRequest();
+    final cancelled = _sourceCancellation!.future;
+    ++_danmakuRequest;
     setState(() {
       _loading = true;
       _loadingHint = '正在加载 $ruleName...';
@@ -374,7 +449,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       _activeHitUrl = hit.sourceUrl;
     });
     try {
-      await session.setPlaying(false);
+      await session.setPlaying(false).timeout(const Duration(seconds: 4));
+      if (!_isCurrent(request)) return;
       final options = await resolver.loadEpisodesFromHit(ruleId, hit);
       if (!_isCurrent(request)) return;
       final available = options.where((e) => e.number == _episode).toList();
@@ -387,13 +463,21 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       for (final episodeSource in targetLines) {
         if (!_isCurrent(request)) return;
         try {
-          final media = await resolver.resolve(episodeSource);
+          final media = await resolver
+              .resolve(episodeSource, cancelled: cancelled)
+              .timeout(const Duration(seconds: 15));
           if (!_isCurrent(request)) return;
-          await session.open(media, startAt: _resumeAt(episodeSource.number));
+          await session
+              .open(media, startAt: _resumeAt(episodeSource.number))
+              .timeout(const Duration(seconds: 8));
           if (!_isCurrent(request)) return;
           if (!_pageActive) await session.setPlaying(false);
           if (!_isCurrent(request)) return;
-          await resolver.rememberSelectedRule(widget.subjectId, ruleId);
+          unawaited(
+            resolver
+                .rememberSelectedRule(widget.subjectId, ruleId)
+                .onError((Object _, StackTrace _) {}),
+          );
           setState(() {
             _source = episodeSource;
             _ruleId = episodeSource.ruleId;
@@ -405,6 +489,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
             _lastCheckpoint = -1;
             _lastCompleted = false;
           });
+          _watchBuffering();
           _armHudAutoHide();
           unawaited(_loadDanmaku());
           return;
@@ -424,22 +509,28 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   }
 
   Future<void> _startOffline(Uri uri) async {
-    final request = ++_request;
+    final request = _beginSourceRequest();
     final session = _session!;
     setState(() {
       _loading = true;
+      _loaded = false;
+      _loadingHint = null;
       _error = null;
       _errorVerifyUrl = null;
     });
     try {
-      await session.open(PlayableMedia(uri), startAt: _resumeAt(_episode));
+      await session
+          .open(PlayableMedia(uri), startAt: _resumeAt(_episode))
+          .timeout(const Duration(seconds: 8));
       if (!_isCurrent(request)) return;
       if (!_pageActive) await session.setPlaying(false);
       if (!_isCurrent(request)) return;
       setState(() {
+        _status = session.status;
         _loaded = true;
         _loading = false;
       });
+      _watchBuffering();
       _armHudAutoHide();
       unawaited(_loadDanmaku());
     } on Object catch (error) {
@@ -465,13 +556,14 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     final initialPosition = episode == _episode && _loaded
         ? _status.position
         : _resumeAt(episode);
-    final request = ++_request;
+    final request = _beginSourceRequest();
+    final cancelled = _sourceCancellation!.future;
     ++_danmakuRequest;
     setState(() {
       _episode = episode;
       _loaded = false;
       _loading = true;
-      _loadingHint = autoSelectFastest ? '正在优选可用播放源...' : null;
+      _loadingHint = autoSelectFastest ? '正在寻找可用播放源…' : null;
       _error = null;
       _errorVerifyUrl = null;
       _errorVerifyRuleId = null;
@@ -481,7 +573,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       _danmakuError = null;
     });
     try {
-      await session.setPlaying(false);
+      await session.setPlaying(false).timeout(const Duration(seconds: 4));
+      if (!_isCurrent(request)) return;
       final resolver = ref.read(playbackSourcesProvider);
       if (resolver == null) throw StateError('播放服务不可用');
       var subject = _subject;
@@ -498,9 +591,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           .toList();
       if (rules.isEmpty) throw StateError('请先添加播放规则');
 
-      // Smart auto-selection for unwatched anime or when user taps "自动选择":
-      // races all enabled rules in parallel, ranks by speed + title match, and
-      // verifies the resolved stream is actually reachable & playable.
       if (autoSelectFastest) {
         await _autoSelectFastestPlayable(
           request: request,
@@ -510,6 +600,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           rules: rules,
           resolver: resolver,
           session: session,
+          cancelled: cancelled,
           excludeRuleId: excludeRuleId,
         );
         return;
@@ -540,9 +631,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
         if (!_isCurrent(request)) return;
         final ruleMeta = rules.where((r) => r.id == id).firstOrNull;
         if (mounted) {
-          setState(
-            () => _loadingHint = '正在加载 ${ruleMeta?.name ?? id}...',
-          );
+          setState(() => _loadingHint = '正在加载 ${ruleMeta?.name ?? id}...');
         }
         try {
           final existingProbe = _probes[id];
@@ -575,13 +664,21 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           for (final episodeSource in orderedLines) {
             if (!_isCurrent(request)) return;
             try {
-              final media = await resolver.resolve(episodeSource);
+              final media = await resolver
+                  .resolve(episodeSource, cancelled: cancelled)
+                  .timeout(const Duration(seconds: 15));
               if (!_isCurrent(request)) return;
-              await session.open(media, startAt: initialPosition);
+              await session
+                  .open(media, startAt: initialPosition)
+                  .timeout(const Duration(seconds: 8));
               if (!_isCurrent(request)) return;
               if (!_pageActive) await session.setPlaying(false);
               if (!_isCurrent(request)) return;
-              await resolver.rememberSelectedRule(widget.subjectId, id);
+              unawaited(
+                resolver
+                    .rememberSelectedRule(widget.subjectId, id)
+                    .onError((Object _, StackTrace _) {}),
+              );
               setState(() {
                 _episode = episode;
                 _source = episodeSource;
@@ -594,6 +691,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                 _lastCheckpoint = -1;
                 _lastCompleted = false;
               });
+              _watchBuffering();
               _armHudAutoHide();
               unawaited(_loadDanmaku());
               return;
@@ -649,254 +747,154 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     required List<RulePluginMeta> rules,
     required PlaybackSources resolver,
     required PlaybackSession session,
+    required Future<void> cancelled,
     String? excludeRuleId,
   }) async {
-    final candidates = rules
-        .where((r) => excludeRuleId == null || r.id != excludeRuleId)
-        .toList();
-    final targetRules = candidates.isNotEmpty ? candidates : rules;
-
-    // Step 1: Race parallel probes across candidate rules with an early-exit
-    // window so fast sources win immediately without waiting on dead rules.
-    final foundPool = <String, RuleProbeResult>{};
-    RuleProbeResult? firstCaptcha;
-    final probeReady = Completer<void>();
-    Timer? graceTimer;
-    var finishedCount = 0;
-
-    void maybeFinishRace() {
-      if (probeReady.isCompleted) return;
-      if (finishedCount >= targetRules.length || foundPool.length >= 3) {
-        graceTimer?.cancel();
-        probeReady.complete();
-      } else if (foundPool.isNotEmpty && graceTimer == null) {
-        graceTimer = Timer(const Duration(milliseconds: 700), () {
-          if (!probeReady.isCompleted) probeReady.complete();
-        });
-      }
-    }
-
-    for (final rule in targetRules) {
-      final cached = _probes[rule.id];
-      if (cached != null && cached.state != RuleProbeState.searching) {
-        finishedCount++;
-        if (cached.state == RuleProbeState.found && cached.hits.isNotEmpty) {
-          foundPool[rule.id] = cached;
-        } else if (cached.state == RuleProbeState.captchaRequired &&
-            firstCaptcha == null) {
-          firstCaptcha = cached;
-        }
-        continue;
-      }
-      unawaited(() async {
-        final result = await resolver.probeRule(subject, rule.id);
-        if (mounted) {
-          setState(() => _probes[rule.id] = result);
-        }
-        finishedCount++;
-        if (result.state == RuleProbeState.found && result.hits.isNotEmpty) {
-          foundPool[rule.id] = result;
-        } else if (result.state == RuleProbeState.captchaRequired &&
-            firstCaptcha == null) {
-          firstCaptcha = result;
-        }
-        maybeFinishRace();
-      }());
-    }
-    maybeFinishRace();
-
-    if (!probeReady.isCompleted) {
-      await probeReady.future.timeout(
-        const Duration(seconds: 5),
-        onTimeout: () {},
-      );
-    }
-    graceTimer?.cancel();
-    if (!_isCurrent(request)) return;
-
-    // Step 2: Sort found candidates by exact title match + connection speed.
+    final alternatives = rules.where((r) => r.id != excludeRuleId).toList();
+    final targetRules = alternatives.isEmpty ? rules : alternatives;
+    final generation = _probeGeneration;
+    final resolving = <Future<void>>[];
+    final preparation = Completer<void>();
+    var searching = true;
+    RuleProbeResult? captcha;
     final titleKeys = {
       _normTitle(subject.title),
-      if (subject.originalTitle.trim().isNotEmpty)
-        _normTitle(subject.originalTitle),
+      _normTitle(subject.originalTitle),
     }..remove('');
-    final ruleMetaById = {for (final r in targetRules) r.id: r};
 
-    List<RuleProbeResult> rankCandidates(Iterable<RuleProbeResult> items) {
-      final list = items.toList();
-      list.sort((a, b) {
-        final aExact = titleKeys.contains(_normTitle(a.hits.first.title))
-            ? 0
-            : 1;
-        final bExact = titleKeys.contains(_normTitle(b.hits.first.title))
-            ? 0
-            : 1;
-        if (aExact != bExact) return aExact.compareTo(bExact);
-        final aMs = a.latencyMs > 0
-            ? a.latencyMs
-            : (ruleMetaById[a.ruleId]?.latencyMs ?? 0) > 0
-            ? ruleMetaById[a.ruleId]!.latencyMs
-            : 9999;
-        final bMs = b.latencyMs > 0
-            ? b.latencyMs
-            : (ruleMetaById[b.ruleId]?.latencyMs ?? 0) > 0
-            ? ruleMetaById[b.ruleId]!.latencyMs
-            : 9999;
-        return aMs.compareTo(bMs);
-      });
-      return list;
+    bool isSearching() => searching && _isCurrent(request);
+
+    Future<PlayableMedia?> resolveLine(SourceEpisode line) async {
+      while (resolving.length >= 3) {
+        await Future.any(resolving);
+        if (!isSearching()) return null;
+      }
+      if (!isSearching()) return null;
+      final slot = Completer<void>();
+      resolving.add(slot.future);
+      final abandoned = Completer<void>();
+      try {
+        return await resolver
+            .resolve(
+              line,
+              cancelled: Future.any([preparation.future, abandoned.future]),
+            )
+            .timeout(const Duration(seconds: 7));
+      } finally {
+        abandoned.complete();
+        resolving.remove(slot.future);
+        slot.complete();
+      }
     }
 
-    ({
-      List<SourceEpisode> options,
-      SourceEpisode episodeSource,
-      PlayableMedia media,
-      String hitUrl,
-    })?
-    fallbackCandidate;
+    final selection = await racePlaybackSources<_ResolvedSource>(
+      targetRules.map(
+        (rule) => (offer) async {
+          final cached = _probes[rule.id];
+          final probe =
+              cached?.state == RuleProbeState.found &&
+                  _sourceKeywordController.text.trim().isEmpty
+              ? cached!
+              : await _probe(resolver, subject, rule);
+          if (!isSearching()) return;
+          if (generation == _probeGeneration &&
+              _sourceKeywordController.text.trim().isEmpty) {
+            setState(() => _probes[rule.id] = probe);
+          }
+          if (probe.state == RuleProbeState.captchaRequired) {
+            if (probe.verifyUrl != null) captcha ??= probe;
+            return;
+          }
+          if (probe.state != RuleProbeState.found) return;
 
-    final triedIds = <String>{};
-
-    Future<bool> tryProbe(RuleProbeResult probe) async {
-      if (!_isCurrent(request) || !triedIds.add(probe.ruleId)) return false;
-      final bestHit = probe.hits.first;
-      if (mounted) {
-        setState(() => _loadingHint = '正在测速 ${probe.ruleName}...');
-      }
-      try {
-        final options = await resolver.loadEpisodesFromHit(
-          probe.ruleId,
-          bestHit,
-        );
-        if (!_isCurrent(request)) return false;
-        final available = options
-            .where((item) => item.number == episode)
-            .toList();
-        if (available.isEmpty) return false;
-
-        for (final line in available) {
-          if (!_isCurrent(request)) return false;
-          try {
-            final media = await resolver.resolve(line);
-            if (!_isCurrent(request)) return false;
-            final ttfb = await resolver.verifyPlayable(media);
-            if (!_isCurrent(request)) return false;
-            if (ttfb == null) {
-              fallbackCandidate ??= (
-                options: options,
-                episodeSource: line,
-                media: media,
-                hitUrl: bestHit.sourceUrl,
-              );
+          final exact = probe.hits.where(
+            (hit) => titleKeys.contains(_normTitle(hit.title)),
+          );
+          final hits = exact.isEmpty ? probe.hits.take(1) : exact.take(2);
+          for (final hit in hits) {
+            if (!isSearching()) return;
+            final List<SourceEpisode> options;
+            try {
+              options = await resolver.loadEpisodesFromHit(rule.id, hit);
+            } on Object {
               continue;
             }
-            setState(() {
-              _choices = options;
-              _ruleId = probe.ruleId;
-              _ruleName = probe.ruleName;
-              _activeHitUrl = bestHit.sourceUrl;
-            });
-            await session.open(media, startAt: initialPosition);
-            if (!_isCurrent(request)) return false;
-            if (!_pageActive) await session.setPlaying(false);
-            if (!_isCurrent(request)) return false;
-            await resolver.rememberSelectedRule(widget.subjectId, probe.ruleId);
-            setState(() {
-              _episode = episode;
-              _source = line;
-              _ruleId = line.ruleId;
-              _ruleName = line.ruleName;
-              _status = session.status;
-              _loading = false;
-              _loadingHint = null;
-              _loaded = true;
-              _lastCheckpoint = -1;
-              _lastCompleted = false;
-            });
-            _armHudAutoHide();
-            unawaited(_loadDanmaku());
-            return true;
-          } on Object {
-            continue;
+            for (final line in options.where(
+              (item) => item.number == episode,
+            )) {
+              if (!isSearching()) return;
+              try {
+                final media = await resolveLine(line);
+                if (media == null || !isSearching()) return;
+                final verified = await resolver
+                    .verifyPlayable(media, cancelled: preparation.future)
+                    .timeout(const Duration(seconds: 2), onTimeout: () => null);
+                if (!isSearching()) return;
+                offer((
+                  options: options,
+                  line: line,
+                  media: media,
+                  hit: hit,
+                ), verified: verified != null);
+                if (verified != null) return;
+              } on Object {
+                continue;
+              }
+            }
           }
-        }
-      } on Object {
-        return false;
+        },
+      ),
+      cancelled,
+    );
+    searching = false;
+    preparation.complete();
+    if (!_isCurrent(request)) return;
+
+    if (selection == null) {
+      if (captcha case final required?) {
+        setState(() {
+          _loading = false;
+          _loadingHint = null;
+          _error = '${required.ruleName} 需要验证';
+          _errorVerifyUrl = required.verifyUrl;
+          _errorVerifyRuleId = required.ruleId;
+          _errorVerifyRuleName = required.ruleName;
+        });
+        return;
       }
-      return false;
+      throw StateError('暂未找到可播放的线路');
     }
-
-    // Try ranked fast candidates first.
-    for (final probe in rankCandidates(foundPool.values)) {
-      if (await tryProbe(probe)) return;
-      if (!_isCurrent(request)) return;
-    }
-
-    // Also try any late-arriving found probes that completed while we tested.
-    final lateFound = _probes.values
-        .where(
-          (p) =>
-              p.state == RuleProbeState.found &&
-              p.hits.isNotEmpty &&
-              !triedIds.contains(p.ruleId) &&
-              (excludeRuleId == null || p.ruleId != excludeRuleId),
-        )
-        .toList();
-    for (final probe in rankCandidates(lateFound)) {
-      if (await tryProbe(probe)) return;
-      if (!_isCurrent(request)) return;
-    }
-
-    // Fallback to the first resolved stream if all strict HTTP pre-checks
-    // failed (e.g. a CDN that blocks Range requests but plays fine in mpv).
-    if (fallbackCandidate case final fb?) {
-      if (!_isCurrent(request)) return;
-      setState(() {
-        _choices = fb.options;
-        _ruleId = fb.episodeSource.ruleId;
-        _ruleName = fb.episodeSource.ruleName;
-        _activeHitUrl = fb.hitUrl;
-      });
-      await session.open(fb.media, startAt: initialPosition);
-      if (!_isCurrent(request)) return;
-      if (!_pageActive) await session.setPlaying(false);
-      if (!_isCurrent(request)) return;
-      await resolver.rememberSelectedRule(
-        widget.subjectId,
-        fb.episodeSource.ruleId,
-      );
-      setState(() {
-        _episode = episode;
-        _source = fb.episodeSource;
-        _ruleId = fb.episodeSource.ruleId;
-        _ruleName = fb.episodeSource.ruleName;
-        _status = session.status;
-        _loading = false;
-        _loadingHint = null;
-        _loaded = true;
-        _lastCheckpoint = -1;
-        _lastCompleted = false;
-      });
-      _armHudAutoHide();
-      unawaited(_loadDanmaku());
-      return;
-    }
-
-    final captcha = firstCaptcha;
-    if (captcha != null && captcha.verifyUrl != null) {
-      if (!_isCurrent(request)) return;
-      setState(() {
-        _loading = false;
-        _loadingHint = null;
-        _error = '${captcha.ruleName} 需要验证';
-        _errorVerifyUrl = captcha.verifyUrl;
-        _errorVerifyRuleId = captcha.ruleId;
-        _errorVerifyRuleName = captcha.ruleName;
-      });
-      return;
-    }
-
-    throw StateError('未找到可播放的源');
+    final line = selection.line;
+    setState(() {
+      _choices = selection.options;
+      _ruleId = line.ruleId;
+      _ruleName = line.ruleName;
+      _activeHitUrl = selection.hit.sourceUrl;
+      _loadingHint = '正在打开 ${line.ruleName}…';
+    });
+    await session
+        .open(selection.media, startAt: initialPosition)
+        .timeout(const Duration(seconds: 8));
+    if (!_isCurrent(request)) return;
+    if (!_pageActive) await session.setPlaying(false);
+    if (!_isCurrent(request)) return;
+    setState(() {
+      _source = line;
+      _status = session.status;
+      _loading = false;
+      _loadingHint = null;
+      _loaded = true;
+      _lastCheckpoint = -1;
+      _lastCompleted = false;
+    });
+    unawaited(
+      resolver
+          .rememberSelectedRule(widget.subjectId, line.ruleId)
+          .onError((Object _, StackTrace _) {}),
+    );
+    _watchBuffering();
+    _armHudAutoHide();
+    unawaited(_loadDanmaku());
   }
 
   void _checkpoint() {
@@ -990,9 +988,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   Future<void> _openDanmakuSearchSheet() async {
     final source = ref.read(danmakuProvider);
     if (source == null) return;
-    final searchController = TextEditingController(
-      text: _subject?.title ?? '',
-    );
+    final searchController = TextEditingController(text: _subject?.title ?? '');
     List<DanmakuAnimeMatch> matches = const [];
     DanmakuAnimeMatch? selectedAnime;
     bool searching = false;
@@ -1048,7 +1044,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                         ),
                       ),
                       FilledButton(
-                        onPressed: searching ? null : () => unawaited(doSearch()),
+                        onPressed: searching
+                            ? null
+                            : () => unawaited(doSearch()),
                         child: const Text('搜索'),
                       ),
                     ],
@@ -1255,6 +1253,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
         _error ??
         (_loaded && status.duration == Duration.zero && status.error != null
             ? '播放失败'
+            : _bufferDelayed
+            ? '缓冲时间较长'
             : null);
     final offline = widget.offline != null;
 
@@ -1370,7 +1370,11 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     required List<RulePluginMeta> rules,
     required PlaybackSession? session,
     required Widget Function(PlaybackSession)? viewport,
-    required Widget Function(List<DanmakuItem>, PlaybackStatus, DanmakuSettings)?
+    required Widget Function(
+      List<DanmakuItem>,
+      PlaybackStatus,
+      DanmakuSettings,
+    )?
     overlay,
     required DanmakuSettings danmakuSettings,
     required PlaybackStatus status,
@@ -1412,7 +1416,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
             ],
           ),
         ),
-        if (_loading || (_loaded && status.buffering))
+        if (error == null && (_loading || (_loaded && status.buffering)))
           Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -1430,6 +1434,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                       style: _style(context, small: true),
                     ),
                   ),
+                if (!offline && rules.any((rule) => rule.enabled))
+                  _HudAction(label: '手动切换源', onTap: _switchToSources),
               ],
             ),
           ),
@@ -1471,12 +1477,20 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                           ),
                         _HudAction(
                           label: '重试',
-                          onTap: () => _openEpisode(
-                            _episode,
-                            ruleId: _ruleId.isEmpty ? null : _ruleId,
-                            strictPreferredRule: _ruleId.isNotEmpty,
-                            autoSelectFastest: _ruleId.isEmpty,
-                          ),
+                          onTap: () {
+                            if (widget.offline?.media case final uri?) {
+                              unawaited(_startOffline(uri));
+                            } else {
+                              unawaited(
+                                _openEpisode(
+                                  _episode,
+                                  ruleId: _ruleId.isEmpty ? null : _ruleId,
+                                  strictPreferredRule: _ruleId.isNotEmpty,
+                                  autoSelectFastest: _ruleId.isEmpty,
+                                ),
+                              );
+                            }
+                          },
                         ),
                         if (!offline && rules.any((rule) => rule.enabled))
                           _HudAction(
@@ -1606,9 +1620,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           ),
         if (_fullscreen)
           AnimatedPositioned(
-            duration: context.motionDuration(
-              const Duration(milliseconds: 230),
-            ),
+            duration: context.motionDuration(const Duration(milliseconds: 230)),
             curve: Curves.easeOutCubic,
             top: safe.top + 12,
             bottom: safe.bottom + 12,
@@ -1755,8 +1767,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     final colorScheme = context.colorScheme;
     final lines = _choices.where((item) => item.number == _episode).toList();
 
-    final sourceEpNums = <int>{for (final item in _choices) item.number}.toList()
-      ..sort();
+    final sourceEpNums = <int>{
+      for (final item in _choices) item.number,
+    }.toList()..sort();
     final catalogEps = catalog.getEpisodes(
       widget.subjectId,
       watchedCount: collection?.watchedEpisodes ?? 0,
@@ -1769,9 +1782,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     final totalPages = epNumbers.isEmpty
         ? 1
         : (epNumbers.length + _pageSize - 1) ~/ _pageSize;
-    final safePage = _epPageIndex
-        .clamp(0, math.max(0, totalPages - 1))
-        .toInt();
+    final safePage = _epPageIndex.clamp(0, math.max(0, totalPages - 1)).toInt();
     final visibleEps = epNumbers
         .skip(safePage * _pageSize)
         .take(_pageSize)
@@ -1805,11 +1816,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                       ? colorScheme.primary
                       : SurfaceLevel.card.colorOf(colorScheme),
                   onPressed: () => unawaited(
-                    _openEpisode(
-                      _episode,
-                      ruleId: line.ruleId,
-                      choice: line,
-                    ),
+                    _openEpisode(_episode, ruleId: line.ruleId, choice: line),
                   ),
                 ),
             ],
@@ -1863,9 +1870,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   child: Center(
                     child: Text(
-                      offline
-                          ? '正在播放离线缓存的第 $_episode 话'
-                          : '匹配规则后将自动显示可选剧集',
+                      offline ? '正在播放离线缓存的第 $_episode 话' : '匹配规则后将自动显示可选剧集',
                       style: AppTextStyle.footnote
                           .of(context)
                           .copyWith(color: colorScheme.onSurfaceVariant),
@@ -1946,8 +1951,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                               : _danmakuError ??
                                     (_showDanmaku
                                         ? (_danmaku.isNotEmpty
-                                            ? _danmakuSummary()
-                                            : '暂无弹幕')
+                                              ? _danmakuSummary()
+                                              : '暂无弹幕')
                                         : '弹幕已关闭'),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -2077,8 +2082,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                         controller: _sourceKeywordController,
                         autocorrect: false,
                         decoration: InputDecoration(
-                          hintText:
-                              '自定义搜索词（默认：${_subject?.title ?? ''}）',
+                          hintText: '自定义搜索词（默认：${_subject?.title ?? ''}）',
                         ),
                         onSubmitted: (v) => unawaited(
                           _probeAllEnabledRules(
@@ -2185,8 +2189,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     };
 
     void handleSelectRule() {
-      if (state == RuleProbeState.captchaRequired &&
-          probe?.verifyUrl != null) {
+      if (state == RuleProbeState.captchaRequired && probe?.verifyUrl != null) {
         unawaited(_verifyRule(rule.id, rule.name, probe!.verifyUrl!));
       } else if (state == RuleProbeState.found &&
           probe != null &&
@@ -2253,12 +2256,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                     height: 28,
                     fontSize: 12,
                     selected: isCurrent && _activeHitUrl == hit.sourceUrl,
-                    backgroundColor:
-                        isCurrent && _activeHitUrl == hit.sourceUrl
+                    backgroundColor: isCurrent && _activeHitUrl == hit.sourceUrl
                         ? colorScheme.primary
                         : SurfaceLevel.card.colorOf(colorScheme),
-                    foregroundColor:
-                        isCurrent && _activeHitUrl == hit.sourceUrl
+                    foregroundColor: isCurrent && _activeHitUrl == hit.sourceUrl
                         ? colorScheme.onPrimary
                         : colorScheme.onSurface,
                     onPressed: () =>
@@ -2326,10 +2327,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           gradient: LinearGradient(
             begin: Alignment.bottomCenter,
             end: Alignment.topCenter,
-            colors: [
-              Colors.black.withValues(alpha: 0.76),
-              Colors.transparent,
-            ],
+            colors: [Colors.black.withValues(alpha: 0.76), Colors.transparent],
           ),
         ),
         child: Row(
@@ -2417,10 +2415,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
         gradient: LinearGradient(
           begin: Alignment.bottomCenter,
           end: Alignment.topCenter,
-          colors: [
-            Colors.black.withValues(alpha: 0.78),
-            Colors.transparent,
-          ],
+          colors: [Colors.black.withValues(alpha: 0.78), Colors.transparent],
         ),
       ),
       child: Column(
@@ -2595,9 +2590,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                       padding: const EdgeInsets.only(left: 4, bottom: 6),
                       child: Text(
                         '播放源',
-                        style: _style(context, small: true).copyWith(
-                          color: Colors.white.withValues(alpha: 0.62),
-                        ),
+                        style: _style(
+                          context,
+                          small: true,
+                        ).copyWith(color: Colors.white.withValues(alpha: 0.62)),
                       ),
                     ),
                     for (final rule in rules.where((rule) => rule.enabled))
@@ -2652,9 +2648,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                       Padding(
                         padding: const EdgeInsets.only(left: 4, bottom: 6),
                         child: Text(
-                          _ruleName.isNotEmpty
-                              ? '播放线路 · $_ruleName'
-                              : '播放线路',
+                          _ruleName.isNotEmpty ? '播放线路 · $_ruleName' : '播放线路',
                           style: _style(context, small: true).copyWith(
                             color: Colors.white.withValues(alpha: 0.62),
                           ),
@@ -2742,9 +2736,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       (small ? AppTextStyle.caption1 : AppTextStyle.subheadline)
           .of(context, emphasized: !small)
           .copyWith(
-            color: small
-                ? Colors.white.withValues(alpha: 0.85)
-                : Colors.white,
+            color: small ? Colors.white.withValues(alpha: 0.85) : Colors.white,
             fontFeatures: const [FontFeature.tabularFigures()],
           );
 

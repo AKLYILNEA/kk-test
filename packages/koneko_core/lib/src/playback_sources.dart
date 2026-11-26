@@ -21,12 +21,9 @@ String _titleKey(String value) => value.toLowerCase().replaceAll(
 );
 
 class KazumiSources implements PlaybackSources {
-  KazumiSources(
-    this._rules, {
-    Dio? client,
-    SharedPreferences? preferences,
-  }) : _client = client ?? networkClient(),
-       _preferences = preferences {
+  KazumiSources(this._rules, {Dio? client, SharedPreferences? preferences})
+    : _client = client ?? networkClient(),
+      _preferences = preferences {
     _loadRememberedRules();
   }
 
@@ -290,7 +287,10 @@ class KazumiSources implements PlaybackSources {
   }
 
   @override
-  Future<PlayableMedia> resolve(SourceEpisode episode) async {
+  Future<PlayableMedia> resolve(
+    SourceEpisode episode, {
+    Future<void>? cancelled,
+  }) async {
     final page = networkUri(episode.page.toString());
     final cookies = PluginCookieStore.instance.cookieHeaderFor(
       episode.ruleName,
@@ -306,8 +306,13 @@ class KazumiSources implements PlaybackSources {
     };
     if (_isMedia(page)) return PlayableMedia(page, headers: headers);
     if (episode.legacy) {
+      final cancelToken = CancelToken();
+      if (cancelled != null) {
+        unawaited(cancelled.then((_) => cancelToken.cancel()));
+      }
       final response = await _client.getUri<String>(
         page,
+        cancelToken: cancelToken,
         options: Options(headers: headers, responseType: ResponseType.plain),
       );
       final dom = html.parse(response.data);
@@ -317,20 +322,28 @@ class KazumiSources implements PlaybackSources {
       if (content?.isNotEmpty == true) {
         final target = networkUri(page.resolve(content!).toString());
         if (_isMedia(target)) return PlayableMedia(target, headers: headers);
-        return _sniff(target, headers);
+        return _sniff(target, headers, cancelled);
       }
     }
-    return _sniff(page, headers);
+    return _sniff(page, headers, cancelled);
   }
 
   @override
-  Future<int?> verifyPlayable(PlayableMedia media) async {
+  Future<int?> verifyPlayable(
+    PlayableMedia media, {
+    Future<void>? cancelled,
+  }) async {
     final uri = media.uri;
     if (uri.scheme != 'http' && uri.scheme != 'https') {
       return 1;
     }
+    const timeout = Duration(seconds: 2);
     final sw = Stopwatch()..start();
     final cancelToken = CancelToken();
+    final deadline = Timer(timeout, () => cancelToken.cancel('probe_timeout'));
+    if (cancelled != null) {
+      unawaited(cancelled.then((_) => cancelToken.cancel()));
+    }
     try {
       final response = await _client.getUri<ResponseBody>(
         uri,
@@ -383,7 +396,7 @@ class KazumiSources implements PlaybackSources {
           cancelOnError: true,
         );
         try {
-          await completer.future.timeout(const Duration(seconds: 3));
+          await completer.future.timeout(timeout);
         } finally {
           await sub.cancel();
           if (!cancelToken.isCancelled) cancelToken.cancel('verified');
@@ -403,12 +416,18 @@ class KazumiSources implements PlaybackSources {
       }
       return math.max(1, sw.elapsedMilliseconds);
     } on Object {
-      if (!cancelToken.isCancelled) cancelToken.cancel('failed');
       return null;
+    } finally {
+      deadline.cancel();
+      if (!cancelToken.isCancelled) cancelToken.cancel();
     }
   }
 
-  Future<PlayableMedia> _sniff(Uri page, Map<String, String> headers) async {
+  Future<PlayableMedia> _sniff(
+    Uri page,
+    Map<String, String> headers,
+    Future<void>? cancelled,
+  ) async {
     if (!Platform.isWindows && !Platform.isAndroid) {
       throw UnsupportedError('当前平台未接入视频嗅探');
     }
@@ -448,7 +467,7 @@ class KazumiSources implements PlaybackSources {
         return null;
       },
       onLoadResource: (_, resource) => offer(resource.url.toString()),
-      onLoadStop: (controller, _) {
+      onLoadStart: (controller, _) {
         probe ??= Timer.periodic(const Duration(milliseconds: 400), (_) async {
           if (probeBusy || result.isCompleted) return;
           probeBusy = true;
@@ -473,14 +492,20 @@ class KazumiSources implements PlaybackSources {
       },
     );
     try {
-      await webView.run().timeout(const Duration(seconds: 6));
-      return await result.future.timeout(
-        const Duration(seconds: 15),
+      return await Future.any<PlayableMedia>([
+        () async {
+          await webView.run();
+          return result.future;
+        }(),
+        if (cancelled != null)
+          cancelled.then((_) => throw StateError('已切换播放源')),
+      ]).timeout(
+        const Duration(seconds: 14),
         onTimeout: () => throw StateError('页面没有提供可播放的视频地址，请切换线路或规则'),
       );
     } finally {
       probe?.cancel();
-      await webView.dispose();
+      unawaited(webView.dispose().onError((Object _, StackTrace _) {}));
     }
   }
 
