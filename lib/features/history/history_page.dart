@@ -17,8 +17,8 @@ import 'package:prism_ui/prism_ui.dart';
 
 enum _HistoryFilter { all, today, week }
 
-/// Watch history page: keeps one clean card per anime displaying the latest
-/// watched source, episode, progress capsule and FlClash capsule play buttons.
+/// Watch history page: keeps one balanced FlClash card per anime showing the
+/// latest watched episode, slim progress bar, and capsule play/next actions.
 class HistoryPage extends ConsumerStatefulWidget {
   const HistoryPage({super.key, this.showBack = false, this.bottomPadding = 0});
 
@@ -227,27 +227,27 @@ class _HistoryCard extends StatelessWidget {
         : '';
 
     return KonekoCard(
-      corner: 26,
-      padding: const EdgeInsets.all(14),
+      corner: 24,
+      padding: const EdgeInsets.all(12),
       onPressed: onOpenDetail,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 74,
-            height: 108,
-            child: KonekoPosterArt(
-              subject: subject,
-              borderRadius: AppRadius.all(16),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              width: 80,
+              child: KonekoPosterArt(
+                subject: subject,
+                borderRadius: AppRadius.all(14),
+              ),
             ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 108),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            const SizedBox(width: 12),
+            Expanded(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 112),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -268,50 +268,73 @@ class _HistoryCard extends StatelessWidget {
                           Text(
                             formatRelativeTime(entry.updatedAt),
                             maxLines: 1,
-                            style: AppTextStyle.caption1
+                            style: AppTextStyle.caption2
                                 .of(context)
                                 .copyWith(color: colorScheme.onSurfaceVariant),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 3),
+                      const SizedBox(height: 4),
+                      Text(
+                        ruleName.isNotEmpty
+                            ? '第 ${entry.lastEpisode} 话 · $ruleName'
+                            : '第 ${entry.lastEpisode} 话',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyle.caption1
+                            .of(context)
+                            .copyWith(color: colorScheme.onSurfaceVariant),
+                      ),
+                    ],
+                  ),
+                  // Slim FlClash progress track with crisp tabular time & percentage
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    spacing: 5,
+                    children: [
                       Row(
                         children: [
-                          Text(
-                            '第 ${entry.lastEpisode} 话',
-                            style: AppTextStyle.footnote
-                                .of(context, emphasized: true)
-                                .copyWith(color: colorScheme.onSurfaceVariant),
-                          ),
-                          if (ruleName.isNotEmpty) ...[
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                '· $ruleName',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: AppTextStyle.caption1
-                                    .of(context)
-                                    .copyWith(
-                                      color: colorScheme.onSurfaceVariant
-                                          .withValues(alpha: 0.8),
-                                    ),
-                              ),
+                          Expanded(
+                            child: Text(
+                              durText.isNotEmpty
+                                  ? '$posText / $durText'
+                                  : '已看 $posText',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTextStyle.caption2
+                                  .of(context)
+                                  .copyWith(
+                                    color: colorScheme.onSurfaceVariant,
+                                    fontFeatures: const [
+                                      FontFeature.tabularFigures(),
+                                    ],
+                                  ),
                             ),
-                          ],
+                          ),
+                          Text(
+                            isFinished ? '已看完' : '$pct%',
+                            style: AppTextStyle.caption2
+                                .of(context, emphasized: true)
+                                .copyWith(
+                                  color: colorScheme.primary,
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures(),
+                                  ],
+                                ),
+                          ),
                         ],
                       ),
-                      const SizedBox(height: 8),
-                      // Kazumi-inspired progress capsule in pure FlClash surface palette
-                      ClipRSuperellipse(
-                        borderRadius: AppRadius.all(10),
+                      ClipRRect(
+                        borderRadius: AppRadius.full,
                         child: SizedBox(
-                          height: 22,
+                          height: 5,
                           child: Stack(
                             fit: StackFit.expand,
                             children: [
                               ColoredBox(
-                                color: SurfaceLevel.block.colorOf(colorScheme),
+                                color: colorScheme.primary.withValues(
+                                  alpha: 0.14,
+                                ),
                               ),
                               if (ratio > 0)
                                 Align(
@@ -321,62 +344,18 @@ class _HistoryCard extends StatelessWidget {
                                     heightFactor: 1.0,
                                     child: DecoratedBox(
                                       decoration: ShapeDecoration(
-                                        color: colorScheme.primary.withValues(
-                                          alpha: 0.18,
-                                        ),
-                                        shape: SuperellipseBorder(
-                                          borderRadius: AppRadius.all(10),
-                                        ),
+                                        color: colorScheme.primary,
+                                        shape: AppShape.full,
                                       ),
                                     ),
                                   ),
                                 ),
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                ),
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        durText.isNotEmpty
-                                            ? '$posText / $durText'
-                                            : '看到 $posText',
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: AppTextStyle.caption2
-                                            .of(context, emphasized: true)
-                                            .copyWith(
-                                              color: colorScheme.onSurface,
-                                              fontFeatures: const [
-                                                FontFeature.tabularFigures(),
-                                              ],
-                                            ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      isFinished ? '已看完' : '$pct%',
-                                      style: AppTextStyle.caption2
-                                          .of(context, emphasized: true)
-                                          .copyWith(
-                                            color: colorScheme.primary,
-                                            fontFeatures: const [
-                                              FontFeature.tabularFigures(),
-                                            ],
-                                          ),
-                                    ),
-                                  ],
-                                ),
-                              ),
                             ],
                           ),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 10),
-                  // FlClash capsule action buttons echoing SubjectDetailPage's Play CTA
                   Row(
                     spacing: 8,
                     children: [
@@ -387,14 +366,14 @@ class _HistoryCard extends StatelessWidget {
                           clipsChild: true,
                           onPressed: onResume,
                           child: SizedBox(
-                            height: 34,
+                            height: 32,
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               spacing: 5,
                               children: [
                                 GlyphIcon(
                                   KonekoGlyphs.play,
-                                  size: 13,
+                                  size: 12.5,
                                   color: colorScheme.onPrimary,
                                 ),
                                 Text(
@@ -402,7 +381,7 @@ class _HistoryCard extends StatelessWidget {
                                   style: AppTextStyle.caption1
                                       .of(context, emphasized: true)
                                       .copyWith(
-                                        fontSize: 12.5,
+                                        fontSize: 12,
                                         color: colorScheme.onPrimary,
                                       ),
                                 ),
@@ -413,23 +392,23 @@ class _HistoryCard extends StatelessWidget {
                       ),
                       if (hasNext)
                         PressSurface(
-                          fill: colorScheme.primary.withValues(alpha: 0.13),
+                          fill: colorScheme.primary.withValues(alpha: 0.12),
                           shape: AppShape.full,
                           clipsChild: true,
                           onPressed: onPlayNext,
                           child: SizedBox(
-                            height: 34,
+                            height: 32,
                             child: Padding(
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 13,
+                                horizontal: 12,
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
-                                spacing: 4,
+                                spacing: 3,
                                 children: [
                                   GlyphIcon(
                                     KonekoGlyphs.skipNext,
-                                    size: 14,
+                                    size: 13.5,
                                     color: colorScheme.primary,
                                   ),
                                   Text(
@@ -437,7 +416,7 @@ class _HistoryCard extends StatelessWidget {
                                     style: AppTextStyle.caption1
                                         .of(context, emphasized: true)
                                         .copyWith(
-                                          fontSize: 12.5,
+                                          fontSize: 12,
                                           color: colorScheme.primary,
                                         ),
                                   ),
@@ -451,8 +430,9 @@ class _HistoryCard extends StatelessWidget {
                 ],
               ),
             ),
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }

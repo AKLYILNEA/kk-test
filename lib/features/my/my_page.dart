@@ -130,7 +130,7 @@ class MyPage extends ConsumerWidget {
                       title: const Text('弹幕设置'),
                       subtitle: const Text('字号、字重描边、半屏区域与多站来源过滤'),
                       trailing: const GlyphIcon(Glyphs.chevronForward),
-                      onPressed: () => showKonekoDanmakuSettingsSheet(context),
+                      onPressed: () => openKonekoDanmakuSettingsPage(context),
                     ),
                     DecorationListItem(
                       leading: GlyphIcon(

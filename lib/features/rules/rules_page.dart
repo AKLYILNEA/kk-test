@@ -117,7 +117,6 @@ class _RulesPageState extends ConsumerState<RulesPage> {
                       color: colorScheme.primary,
                     ),
                     title: const Text('浏览在线规则仓库'),
-                    subtitle: const Text('官方 KazumiRules 多镜像一键安装与更新'),
                     trailing: const GlyphIcon(Glyphs.chevronForward),
                     onPressed: () => BaseNavigator.push<void>(
                       context,
@@ -130,7 +129,6 @@ class _RulesPageState extends ConsumerState<RulesPage> {
                       color: colorScheme.primary,
                     ),
                     title: const Text('粘贴 JSON 或规则链接导入'),
-                    subtitle: const Text('支持 Kazumi JSON 与 kazumi:// 分享链接'),
                     trailing: const GlyphIcon(Glyphs.chevronForward),
                     onPressed: () => BaseNavigator.push<void>(
                       context,

@@ -1574,7 +1574,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '弹幕（聚合 B站 / 巴哈 / 弹弹Play）',
+                          '弹幕',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: AppTextStyle.headline
                               .of(context, emphasized: true)
                               .copyWith(color: colorScheme.onSurface),
@@ -1588,6 +1590,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                                             ? _danmakuSummary()
                                             : '暂无弹幕')
                                         : '弹幕已关闭'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: AppTextStyle.caption1
                               .of(context)
                               .copyWith(color: colorScheme.onSurfaceVariant),
@@ -1620,7 +1624,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                     backgroundColor: colorScheme.primary,
                     foregroundColor: colorScheme.onPrimary,
                     onPressed: () =>
-                        unawaited(showKonekoDanmakuSettingsSheet(context)),
+                        unawaited(openKonekoDanmakuSettingsPage(context)),
                   ),
                   KonekoChip(
                     label: '重新拉取',
@@ -1634,7 +1638,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                     onPressed: _danmakuLoading ? null : () => _loadDanmaku(),
                   ),
                   KonekoChip(
-                    label: '手动匹配弹幕',
+                    label: '手动匹配',
                     height: 30,
                     fontSize: 12,
                     backgroundColor: colorScheme.primary.withValues(
@@ -1644,7 +1648,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                     onPressed: _openDanmakuSearchSheet,
                   ),
                   KonekoChip(
-                    label: '屏蔽词设置',
+                    label: '屏蔽词',
                     height: 30,
                     fontSize: 12,
                     onPressed: () => BaseNavigator.push<void>(
@@ -2311,12 +2315,12 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                     },
                   ),
                   _HudAction(
-                    label: '弹幕样式与区域设置',
+                    label: '弹幕设置',
                     onTap: () async {
                       setState(() => _drawerOpen = false);
                       await _setFullscreen(false);
                       if (context.mounted) {
-                        unawaited(showKonekoDanmakuSettingsSheet(context));
+                        unawaited(openKonekoDanmakuSettingsPage(context));
                       }
                     },
                   ),

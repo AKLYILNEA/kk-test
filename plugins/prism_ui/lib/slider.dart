@@ -400,12 +400,12 @@ class _GappedSliderShape extends SliderShape {
       roundsLeft: false,
       roundsRight: true,
     );
-    if (divisions != null && divisions > 0) {
+    if (divisions != null && divisions > 1 && divisions <= 10) {
       final activeTick = enabled ? _colors.onPrimary : _colors.onInverseSurface;
       final inactiveTick = enabled
           ? _colors.onSecondaryContainer
           : _colors.onSurface;
-      for (var i = 0; i <= divisions; i++) {
+      for (var i = 1; i < divisions; i++) {
         final tickX = thumbInset + travel * (i / divisions);
         if (tickX > leftEnd - _tickRadius && tickX < rightStart + _tickRadius) {
           continue;
