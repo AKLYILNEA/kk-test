@@ -155,7 +155,7 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
                                   children: [
                                     heroCard,
                                     episodeCard,
-                                    if (relatedCard != null) relatedCard,
+                                    ?relatedCard,
                                   ],
                                 ),
                               ),
@@ -178,7 +178,7 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
                               heroCard,
                               episodeCard,
                               sourcesCard,
-                              if (relatedCard != null) relatedCard,
+                              ?relatedCard,
                             ],
                           ),
                   ),

@@ -4,7 +4,7 @@ import 'package:prism_ui/prism_ui.dart';
 
 /// Implements [UiLocalizations] required by all prism_ui components.
 class KonekoUiLocalizations extends UiLocalizations {
-  const KonekoUiLocalizations();
+  KonekoUiLocalizations();
 
   static const LocalizationsDelegate<UiLocalizations> delegate =
       _KonekoUiLocalizationsDelegate();
@@ -79,7 +79,7 @@ class _KonekoUiLocalizationsDelegate
 
   @override
   Future<UiLocalizations> load(Locale locale) =>
-      SynchronousFuture<UiLocalizations>(const KonekoUiLocalizations());
+      SynchronousFuture<UiLocalizations>(KonekoUiLocalizations());
 
   @override
   bool shouldReload(_KonekoUiLocalizationsDelegate old) => false;

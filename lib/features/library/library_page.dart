@@ -203,7 +203,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                                 hist?.lastRuleName ?? '樱花源 · XPath',
                               ),
                               onCycleStatus: () {
-                                final values = CollectionStatus.values;
+                                const values = CollectionStatus.values;
                                 final next = values[
                                     (values.indexOf(entry.status) + 1) % 4];
                                 ref
@@ -244,7 +244,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                                   hist?.lastRuleName ?? '樱花源 · XPath',
                                 ),
                                 onCycleStatus: () {
-                                  final values = CollectionStatus.values;
+                                  const values = CollectionStatus.values;
                                   final next = values[
                                       (values.indexOf(entry.status) + 1) % 4];
                                   ref

@@ -307,9 +307,9 @@ class _AboutPageState extends State<AboutPage>
                           ),
                         ],
                       ),
-                      MiuixFrostedSection(
+                      const MiuixFrostedSection(
                         title: '构建说明',
-                        items: const [
+                        items: [
                           DecorationListItem(
                             title: Text('严格 UI / Core 剥离'),
                             subtitle: Text(

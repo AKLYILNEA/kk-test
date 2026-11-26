@@ -502,9 +502,8 @@ class _PickArea extends StatelessWidget {
                 >(
                   () => _ImmediatePanGestureRecognizer(debugOwner: this),
                   (instance) {
-                    instance
-                      ..onDown = (d) => emit(d.localPosition)
-                      ..onUpdate = (d) => emit(d.localPosition);
+                    instance.onDown = (d) => emit(d.localPosition);
+                    instance.onUpdate = (d) => emit(d.localPosition);
                   },
                 ),
           },
