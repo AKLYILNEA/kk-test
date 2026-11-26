@@ -166,10 +166,10 @@ void main() {
         KonekoGlyphs.tune,
       );
 
-      await tester.tap(find.text('在看').last);
+      await tester.tap(find.text('在看').first);
       await tester.pumpAndSettle();
       expect(find.text('修改追番状态'), findsOneWidget);
-      await tester.tap(find.text('想看').last);
+      await tester.tap(find.text('想看').first);
       await tester.pumpAndSettle();
 
       // Discover page opens FlClash condition filter sheet (no image search)
