@@ -170,6 +170,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('修改追番状态'), findsOneWidget);
       await tester.tap(find.text('想看').first);
+      await tester.pump(const Duration(seconds: 4));
       await tester.pumpAndSettle();
 
       // Discover page opens FlClash condition filter sheet (no image search)
@@ -181,6 +182,8 @@ void main() {
       await tester.tap(_barAction('按条件筛选'));
       await tester.pumpAndSettle();
       expect(find.text('按条件搜索'), findsOneWidget);
+      await tester.tap(_barAction('关闭'));
+      await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     },
   );
