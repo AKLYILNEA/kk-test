@@ -518,8 +518,7 @@ class UnifiedAnimeCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            AspectRatio(
-              aspectRatio: 0.72,
+            Expanded(
               child: KonekoPosterArt(
                 subject: subject,
                 overlayBadges: [

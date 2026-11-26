@@ -283,76 +283,67 @@ class _TopSummaryDeck extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          Row(
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              spacing: 8,
+              children: [
+                Expanded(
+                  child: _SummaryStat(label: '在追', value: '$watchingCount 部'),
+                ),
+                Expanded(
+                  child: _SummaryStat(
+                    label: '规则',
+                    value: '$enabledRulesCount 源 · $pct%',
+                    color: colorScheme.primary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SummaryStat extends StatelessWidget {
+  const _SummaryStat({required this.label, required this.value, this.color});
+
+  final String label;
+  final String value;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    return KonekoBlock(
+      corner: 16,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      child: Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: SizedBox(
+          width: double.infinity,
+          child: Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 6,
+            runSpacing: 4,
             children: [
-              Expanded(
-                child: KonekoBlock(
-                  corner: 16,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 9,
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    spacing: 6,
-                    children: [
-                      Flexible(
-                        child: Text(
-                          '在追',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTextStyle.caption1
-                              .of(context)
-                              .copyWith(color: colorScheme.onSurfaceVariant),
-                        ),
-                      ),
-                      Text(
-                        '$watchingCount 部',
-                        maxLines: 1,
-                        style: AppTextStyle.subheadline
-                            .of(context, emphasized: true)
-                            .copyWith(color: colorScheme.onSurface),
-                      ),
-                    ],
-                  ),
-                ),
+              Text(
+                label,
+                style: AppTextStyle.caption1
+                    .of(context)
+                    .copyWith(color: context.colorScheme.onSurfaceVariant),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: KonekoBlock(
-                  corner: 16,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 9,
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    spacing: 6,
-                    children: [
-                      Flexible(
-                        child: Text(
-                          '规则',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTextStyle.caption1
-                              .of(context)
-                              .copyWith(color: colorScheme.onSurfaceVariant),
-                        ),
-                      ),
-                      Text(
-                        '$enabledRulesCount 源 · $pct%',
-                        maxLines: 1,
-                        style: AppTextStyle.subheadline
-                            .of(context, emphasized: true)
-                            .copyWith(color: colorScheme.primary),
-                      ),
-                    ],
-                  ),
-                ),
+              Text(
+                value,
+                style: AppTextStyle.subheadline
+                    .of(context, emphasized: true)
+                    .copyWith(color: color ?? context.colorScheme.onSurface),
               ),
             ],
           ),
-        ],
+        ),
       ),
     );
   }
