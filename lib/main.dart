@@ -52,7 +52,9 @@ class KonekoApp extends ConsumerWidget {
           themeMode: settings.themeMode,
           theme: lightTheme,
           darkTheme: darkTheme,
-          textScale: settings.customTextScaleEnabled ? settings.textScale : null,
+          textScale: settings.customTextScaleEnabled
+              ? settings.textScale
+              : null,
           minTextScale: kMinTextScale,
           maxTextScale: kMaxTextScale,
           liquidGlass: liquidGlass,
@@ -61,11 +63,8 @@ class KonekoApp extends ConsumerWidget {
             KonekoUiLocalizations.delegate,
             GlobalWidgetsLocalizations.delegate,
           ],
-          supportedLocales: const [
-            Locale('zh', 'CN'),
-            Locale('en', 'US'),
-          ],
-          locale: const Locale('zh', 'CN'),
+          supportedLocales: const [kAppLocale, Locale('en', 'US')],
+          locale: kAppLocale,
           builder: (context, child) {
             final size = MediaQuery.sizeOf(context);
             return ViewScope(

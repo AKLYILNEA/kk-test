@@ -8,7 +8,7 @@ import 'package:koneko/features/history/history_page.dart';
 import 'package:koneko/features/theme/font_family_page.dart';
 import 'package:koneko/features/theme/theme_page.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
-import 'package:koneko/ui/koneko_icon.dart';
+import 'package:koneko/ui/koneko_scaffold.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:prism_ui/icons/icons.dart';
 import 'package:prism_ui/prism_ui.dart';
@@ -27,16 +27,11 @@ class MyPage extends ConsumerWidget {
     final library = ref.watch(libraryProvider);
     final enabledRules = rules.where((r) => r.enabled).length;
 
-    return SafeArea(
-      bottom: false,
-      child: CustomScrollView(
+    return KonekoScaffold(
+      title: '我的',
+      body: CustomScrollView(
         slivers: [
-          const SliverToBoxAdapter(
-            child: KonekoPageHeader(
-              title: '我的',
-              subtitle: 'Koneko UI-First · 纯净 FlClash / prism_ui 架构',
-            ),
-          ),
+          const KonekoScrollStart(),
           SliverPadding(
             padding: EdgeInsets.fromLTRB(16, 4, 16, 28 + bottomPadding),
             sliver: SliverList(
@@ -55,7 +50,7 @@ class MyPage extends ConsumerWidget {
                           shape: AppShape.circle,
                         ),
                         child: Center(
-                          child: Text(
+                          child: EmojiText(
                             '🐱',
                             style: AppTextStyle.title2.of(context),
                           ),
@@ -75,9 +70,11 @@ class MyPage extends ConsumerWidget {
                             const SizedBox(height: 3),
                             Text(
                               '追番 ${library.length} 部 · 合并历史 ${history.length} 部 · Twemoji 默认',
-                              style: AppTextStyle.caption1.of(context).copyWith(
-                                color: colorScheme.onSurfaceVariant,
-                              ),
+                              style: AppTextStyle.caption1
+                                  .of(context)
+                                  .copyWith(
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
                             ),
                           ],
                         ),
@@ -103,10 +100,9 @@ class MyPage extends ConsumerWidget {
                       title: const Text('合并历史记录'),
                       subtitle: Text('已按番剧合并 ${history.length} 组多源记录'),
                       trailing: const GlyphIcon(Glyphs.chevronForward),
-                      onPressed: () => Navigator.of(context).push(
-                        CardPageRoute<void>(
-                          builder: (_) => const HistoryPage(showBack: true),
-                        ),
+                      onPressed: () => BaseNavigator.push<void>(
+                        context,
+                        const HistoryPage(showBack: true),
                       ),
                     ),
                     DecorationListItem(
@@ -117,10 +113,9 @@ class MyPage extends ConsumerWidget {
                       title: const Text('Kazumi 规则管理'),
                       subtitle: Text('$enabledRules / ${rules.length} 条规则已启用'),
                       trailing: const GlyphIcon(Glyphs.chevronForward),
-                      onPressed: () => Navigator.of(context).push(
-                        CardPageRoute<void>(
-                          builder: (_) => const RulesPage(showBack: true),
-                        ),
+                      onPressed: () => BaseNavigator.push<void>(
+                        context,
+                        const RulesPage(showBack: true),
                       ),
                     ),
                     DecorationListItem(
@@ -134,8 +129,9 @@ class MyPage extends ConsumerWidget {
                         label: '测试合并',
                         height: 26,
                         fontSize: 11.5,
-                        backgroundColor:
-                            colorScheme.primary.withValues(alpha: 0.14),
+                        backgroundColor: colorScheme.primary.withValues(
+                          alpha: 0.14,
+                        ),
                         foregroundColor: colorScheme.primary,
                       ),
                       onPressed: () {
@@ -164,9 +160,8 @@ class MyPage extends ConsumerWidget {
                       title: const Text('外观主题'),
                       subtitle: const Text('实时预览 · HCT 调色盘 · 液态玻璃 · 深色模式'),
                       trailing: const GlyphIcon(Glyphs.chevronForward),
-                      onPressed: () => Navigator.of(context).push(
-                        CardPageRoute<void>(builder: (_) => const ThemePage()),
-                      ),
+                      onPressed: () =>
+                          BaseNavigator.push<void>(context, const ThemePage()),
                     ),
                     ValueListenableBuilder<String?>(
                       valueListenable: FontManager.fontFamilyNotifier,
@@ -178,13 +173,13 @@ class MyPage extends ConsumerWidget {
                           ),
                           title: const Text('字体管理（选后秒切）'),
                           subtitle: Text(
-                            FontManager.selectedName ?? '系统默认（Emoji 固定 Twemoji）',
+                            FontManager.selectedName ??
+                                '系统默认（Emoji 固定 Twemoji）',
                           ),
                           trailing: const GlyphIcon(Glyphs.chevronForward),
-                          onPressed: () => Navigator.of(context).push(
-                            CardPageRoute<void>(
-                              builder: (_) => const FontFamilyPage(),
-                            ),
+                          onPressed: () => BaseNavigator.push<void>(
+                            context,
+                            const FontFamilyPage(),
                           ),
                         );
                       },
@@ -204,10 +199,9 @@ class MyPage extends ConsumerWidget {
                       title: const Text('关于 Koneko'),
                       subtitle: const Text('MIUIX 动态流体渐变关于页 · v$kAppVersion'),
                       trailing: const GlyphIcon(Glyphs.chevronForward),
-                      onPressed: () => Navigator.of(context).push(
-                        CardPageRoute<void>(
-                          builder: (_) => const AboutPage(showBack: true),
-                        ),
+                      onPressed: () => BaseNavigator.push<void>(
+                        context,
+                        const AboutPage(showBack: true),
                       ),
                     ),
                   ],
@@ -223,11 +217,7 @@ class MyPage extends ConsumerWidget {
 
 /// Dedicated Kazumi Rules Manager Page (accessible from Desktop Sidebar or MyPage).
 class RulesPage extends ConsumerStatefulWidget {
-  const RulesPage({
-    super.key,
-    this.showBack = false,
-    this.bottomPadding = 0,
-  });
+  const RulesPage({super.key, this.showBack = false, this.bottomPadding = 0});
 
   final bool showBack;
   final double bottomPadding;
@@ -253,125 +243,107 @@ class _RulesPageState extends ConsumerState<RulesPage> {
     final colorScheme = context.colorScheme;
     final rules = ref.watch(rulesProvider);
 
-    return Surface(
-      color: SurfaceLevel.page.colorOf(colorScheme),
-      child: SafeArea(
-        bottom: false,
-        child: CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(
-              child: KonekoPageHeader(
-                title: '规则管理',
-                subtitle: '完全兼容 Kazumi JSON / XPath 规则格式',
-                showBack: widget.showBack,
-                actions: [
-                  KonekoChip(
-                    label: _testing ? '测速中...' : '全部测速',
-                    height: 36,
-                    fontSize: 12.5,
-                    leading: KonekoIcon(
-                      KonekoIcons.gauge,
-                      size: 14,
-                      color: colorScheme.onPrimary,
-                    ),
-                    backgroundColor: colorScheme.primary,
-                    foregroundColor: colorScheme.onPrimary,
-                    onPressed: _testAll,
-                  ),
-                ],
-              ),
-            ),
-            SliverPadding(
-              padding: EdgeInsets.fromLTRB(
-                16,
-                8,
-                16,
-                24 + widget.bottomPadding,
-              ),
-              sliver: SliverList.separated(
-                itemCount: rules.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 12),
-                itemBuilder: (context, index) {
-                  final rule = rules[index];
-                  return KonekoCard(
-                    corner: 24,
-                    padding: const EdgeInsets.all(14),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 42,
-                          height: 42,
-                          decoration: ShapeDecoration(
-                            color: rule.enabled
-                                ? colorScheme.primary.withValues(alpha: 0.14)
-                                : SurfaceLevel.block.colorOf(colorScheme),
-                            shape: AppShape.md,
-                          ),
-                          child: Center(
-                            child: KonekoIcon(
-                              KonekoIcons.server,
-                              size: 20,
-                              color: rule.enabled
-                                  ? colorScheme.primary
-                                  : colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      rule.name,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: AppTextStyle.callout
-                                          .of(context, emphasized: true)
-                                          .copyWith(color: colorScheme.onSurface),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  KonekoChip(
-                                    label: '${rule.latencyMs} ms',
-                                    height: 22,
-                                    fontSize: 10.5,
-                                    backgroundColor: rule.latencyMs < 140
-                                        ? colorScheme.successContainer
-                                        : colorScheme.warningContainer,
-                                    foregroundColor: rule.latencyMs < 140
-                                        ? colorScheme.onSuccessContainer
-                                        : colorScheme.onWarningContainer,
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                '${rule.apiType} · v${rule.version} · ${rule.lastCheckedLabel}',
-                                style: AppTextStyle.caption1.of(context).copyWith(
-                                  color: colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Switch(
-                          value: rule.enabled,
-                          onChanged: (v) =>
-                              ref.read(rulesProvider.notifier).toggle(rule.id, v),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
+    return KonekoScaffold(
+      title: '规则管理',
+      showBack: widget.showBack,
+      actions: [
+        IconButtonData(
+          glyph: KonekoGlyphs.speed,
+          tooltip: _testing ? '测速中…' : '全部测速',
+          isLoading: _testing,
+          onPressed: _testAll,
         ),
+      ],
+      body: CustomScrollView(
+        slivers: [
+          const KonekoScrollStart(),
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(16, 8, 16, 24 + widget.bottomPadding),
+            sliver: SliverList.separated(
+              itemCount: rules.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 12),
+              itemBuilder: (context, index) {
+                final rule = rules[index];
+                return KonekoCard(
+                  corner: 24,
+                  padding: const EdgeInsets.all(14),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 42,
+                        height: 42,
+                        decoration: ShapeDecoration(
+                          color: rule.enabled
+                              ? colorScheme.primary.withValues(alpha: 0.14)
+                              : SurfaceLevel.block.colorOf(colorScheme),
+                          shape: AppShape.md,
+                        ),
+                        child: Center(
+                          child: GlyphIcon(
+                            KonekoGlyphs.resources,
+                            size: 20,
+                            color: rule.enabled
+                                ? colorScheme.primary
+                                : colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    rule.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: AppTextStyle.callout
+                                        .of(context, emphasized: true)
+                                        .copyWith(color: colorScheme.onSurface),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                KonekoChip(
+                                  label: '${rule.latencyMs} ms',
+                                  height: 22,
+                                  fontSize: 10.5,
+                                  backgroundColor: rule.latencyMs < 140
+                                      ? colorScheme.successContainer
+                                      : colorScheme.warningContainer,
+                                  foregroundColor: rule.latencyMs < 140
+                                      ? colorScheme.onSuccessContainer
+                                      : colorScheme.onWarningContainer,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${rule.apiType} · v${rule.version} · ${rule.lastCheckedLabel}',
+                              style: AppTextStyle.caption1
+                                  .of(context)
+                                  .copyWith(
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Switch(
+                        value: rule.enabled,
+                        onChanged: (v) =>
+                            ref.read(rulesProvider.notifier).toggle(rule.id, v),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

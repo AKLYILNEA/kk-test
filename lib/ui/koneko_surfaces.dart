@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
-import 'package:koneko/ui/koneko_icon.dart';
+import 'package:koneko/ui/koneko_glyphs.dart';
 import 'package:koneko_contract/koneko_contract.dart';
 import 'package:prism_ui/icons/icons.dart';
 import 'package:prism_ui/prism_ui.dart';
@@ -112,7 +112,8 @@ class KonekoBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
-    final fill = color ??
+    final fill =
+        color ??
         (selected
             ? colorScheme.primary.withValues(alpha: 0.14)
             : SurfaceLevel.block.colorOf(colorScheme));
@@ -166,11 +167,13 @@ class KonekoChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
-    final bg = backgroundColor ??
+    final bg =
+        backgroundColor ??
         (selected
             ? colorScheme.primary
             : SurfaceLevel.block.colorOf(colorScheme));
-    final fg = foregroundColor ??
+    final fg =
+        foregroundColor ??
         (selected ? colorScheme.onPrimary : colorScheme.onSurfaceVariant);
 
     final row = Padding(
@@ -179,33 +182,23 @@ class KonekoChip extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          if (leading != null) ...[
-            leading!,
-            const SizedBox(width: 4),
-          ],
+          if (leading != null) ...[leading!, const SizedBox(width: 4)],
           Flexible(
-            child: Text(
+            child: EmojiText(
               label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              strutStyle: StrutStyle(
-                fontSize: fontSize,
-                height: 1.0,
-                forceStrutHeight: true,
-                leadingDistribution: TextLeadingDistribution.even,
-              ),
-              style: AppTextStyle.caption1.of(context, emphasized: true).copyWith(
-                fontSize: fontSize,
-                height: 1.0,
-                leadingDistribution: TextLeadingDistribution.even,
-                color: fg,
-              ),
+              style: AppTextStyle.caption1
+                  .of(context, emphasized: true)
+                  .copyWith(
+                    fontSize: fontSize,
+                    height: 1.0,
+                    leadingDistribution: TextLeadingDistribution.even,
+                    color: fg,
+                  ),
             ),
           ),
-          if (trailing != null) ...[
-            const SizedBox(width: 4),
-            trailing!,
-          ],
+          if (trailing != null) ...[const SizedBox(width: 4), trailing!],
         ],
       ),
     );
@@ -239,8 +232,7 @@ class KonekoCircleButton extends StatelessWidget {
   const KonekoCircleButton({
     super.key,
     required this.onPressed,
-    this.glyph,
-    this.icon,
+    required this.glyph,
     this.size = 40,
     this.iconSize = 19,
     this.fillColor,
@@ -249,8 +241,7 @@ class KonekoCircleButton extends StatelessWidget {
   });
 
   final VoidCallback? onPressed;
-  final Glyph? glyph;
-  final IconData? icon;
+  final Glyph glyph;
   final double size;
   final double iconSize;
   final Color? fillColor;
@@ -262,7 +253,7 @@ class KonekoCircleButton extends StatelessWidget {
     final colorScheme = context.colorScheme;
     final fill = fillColor ?? SurfaceLevel.card.colorOf(colorScheme);
     final fg = foregroundColor ?? colorScheme.onSurface;
-    final child = SizedBox.square(
+    final button = SizedBox.square(
       dimension: size,
       child: DecoratedBox(
         decoration: ShapeDecoration(
@@ -275,89 +266,16 @@ class KonekoCircleButton extends StatelessWidget {
           clipsChild: true,
           onPressed: onPressed,
           child: Center(
-            child: glyph != null
-                ? GlyphIcon(glyph!, size: iconSize, color: fg)
-                : KonekoIcon(icon ?? KonekoIcons.sparkles, size: iconSize, color: fg),
+            child: GlyphIcon(glyph, size: iconSize, color: fg),
           ),
         ),
       ),
     );
+    final child = ElasticPress(enabled: onPressed != null, child: button);
     if (tooltip != null) {
       return Tooltip(message: tooltip!, child: child);
     }
     return child;
-  }
-}
-
-/// Clean FlClash top header bar with large title and circular action buttons.
-class KonekoPageHeader extends StatelessWidget {
-  const KonekoPageHeader({
-    super.key,
-    required this.title,
-    this.subtitle,
-    this.showBack = false,
-    this.onBack,
-    this.actions = const [],
-  });
-
-  final String title;
-  final String? subtitle;
-  final bool showBack;
-  final VoidCallback? onBack;
-  final List<Widget> actions;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = context.colorScheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-      child: Row(
-        children: [
-          if (showBack) ...[
-            KonekoCircleButton(
-              glyph: Glyphs.chevronBack,
-              tooltip: '返回',
-              onPressed: onBack ?? () => Navigator.of(context).maybePop(),
-            ),
-            const SizedBox(width: 12),
-          ],
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTextStyle.title1.of(context, emphasized: true).copyWith(
-                    color: colorScheme.onSurface,
-                  ),
-                ),
-                if (subtitle != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(
-                      subtitle!,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyle.footnote.of(context).copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          if (actions.isNotEmpty)
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              spacing: 8,
-              children: actions,
-            ),
-        ],
-      ),
-    );
   }
 }
 
@@ -382,13 +300,7 @@ class KonekoPosterArt extends StatelessWidget {
     );
     final content = overlayBadges.isEmpty
         ? art
-        : Stack(
-            fit: StackFit.expand,
-            children: [
-              art,
-              ...overlayBadges,
-            ],
-          );
+        : Stack(fit: StackFit.expand, children: [art, ...overlayBadges]);
     if (borderRadius == BorderRadius.zero) {
       return content;
     }
@@ -523,7 +435,10 @@ class _PosterPainter extends CustomPainter {
           ..lineTo(size.width * 0.8, size.height * 0.66)
           ..lineTo(size.width * 0.2, size.height * 0.66)
           ..close();
-        canvas.drawPath(path, Paint()..color = Colors.white.withValues(alpha: 0.24));
+        canvas.drawPath(
+          path,
+          Paint()..color = Colors.white.withValues(alpha: 0.24),
+        );
         canvas.drawCircle(
           Offset(size.width * 0.5, size.height * 0.5),
           r * 0.26,
@@ -559,10 +474,7 @@ class _PosterPainter extends CustomPainter {
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           stops: const [0.55, 1.0],
-          colors: [
-            Colors.transparent,
-            Colors.black.withValues(alpha: 0.34),
-          ],
+          colors: [Colors.transparent, Colors.black.withValues(alpha: 0.34)],
         ).createShader(rect),
     );
   }
@@ -619,7 +531,9 @@ class UnifiedAnimeCard extends StatelessWidget {
                         label: 'TOP ${subject.rank}',
                         height: 22,
                         fontSize: 10.5,
-                        backgroundColor: colorScheme.primary.withValues(alpha: 0.92),
+                        backgroundColor: colorScheme.primary.withValues(
+                          alpha: 0.92,
+                        ),
                         foregroundColor: colorScheme.onPrimary,
                       ),
                     ),
@@ -631,8 +545,8 @@ class UnifiedAnimeCard extends StatelessWidget {
                         label: '在追',
                         height: 22,
                         fontSize: 10.5,
-                        leading: KonekoIcon(
-                          KonekoIcons.heart,
+                        leading: GlyphIcon(
+                          KonekoGlyphs.heart,
                           size: 11,
                           color: colorScheme.onPrimary,
                         ),
@@ -647,8 +561,8 @@ class UnifiedAnimeCard extends StatelessWidget {
                       label: subject.score.toStringAsFixed(1),
                       height: 22,
                       fontSize: 11,
-                      leading: const KonekoIcon(
-                        KonekoIcons.star,
+                      leading: const GlyphIcon(
+                        KonekoGlyphs.star,
                         size: 11,
                         color: Color(0xFFFFC145),
                       ),
@@ -680,9 +594,9 @@ class UnifiedAnimeCard extends StatelessWidget {
                           '更至第 ${subject.airedEpisodes} 话 · ${subject.tags.first}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: AppTextStyle.caption1.of(context).copyWith(
-                            color: colorScheme.onSurfaceVariant,
-                          ),
+                          style: AppTextStyle.caption1
+                              .of(context)
+                              .copyWith(color: colorScheme.onSurfaceVariant),
                         ),
                       ),
                     ],

@@ -5,7 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:koneko/common/constants.dart';
 import 'package:koneko/common/providers.dart';
-import 'package:koneko/ui/koneko_icon.dart';
+import 'package:koneko/ui/koneko_glyphs.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:koneko_contract/koneko_contract.dart';
 import 'package:prism_ui/icons/icons.dart';
@@ -69,25 +69,30 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
   void dispose() {
     _ticker?.cancel();
     _gestureTimer?.cancel();
-    _persistProgress();
     super.dispose();
   }
 
   void _persistProgress() {
     final catalog = ref.read(catalogRepositoryProvider);
     final subject = catalog.getSubjectById(widget.subjectId);
-    ref.read(historyProvider.notifier).recordProgress(
-      subjectId: widget.subjectId,
-      episodeNumber: _episode,
-      positionSeconds: _positionSeconds,
-      durationSeconds: _durationSeconds,
-      ruleId: _ruleId,
-      ruleName: _ruleName,
-    );
+    ref
+        .read(historyProvider.notifier)
+        .recordProgress(
+          subjectId: widget.subjectId,
+          episodeNumber: _episode,
+          positionSeconds: _positionSeconds,
+          durationSeconds: _durationSeconds,
+          ruleId: _ruleId,
+          ruleName: _ruleName,
+        );
     if (subject != null) {
       ref
           .read(libraryProvider.notifier)
-          .markEpisodeWatched(subject.subjectId, _episode, subject.totalEpisodes);
+          .markEpisodeWatched(
+            subject.subjectId,
+            _episode,
+            subject.totalEpisodes,
+          );
     }
   }
 
@@ -106,7 +111,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
   Widget build(BuildContext context) {
     final catalog = ref.watch(catalogRepositoryProvider);
     final subject =
-        catalog.getSubjectById(widget.subjectId) ?? catalog.getAllSubjects().first;
+        catalog.getSubjectById(widget.subjectId) ??
+        catalog.getAllSubjects().first;
     final episodes = catalog.getEpisodes(
       subject.subjectId,
       watchedCount: _episode - 1,
@@ -115,7 +121,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     final probes = catalog.probeSources(subject.subjectId);
     final danmaku = catalog.getDanmaku(subject.subjectId, _episode);
 
-    return ColoredBox(
+    final view = ColoredBox(
       color: const Color(0xFF0A0D16),
       child: Stack(
         fit: StackFit.expand,
@@ -173,8 +179,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                         mainAxisSize: MainAxisSize.min,
                         spacing: 10,
                         children: [
-                          const KonekoIcon(
-                            KonekoIcons.pause,
+                          const GlyphIcon(
+                            KonekoGlyphs.pause,
                             size: 18,
                             color: Colors.white,
                           ),
@@ -209,8 +215,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                     mainAxisSize: MainAxisSize.min,
                     spacing: 8,
                     children: [
-                      const KonekoIcon(
-                        KonekoIcons.sun,
+                      const GlyphIcon(
+                        KonekoGlyphs.sun,
                         size: 16,
                         color: Colors.white,
                       ),
@@ -239,23 +245,14 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                       padding: const EdgeInsets.fromLTRB(6, 6, 14, 6),
                       child: Row(
                         children: [
-                          PressSurface(
-                            fill: Colors.white.withValues(alpha: 0.14),
-                            shape: AppShape.circle,
-                            onPressed: () {
-                              _persistProgress();
-                              Navigator.of(context).maybePop();
-                            },
-                            child: const SizedBox.square(
-                              dimension: 34,
-                              child: Center(
-                                child: GlyphIcon(
-                                  Glyphs.chevronBack,
-                                  size: 18,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
+                          KonekoCircleButton(
+                            glyph: Glyphs.backFor(Theme.of(context).platform),
+                            tooltip: UiLocalizations.of(context).back,
+                            size: 34,
+                            iconSize: 18,
+                            fillColor: Colors.white.withValues(alpha: 0.14),
+                            foregroundColor: Colors.white,
+                            onPressed: () => Navigator.of(context).maybePop(),
                           ),
                           const SizedBox(width: 10),
                           Expanded(
@@ -278,7 +275,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                                   style: AppTextStyle.caption2
                                       .of(context)
                                       .copyWith(
-                                        color: Colors.white.withValues(alpha: 0.78),
+                                        color: Colors.white.withValues(
+                                          alpha: 0.78,
+                                        ),
                                       ),
                                 ),
                               ],
@@ -295,16 +294,26 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                       mainAxisSize: MainAxisSize.min,
                       spacing: 4,
                       children: [
-                        _HudSmallBtn(
-                          label: _showDanmaku ? '弹幕开' : '弹幕关',
-                          active: _showDanmaku,
-                          onTap: () =>
+                        KonekoCircleButton(
+                          glyph: KonekoGlyphs.danmaku,
+                          tooltip: _showDanmaku ? '关闭弹幕' : '开启弹幕',
+                          size: 36,
+                          foregroundColor: Colors.white,
+                          fillColor: _showDanmaku
+                              ? context.colorScheme.primary
+                              : Colors.white.withValues(alpha: 0.14),
+                          onPressed: () =>
                               setState(() => _showDanmaku = !_showDanmaku),
                         ),
-                        _HudSmallBtn(
-                          label: '选集/源',
-                          active: _drawerOpen,
-                          onTap: () =>
+                        KonekoCircleButton(
+                          glyph: KonekoGlyphs.layers,
+                          tooltip: '选集与播放源',
+                          size: 36,
+                          foregroundColor: Colors.white,
+                          fillColor: _drawerOpen
+                              ? context.colorScheme.primary
+                              : Colors.white.withValues(alpha: 0.14),
+                          onPressed: () =>
                               setState(() => _drawerOpen = !_drawerOpen),
                         ),
                       ],
@@ -346,9 +355,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                               min: 0,
                               max: _durationSeconds.toDouble(),
                               value: _positionSeconds.toDouble(),
-                              onChanged: (v) => setState(
-                                () => _positionSeconds = v.round(),
-                              ),
+                              onChanged: (v) =>
+                                  setState(() => _positionSeconds = v.round()),
                             ),
                           ),
                         ),
@@ -371,13 +379,14 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                         PressSurface(
                           fill: Colors.white.withValues(alpha: 0.16),
                           shape: AppShape.circle,
-                          onPressed: () =>
-                              setState(() => _playing = !_playing),
+                          onPressed: () => setState(() => _playing = !_playing),
                           child: SizedBox.square(
                             dimension: 38,
                             child: Center(
-                              child: KonekoIcon(
-                                _playing ? KonekoIcons.pause : KonekoIcons.play,
+                              child: GlyphIcon(
+                                _playing
+                                    ? KonekoGlyphs.pause
+                                    : KonekoGlyphs.play,
                                 size: 18,
                                 color: Colors.white,
                               ),
@@ -400,8 +409,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                           child: const SizedBox.square(
                             dimension: 38,
                             child: Center(
-                              child: KonekoIcon(
-                                KonekoIcons.skipNext,
+                              child: GlyphIcon(
+                                KonekoGlyphs.skipNext,
                                 size: 17,
                                 color: Colors.white,
                               ),
@@ -409,20 +418,22 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                           ),
                         ),
                         const Spacer(),
-                        _HudSmallBtn(
+                        _HudAction(
                           label: '${_speed.toStringAsFixed(2)}x',
                           active: _speed != 1.0,
                           onTap: () {
                             const speeds = [1.0, 1.25, 1.5, 2.0, 0.75];
                             final next =
-                                speeds[(speeds.indexOf(_speed) + 1) % speeds.length];
+                                speeds[(speeds.indexOf(_speed) + 1) %
+                                    speeds.length];
                             setState(() => _speed = next);
                           },
                         ),
                         const SizedBox(width: 6),
-                        _HudSmallBtn(
+                        _HudAction(
                           label: '切源',
-                          active: _drawerOpen && _drawerTab == _DrawerTab.sources,
+                          active:
+                              _drawerOpen && _drawerTab == _DrawerTab.sources,
                           onTap: () => setState(() {
                             _drawerTab = _DrawerTab.sources;
                             _drawerOpen = true;
@@ -464,11 +475,11 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                       _DrawerTab.episodes => GridView.builder(
                         gridDelegate:
                             const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 4,
-                          crossAxisSpacing: 8,
-                          mainAxisSpacing: 8,
-                          childAspectRatio: 1.35,
-                        ),
+                              crossAxisCount: 4,
+                              crossAxisSpacing: 8,
+                              mainAxisSpacing: 8,
+                              childAspectRatio: 1.35,
+                            ),
                         itemCount: episodes.length,
                         itemBuilder: (_, index) {
                           final ep = episodes[index];
@@ -506,7 +517,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                           final active = p.ruleId == _ruleId;
                           return PressSurface(
                             fill: active
-                                ? context.colorScheme.primary.withValues(alpha: 0.35)
+                                ? context.colorScheme.primary.withValues(
+                                    alpha: 0.35,
+                                  )
                                 : Colors.white.withValues(alpha: 0.1),
                             shape: AppShape.md,
                             padding: const EdgeInsets.all(12),
@@ -540,8 +553,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                                         style: AppTextStyle.caption1
                                             .of(context)
                                             .copyWith(
-                                              color: Colors.white
-                                                  .withValues(alpha: 0.72),
+                                              color: Colors.white.withValues(
+                                                alpha: 0.72,
+                                              ),
                                             ),
                                       ),
                                     ],
@@ -574,9 +588,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                             ),
                             child: Text(
                               d.text,
-                              style: AppTextStyle.footnote.of(context).copyWith(
-                                color: Color(d.colorHex),
-                              ),
+                              style: AppTextStyle.footnote
+                                  .of(context)
+                                  .copyWith(color: Color(d.colorHex)),
                             ),
                           );
                         },
@@ -590,14 +604,17 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
         ],
       ),
     );
+    return PopScope<void>(
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) _persistProgress();
+      },
+      child: view,
+    );
   }
 }
 
 class _DanmakuOverlay extends StatelessWidget {
-  const _DanmakuOverlay({
-    required this.items,
-    required this.positionSeconds,
-  });
+  const _DanmakuOverlay({required this.items, required this.positionSeconds});
 
   final List<DanmakuItem> items;
   final int positionSeconds;
@@ -670,8 +687,8 @@ class _GlassPill extends StatelessWidget {
   }
 }
 
-class _HudSmallBtn extends StatelessWidget {
-  const _HudSmallBtn({
+class _HudAction extends StatelessWidget {
+  const _HudAction({
     required this.label,
     required this.active,
     required this.onTap,
@@ -683,18 +700,20 @@ class _HudSmallBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return PressSurface(
-      fill: active
-          ? context.colorScheme.primary
-          : Colors.white.withValues(alpha: 0.14),
-      shape: AppShape.full,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-      onPressed: onTap,
-      child: Text(
-        label,
-        style: AppTextStyle.caption1
-            .of(context, emphasized: true)
-            .copyWith(color: Colors.white),
+    return ElasticPress(
+      child: PressSurface(
+        fill: active
+            ? context.colorScheme.primary
+            : Colors.white.withValues(alpha: 0.14),
+        shape: AppShape.full,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        onPressed: onTap,
+        child: Text(
+          label,
+          style: AppTextStyle.caption1
+              .of(context, emphasized: true)
+              .copyWith(color: Colors.white),
+        ),
       ),
     );
   }

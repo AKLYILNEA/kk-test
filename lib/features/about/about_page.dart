@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/widgets.dart';
 import 'package:koneko/common/constants.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
+import 'package:koneko/ui/koneko_scaffold.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:koneko/ui/miuix/miuix_bg_effect.dart';
 import 'package:koneko/ui/miuix/miuix_frosted_card.dart';
@@ -41,6 +42,26 @@ class _AboutPageState extends State<AboutPage>
   static const double _heroExtent = 280.0;
   double _scrollOffset = 0.0;
   bool _checkingUpdate = false;
+  Animation<double>? _routeAnimation;
+  Animation<double>? _coverAnimation;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (_routeAnimation != route?.animation) {
+      _routeAnimation?.removeStatusListener(_onRouteStatus);
+      _routeAnimation = route?.animation;
+      _routeAnimation?.addStatusListener(_onRouteStatus);
+    }
+    if (_coverAnimation != route?.secondaryAnimation) {
+      _coverAnimation?.removeStatusListener(_onRouteStatus);
+      _coverAnimation = route?.secondaryAnimation;
+      _coverAnimation?.addStatusListener(_onRouteStatus);
+    }
+  }
+
+  void _onRouteStatus(AnimationStatus status) => setState(() {});
 
   @override
   void initState() {
@@ -50,6 +71,8 @@ class _AboutPageState extends State<AboutPage>
 
   @override
   void dispose() {
+    _routeAnimation?.removeStatusListener(_onRouteStatus);
+    _coverAnimation?.removeStatusListener(_onRouteStatus);
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _bgController.dispose();
@@ -79,7 +102,7 @@ class _AboutPageState extends State<AboutPage>
     setState(() => _checkingUpdate = false);
     showKonekoBanner(
       context,
-      '当前已是最新版本 v$kAppVersion（UI-First 首发版）',
+      '当前已是最新版本 v$kAppVersion（UI 预览版）',
       level: BannerLevel.success,
     );
   }
@@ -115,11 +138,19 @@ class _AboutPageState extends State<AboutPage>
     final isWide = !context.isMobileView;
     final preset = MiuixBgConfig.of(isWide: isWide, isDark: isDark);
     final progress = _scrollProgress;
+    final routeMoving =
+        (_routeAnimation?.isAnimating ?? false) ||
+        (_coverAnimation?.isAnimating ?? false);
+    final pageColor = SurfaceLevel.page.colorOf(colorScheme);
+    final barAlpha = ((progress - 0.35) / 0.65).clamp(0.0, 1.0);
 
     _bgController.sync(
       playing:
           widget.dynamicBackground &&
           !context.disableAnimations &&
+          PageActivityScope.isActiveOf(context) &&
+          ModalRoute.isCurrentOf(context) != false &&
+          !routeMoving &&
           progress < 1.0,
       colorInterpPeriod: preset.colorInterpPeriod,
     );
@@ -136,42 +167,38 @@ class _AboutPageState extends State<AboutPage>
       );
     }
 
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Positioned.fill(
-          child: MiuixAboutBackdrop(
-            backdropKey: _backdropKey,
-            controller: _bgController,
-            preset: preset,
-            alpha: (1.0 - progress).clamp(0.0, 1.0),
-          ),
+    return KonekoScaffold(
+      title: '关于',
+      showBack: widget.showBack,
+      barBackgroundColor: pageColor.withValues(alpha: barAlpha),
+      leadingShadows: const [
+        BoxShadow(
+          color: Color(0x14000000),
+          blurRadius: 20,
+          offset: Offset(0, 8),
         ),
-        SafeArea(
-          bottom: false,
-          child: CustomScrollView(
+      ],
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          Positioned.fill(
+            child: MiuixAboutBackdrop(
+              backdropKey: _backdropKey,
+              controller: _bgController,
+              preset: preset,
+              alpha: (1.0 - progress).clamp(0.0, 1.0),
+            ),
+          ),
+          CustomScrollView(
             controller: _scrollController,
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
-              if (widget.showBack)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: KonekoCircleButton(
-                        glyph: Glyphs.chevronBack,
-                        tooltip: '返回',
-                        onPressed: () => Navigator.of(context).maybePop(),
-                      ),
-                    ),
-                  ),
-                ),
+              const KonekoScrollStart(),
               SliverToBoxAdapter(
                 child: KeyedSubtree(
                   key: _heroKey,
                   child: Transform.translate(
-                    offset: Offset(0, _scrollOffset * 0.55),
+                    offset: Offset(0, _scrollOffset * 0.65),
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(24, 24, 24, 18),
                       child: Column(
@@ -219,7 +246,7 @@ class _AboutPageState extends State<AboutPage>
                                       fontSize: 12,
                                       backgroundColor: isDark
                                           ? colorScheme.surfaceContainer
-                                              .withValues(alpha: 0.72)
+                                                .withValues(alpha: 0.72)
                                           : const Color(0xB8FFFFFF),
                                       foregroundColor:
                                           colorScheme.onSurfaceVariant,
@@ -230,7 +257,7 @@ class _AboutPageState extends State<AboutPage>
                                       fontSize: 11.5,
                                       backgroundColor: isDark
                                           ? colorScheme.surfaceContainer
-                                              .withValues(alpha: 0.72)
+                                                .withValues(alpha: 0.72)
                                           : const Color(0xB8FFFFFF),
                                       foregroundColor:
                                           colorScheme.onSurfaceVariant,
@@ -248,8 +275,9 @@ class _AboutPageState extends State<AboutPage>
                                     color: colorScheme.primary,
                                   ),
                                   backgroundColor: isDark
-                                      ? colorScheme.surfaceContainer
-                                          .withValues(alpha: 0.75)
+                                      ? colorScheme.surfaceContainer.withValues(
+                                          alpha: 0.75,
+                                        )
                                       : const Color(0xD8FFFFFF),
                                   foregroundColor: colorScheme.onSurface,
                                   onPressed: _checkUpdate,
@@ -269,13 +297,16 @@ class _AboutPageState extends State<AboutPage>
                     16,
                     8,
                     16,
-                    32 + MediaQuery.paddingOf(context).bottom + widget.bottomPadding,
+                    32 +
+                        MediaQuery.paddingOf(context).bottom +
+                        widget.bottomPadding,
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       MiuixFrostedSection(
                         title: '项目与架构',
+                        blurEnabled: !routeMoving,
                         items: [
                           _linkRow(
                             glyph: KonekoGlyphs.code,
@@ -307,13 +338,14 @@ class _AboutPageState extends State<AboutPage>
                           ),
                         ],
                       ),
-                      const MiuixFrostedSection(
+                      MiuixFrostedSection(
                         title: '构建说明',
-                        items: [
+                        blurEnabled: !routeMoving,
+                        items: const [
                           DecorationListItem(
                             title: Text('严格 UI / Core 剥离'),
                             subtitle: Text(
-                              '当前 v0.0.1 为 UI-First 预览构建（koneko_contract + koneko_mock），下一阶段无缝接入 Kazumi 真核心。',
+                              '当前 v$kAppVersion 为 UI 预览构建（koneko_contract + koneko_mock），下一阶段无缝接入 Kazumi 真核心。',
                             ),
                           ),
                           DecorationListItem(
@@ -328,8 +360,8 @@ class _AboutPageState extends State<AboutPage>
               ),
             ],
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

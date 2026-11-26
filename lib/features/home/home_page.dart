@@ -6,7 +6,7 @@ import 'package:koneko/features/detail/subject_detail_page.dart';
 import 'package:koneko/features/discover/discover_page.dart';
 import 'package:koneko/features/player/player_page.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
-import 'package:koneko/ui/koneko_icon.dart';
+import 'package:koneko/ui/koneko_scaffold.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:koneko_contract/koneko_contract.dart';
 import 'package:prism_ui/icons/icons.dart';
@@ -26,22 +26,25 @@ class _HomePageState extends ConsumerState<HomePage> {
   String _selectedTag = '全部';
 
   void _openDetail(AnimeSubject subject) {
-    Navigator.of(context).push(
-      CardPageRoute<void>(
-        builder: (_) => SubjectDetailPage(subjectId: subject.subjectId),
-      ),
+    BaseNavigator.push<void>(
+      context,
+      SubjectDetailPage(subjectId: subject.subjectId),
     );
   }
 
-  void _openPlayer(AnimeSubject subject, int episode, String ruleId, String ruleName) {
-    Navigator.of(context).push(
-      CardPageRoute<void>(
-        builder: (_) => PlayerPage(
-          subjectId: subject.subjectId,
-          initialEpisode: episode,
-          initialRuleId: ruleId,
-          initialRuleName: ruleName,
-        ),
+  void _openPlayer(
+    AnimeSubject subject,
+    int episode,
+    String ruleId,
+    String ruleName,
+  ) {
+    BaseNavigator.push<void>(
+      context,
+      PlayerPage(
+        subjectId: subject.subjectId,
+        initialEpisode: episode,
+        initialRuleId: ruleId,
+        initialRuleName: ruleName,
       ),
     );
   }
@@ -65,51 +68,42 @@ class _HomePageState extends ConsumerState<HomePage> {
         : (subjects.isNotEmpty ? subjects.first : null);
     final enabledRulesCount = rules.where((r) => r.enabled).length;
 
-    return SafeArea(
-      bottom: false,
-      child: LayoutBuilder(
+    return KonekoScaffold(
+      title: '推荐',
+      actions: [
+        IconButtonData(
+          glyph: Glyphs.search,
+          tooltip: '发现搜索',
+          onPressed: () {
+            BaseNavigator.push<void>(context, const DiscoverPage());
+          },
+        ),
+        IconButtonData(
+          glyph: KonekoGlyphs.refresh,
+          tooltip: '刷新榜单',
+          onPressed: () {
+            showKonekoBanner(
+              context,
+              '已刷新 2026 秋季热门榜单',
+              level: BannerLevel.success,
+            );
+          },
+        ),
+      ],
+      body: LayoutBuilder(
         builder: (context, constraints) {
           final width = constraints.maxWidth;
           final crossAxisCount = width >= 1020
               ? 5
               : width >= 760
-                  ? 4
-                  : width >= 500
-                      ? 3
-                      : 2;
+              ? 4
+              : width >= 500
+              ? 3
+              : 2;
 
           return CustomScrollView(
             slivers: [
-              SliverToBoxAdapter(
-                child: KonekoPageHeader(
-                  title: '推荐',
-                  subtitle: '2026 秋季新番 · 纯净 prism_ui 视图',
-                  actions: [
-                    KonekoCircleButton(
-                      glyph: Glyphs.search,
-                      tooltip: '发现搜索',
-                      onPressed: () {
-                        Navigator.of(context).push(
-                          CardPageRoute<void>(
-                            builder: (_) => const DiscoverPage(),
-                          ),
-                        );
-                      },
-                    ),
-                    KonekoCircleButton(
-                      glyph: KonekoGlyphs.refresh,
-                      tooltip: '刷新榜单',
-                      onPressed: () {
-                        showKonekoBanner(
-                          context,
-                          '已刷新 2026 秋季热门榜单',
-                          level: BannerLevel.success,
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ),
+              const KonekoScrollStart(),
               if (resumeSubject != null)
                 SliverToBoxAdapter(
                   child: Padding(
@@ -167,18 +161,15 @@ class _HomePageState extends ConsumerState<HomePage> {
                     mainAxisSpacing: 14,
                     childAspectRatio: 0.56,
                   ),
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      final subject = subjects[index];
-                      return UnifiedAnimeCard(
-                        subject: subject,
-                        isTracking: trackingIds.contains(subject.subjectId),
-                        showTopRank: _selectedTag == '全部',
-                        onTap: () => _openDetail(subject),
-                      );
-                    },
-                    childCount: subjects.length,
-                  ),
+                  delegate: SliverChildBuilderDelegate((context, index) {
+                    final subject = subjects[index];
+                    return UnifiedAnimeCard(
+                      subject: subject,
+                      isTracking: trackingIds.contains(subject.subjectId),
+                      showTopRank: _selectedTag == '全部',
+                      onTap: () => _openDetail(subject),
+                    );
+                  }, childCount: subjects.length),
                 ),
               ),
             ],
@@ -245,8 +236,9 @@ class _TopSummaryDeck extends StatelessWidget {
                           label: '继续观看',
                           height: 22,
                           fontSize: 10.5,
-                          backgroundColor:
-                              colorScheme.primary.withValues(alpha: 0.14),
+                          backgroundColor: colorScheme.primary.withValues(
+                            alpha: 0.14,
+                          ),
                           foregroundColor: colorScheme.primary,
                         ),
                         if (history != null && history!.mergedSourceCount > 1)
@@ -271,9 +263,9 @@ class _TopSummaryDeck extends StatelessWidget {
                       '第 $ep 话 · $timeLabel · ${history?.lastRuleName ?? '樱花源'}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: AppTextStyle.footnote.of(context).copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
+                      style: AppTextStyle.footnote
+                          .of(context)
+                          .copyWith(color: colorScheme.onSurfaceVariant),
                     ),
                   ],
                 ),
@@ -282,7 +274,7 @@ class _TopSummaryDeck extends StatelessWidget {
               KonekoCircleButton(
                 size: 46,
                 iconSize: 20,
-                icon: KonekoIcons.play,
+                glyph: KonekoGlyphs.play,
                 fillColor: colorScheme.primary,
                 foregroundColor: colorScheme.onPrimary,
                 tooltip: '立即续播',
@@ -296,7 +288,10 @@ class _TopSummaryDeck extends StatelessWidget {
               Expanded(
                 child: KonekoBlock(
                   corner: 16,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 9,
+                  ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     spacing: 6,
@@ -306,9 +301,9 @@ class _TopSummaryDeck extends StatelessWidget {
                           '在追',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: AppTextStyle.caption1.of(context).copyWith(
-                            color: colorScheme.onSurfaceVariant,
-                          ),
+                          style: AppTextStyle.caption1
+                              .of(context)
+                              .copyWith(color: colorScheme.onSurfaceVariant),
                         ),
                       ),
                       Text(
@@ -326,7 +321,10 @@ class _TopSummaryDeck extends StatelessWidget {
               Expanded(
                 child: KonekoBlock(
                   corner: 16,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 9,
+                  ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     spacing: 6,
@@ -336,9 +334,9 @@ class _TopSummaryDeck extends StatelessWidget {
                           '规则',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: AppTextStyle.caption1.of(context).copyWith(
-                            color: colorScheme.onSurfaceVariant,
-                          ),
+                          style: AppTextStyle.caption1
+                              .of(context)
+                              .copyWith(color: colorScheme.onSurfaceVariant),
                         ),
                       ),
                       Text(

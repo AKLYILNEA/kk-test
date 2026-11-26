@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:koneko/common/constants.dart';
@@ -23,7 +24,7 @@ class ThemeSettings {
     this.primaryColors = kDefaultPrimaryColors,
     this.colorStyle = ColorStyle.soft,
     this.floatingNavigationBar = true,
-    this.tabAnimation = TabAnimationMode.slide,
+    this.tabAnimation = TabAnimationMode.fade,
     this.liquidGlass = LiquidGlassMode.standard,
     this.customTextScaleEnabled = false,
     this.textScale = 1.0,
@@ -32,6 +33,7 @@ class ThemeSettings {
 
   final ThemeMode themeMode;
   final bool pureBlack;
+
   /// Null means follow system accent (fallback to Soft Indigo).
   final int? primaryColor;
   final List<int> primaryColors;
@@ -102,7 +104,7 @@ class ThemeSettings {
     );
     TabAnimationMode parseAnim(Object? v) => TabAnimationMode.values.firstWhere(
       (e) => e.name == v,
-      orElse: () => TabAnimationMode.slide,
+      orElse: () => TabAnimationMode.fade,
     );
     LiquidGlassMode parseGlass(Object? v) => LiquidGlassMode.values.firstWhere(
       (e) => e.name == v,
@@ -125,7 +127,10 @@ class ThemeSettings {
       liquidGlass: parseGlass(map['liquidGlass']),
       customTextScaleEnabled: map['customTextScaleEnabled'] == true,
       textScale: (map['textScale'] is num)
-          ? (map['textScale'] as num).toDouble().clamp(kMinTextScale, kMaxTextScale)
+          ? (map['textScale'] as num).toDouble().clamp(
+              kMinTextScale,
+              kMaxTextScale,
+            )
           : 1.0,
       sidebarExpanded: map['sidebarExpanded'] != false,
     );
@@ -179,8 +184,7 @@ ColorScheme buildKonekoColorScheme({
   required bool pureBlack,
   Color? overrideColor,
 }) {
-  final seed = overrideColor ??
-      Color(primaryColor ?? kDefaultPrimaryColor);
+  final seed = overrideColor ?? Color(primaryColor ?? kDefaultPrimaryColor);
   final scheme = seededColorScheme(
     seedColor: seed,
     brightness: brightness,
@@ -203,7 +207,11 @@ ThemeData buildKonekoTheme({
   return ThemeData(
     colorScheme: scheme,
     fontFamily: customFontFamily,
-    fontFamilyFallback: const ['Twemoji'],
+    fontFamilyFallback: appFontFamilyFallback(
+      platform: defaultTargetPlatform,
+      locales: const [kAppLocale],
+      fontFamily: customFontFamily,
+    ),
   );
 }
 
@@ -262,10 +270,9 @@ class LibraryNotifier extends Notifier<List<CollectionEntry>> {
         : (episodeNumber > existing.watchedEpisodes
               ? episodeNumber
               : existing.watchedEpisodes);
-    final nextStatus =
-        (totalEpisodes > 0 && nextWatched >= totalEpisodes)
-            ? CollectionStatus.watched
-            : CollectionStatus.watching;
+    final nextStatus = (totalEpisodes > 0 && nextWatched >= totalEpisodes)
+        ? CollectionStatus.watched
+        : CollectionStatus.watching;
     if (existing == null) {
       state = [
         CollectionEntry(
@@ -406,7 +413,8 @@ final historyProvider =
 
 class RulesNotifier extends Notifier<List<RulePluginMeta>> {
   @override
-  List<RulePluginMeta> build() => ref.read(ruleRepositoryProvider).getAllRules();
+  List<RulePluginMeta> build() =>
+      ref.read(ruleRepositoryProvider).getAllRules();
 
   void toggle(String ruleId, bool enabled) {
     state = ref.read(ruleRepositoryProvider).toggleRule(ruleId, enabled);

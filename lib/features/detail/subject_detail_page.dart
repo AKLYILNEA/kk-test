@@ -3,9 +3,11 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:koneko/common/providers.dart';
 import 'package:koneko/features/player/player_page.dart';
-import 'package:koneko/ui/koneko_icon.dart';
+import 'package:koneko/ui/koneko_glyphs.dart';
+import 'package:koneko/ui/koneko_scaffold.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:koneko_contract/koneko_contract.dart';
+import 'package:prism_ui/icons/icons.dart';
 import 'package:prism_ui/prism_ui.dart';
 
 class SubjectDetailPage extends ConsumerStatefulWidget {
@@ -22,27 +24,26 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
   String _selectedRuleName = '樱花源 · XPath';
 
   void _playEpisode(AnimeSubject subject, int episodeNumber) {
-    Navigator.of(context).push(
-      CardPageRoute<void>(
-        builder: (_) => PlayerPage(
-          subjectId: subject.subjectId,
-          initialEpisode: episodeNumber,
-          initialRuleId: _selectedRuleId,
-          initialRuleName: _selectedRuleName,
-        ),
+    BaseNavigator.push<void>(
+      context,
+      PlayerPage(
+        subjectId: subject.subjectId,
+        initialEpisode: episodeNumber,
+        initialRuleId: _selectedRuleId,
+        initialRuleName: _selectedRuleName,
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = context.colorScheme;
     final catalog = ref.watch(catalogRepositoryProvider);
     final library = ref.watch(libraryProvider);
     final history = ref.watch(historyProvider);
 
     final subject =
-        catalog.getSubjectById(widget.subjectId) ?? catalog.getAllSubjects().first;
+        catalog.getSubjectById(widget.subjectId) ??
+        catalog.getAllSubjects().first;
     final entry = library
         .where((e) => e.subjectId == subject.subjectId)
         .firstOrNull;
@@ -50,7 +51,8 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
         .where((h) => h.subjectId == subject.subjectId)
         .firstOrNull;
 
-    final currentEp = hist?.lastEpisode ??
+    final currentEp =
+        hist?.lastEpisode ??
         ((entry?.watchedEpisodes ?? 0) > 0 ? entry!.watchedEpisodes : 1);
     final episodes = catalog.getEpisodes(
       subject.subjectId,
@@ -63,130 +65,110 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
         .whereType<AnimeSubject>()
         .toList();
 
-    return Surface(
-      color: SurfaceLevel.page.colorOf(colorScheme),
-      child: SafeArea(
-        bottom: false,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final isWide = constraints.maxWidth >= 900;
-            final heroCard = _HeroCard(
-              subject: subject,
-              entry: entry,
-              currentEp: currentEp,
-              mergedSources: hist?.mergedSourceCount ?? 0,
-              onPlay: () => _playEpisode(subject, currentEp),
-              onStatusChanged: (status) {
-                ref
-                    .read(libraryProvider.notifier)
-                    .setStatus(subject.subjectId, status);
-                showKonekoBanner(
-                  context,
-                  '已将《${subject.title}》标记为「${status.label}」',
-                  level: BannerLevel.success,
-                );
-              },
-            );
-            final episodeCard = _EpisodeMatrixCard(
-              episodes: episodes,
-              onSelect: (ep) => _playEpisode(subject, ep.episodeNumber),
-            );
-            final sourcesCard = _RuleSourcesCard(
-              probes: probes,
-              selectedRuleId: _selectedRuleId,
-              onSelect: (probe) {
-                setState(() {
-                  _selectedRuleId = probe.ruleId;
-                  _selectedRuleName = probe.ruleName;
-                });
-                showKonekoBanner(
-                  context,
-                  '已切换默认播放源：${probe.ruleName}（进度自动同步）',
-                );
-              },
-            );
-            final relatedCard = related.isEmpty
-                ? null
-                : _RelatedSeriesCard(
-                    subjects: related,
-                    onOpen: (s) => Navigator.of(context).push(
-                      CardPageRoute<void>(
-                        builder: (_) =>
-                            SubjectDetailPage(subjectId: s.subjectId),
-                      ),
-                    ),
-                  );
-
-            return CustomScrollView(
-              slivers: [
-                SliverToBoxAdapter(
-                  child: KonekoPageHeader(
-                    title: '番剧详情',
-                    showBack: true,
-                    actions: [
-                      KonekoCircleButton(
-                        icon: KonekoIcons.play,
-                        fillColor: colorScheme.primary,
-                        foregroundColor: colorScheme.onPrimary,
-                        tooltip: '播放第 $currentEp 话',
-                        onPressed: () => _playEpisode(subject, currentEp),
-                      ),
-                    ],
-                  ),
-                ),
-                SliverPadding(
-                  padding: EdgeInsets.fromLTRB(
-                    16,
-                    6,
-                    16,
-                    28 + MediaQuery.paddingOf(context).bottom,
-                  ),
-                  sliver: SliverToBoxAdapter(
-                    child: isWide
-                        ? Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                flex: 12,
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  spacing: 16,
-                                  children: [
-                                    heroCard,
-                                    episodeCard,
-                                    ?relatedCard,
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                flex: 7,
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  spacing: 16,
-                                  children: [sourcesCard],
-                                ),
-                              ),
-                            ],
-                          )
-                        : Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            spacing: 14,
-                            children: [
-                              heroCard,
-                              episodeCard,
-                              sourcesCard,
-                              ?relatedCard,
-                            ],
-                          ),
-                  ),
-                ),
-              ],
-            );
-          },
+    return KonekoScaffold(
+      title: '番剧详情',
+      showBack: true,
+      actions: [
+        IconButtonData(
+          glyph: KonekoGlyphs.play,
+          tooltip: '播放第 $currentEp 话',
+          onPressed: () => _playEpisode(subject, currentEp),
         ),
+      ],
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final isWide = constraints.maxWidth >= 900;
+          final heroCard = _HeroCard(
+            subject: subject,
+            entry: entry,
+            currentEp: currentEp,
+            mergedSources: hist?.mergedSourceCount ?? 0,
+            onPlay: () => _playEpisode(subject, currentEp),
+            onStatusChanged: (status) {
+              ref
+                  .read(libraryProvider.notifier)
+                  .setStatus(subject.subjectId, status);
+              showKonekoBanner(
+                context,
+                '已将《${subject.title}》标记为「${status.label}」',
+                level: BannerLevel.success,
+              );
+            },
+          );
+          final episodeCard = _EpisodeMatrixCard(
+            episodes: episodes,
+            onSelect: (ep) => _playEpisode(subject, ep.episodeNumber),
+          );
+          final sourcesCard = _RuleSourcesCard(
+            probes: probes,
+            selectedRuleId: _selectedRuleId,
+            onSelect: (probe) {
+              setState(() {
+                _selectedRuleId = probe.ruleId;
+                _selectedRuleName = probe.ruleName;
+              });
+              showKonekoBanner(context, '已切换默认播放源：${probe.ruleName}（进度自动同步）');
+            },
+          );
+          final relatedCard = related.isEmpty
+              ? null
+              : _RelatedSeriesCard(
+                  subjects: related,
+                  onOpen: (s) => BaseNavigator.push<void>(
+                    context,
+                    SubjectDetailPage(subjectId: s.subjectId),
+                  ),
+                );
+
+          return CustomScrollView(
+            slivers: [
+              const KonekoScrollStart(),
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  6,
+                  16,
+                  28 + MediaQuery.paddingOf(context).bottom,
+                ),
+                sliver: SliverToBoxAdapter(
+                  child: isWide
+                      ? Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              flex: 12,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                spacing: 16,
+                                children: [heroCard, episodeCard, ?relatedCard],
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              flex: 7,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                spacing: 16,
+                                children: [sourcesCard],
+                              ),
+                            ),
+                          ],
+                        )
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          spacing: 14,
+                          children: [
+                            heroCard,
+                            episodeCard,
+                            sourcesCard,
+                            ?relatedCard,
+                          ],
+                        ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -245,9 +227,9 @@ class _HeroCard extends StatelessWidget {
                       subject.originalTitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: AppTextStyle.footnote.of(context).copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
+                      style: AppTextStyle.footnote
+                          .of(context)
+                          .copyWith(color: colorScheme.onSurfaceVariant),
                     ),
                     const SizedBox(height: 10),
                     Wrap(
@@ -256,8 +238,8 @@ class _HeroCard extends StatelessWidget {
                       children: [
                         KonekoChip(
                           label: subject.score.toStringAsFixed(1),
-                          leading: const KonekoIcon(
-                            KonekoIcons.star,
+                          leading: const GlyphIcon(
+                            KonekoGlyphs.star,
                             size: 12,
                             color: Color(0xFFE09F24),
                           ),
@@ -267,8 +249,9 @@ class _HeroCard extends StatelessWidget {
                         if (mergedSources > 1)
                           KonekoChip(
                             label: '合并 $mergedSources 源',
-                            backgroundColor:
-                                colorScheme.primary.withValues(alpha: 0.14),
+                            backgroundColor: colorScheme.primary.withValues(
+                              alpha: 0.14,
+                            ),
                             foregroundColor: colorScheme.primary,
                           ),
                       ],
@@ -281,10 +264,9 @@ class _HeroCard extends StatelessWidget {
           const SizedBox(height: 14),
           Text(
             subject.summary,
-            style: AppTextStyle.subheadline.of(context).copyWith(
-              color: colorScheme.onSurfaceVariant,
-              height: 1.5,
-            ),
+            style: AppTextStyle.subheadline
+                .of(context)
+                .copyWith(color: colorScheme.onSurfaceVariant, height: 1.5),
           ),
           const SizedBox(height: 14),
           Wrap(
@@ -295,8 +277,8 @@ class _HeroCard extends StatelessWidget {
                 label: '播放第 $currentEp 话',
                 height: 38,
                 fontSize: 13.5,
-                leading: KonekoIcon(
-                  KonekoIcons.play,
+                leading: GlyphIcon(
+                  KonekoGlyphs.play,
                   size: 14,
                   color: colorScheme.onPrimary,
                 ),
@@ -326,10 +308,7 @@ class _HeroCard extends StatelessWidget {
 }
 
 class _EpisodeMatrixCard extends StatelessWidget {
-  const _EpisodeMatrixCard({
-    required this.episodes,
-    required this.onSelect,
-  });
+  const _EpisodeMatrixCard({required this.episodes, required this.onSelect});
 
   final List<EpisodeItem> episodes;
   final ValueChanged<EpisodeItem> onSelect;
@@ -355,9 +334,9 @@ class _EpisodeMatrixCard extends StatelessWidget {
               ),
               Text(
                 '共 ${episodes.length} 话',
-                style: AppTextStyle.footnote.of(context).copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                ),
+                style: AppTextStyle.footnote
+                    .of(context)
+                    .copyWith(color: colorScheme.onSurfaceVariant),
               ),
             ],
           ),
@@ -365,9 +344,7 @@ class _EpisodeMatrixCard extends StatelessWidget {
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: [
-              for (final ep in episodes) _episodeCell(context, ep),
-            ],
+            children: [for (final ep in episodes) _episodeCell(context, ep)],
           ),
         ],
       ),
@@ -411,10 +388,12 @@ class _EpisodeMatrixCard extends StatelessWidget {
         child: Center(
           child: Text(
             label,
-            style: AppTextStyle.footnote.of(context, emphasized: true).copyWith(
-              color: fg,
-              fontFeatures: const [FontFeature.tabularFigures()],
-            ),
+            style: AppTextStyle.footnote
+                .of(context, emphasized: true)
+                .copyWith(
+                  color: fg,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
           ),
         ),
       ),
@@ -451,9 +430,9 @@ class _RuleSourcesCard extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             '兼容 Kazumi 规则 · 切换源自动保留同一番剧进度',
-            style: AppTextStyle.caption1.of(context).copyWith(
-              color: colorScheme.onSurfaceVariant,
-            ),
+            style: AppTextStyle.caption1
+                .of(context)
+                .copyWith(color: colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 12),
           Column(
@@ -480,9 +459,11 @@ class _RuleSourcesCard extends StatelessWidget {
                             const SizedBox(height: 2),
                             Text(
                               '${probe.lineLabel} · ${probe.availableEpisodes} 话',
-                              style: AppTextStyle.caption1.of(context).copyWith(
-                                color: colorScheme.onSurfaceVariant,
-                              ),
+                              style: AppTextStyle.caption1
+                                  .of(context)
+                                  .copyWith(
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
                             ),
                           ],
                         ),
@@ -510,10 +491,7 @@ class _RuleSourcesCard extends StatelessWidget {
 }
 
 class _RelatedSeriesCard extends StatelessWidget {
-  const _RelatedSeriesCard({
-    required this.subjects,
-    required this.onOpen,
-  });
+  const _RelatedSeriesCard({required this.subjects, required this.onOpen});
 
   final List<AnimeSubject> subjects;
   final ValueChanged<AnimeSubject> onOpen;
@@ -544,10 +522,7 @@ class _RelatedSeriesCard extends StatelessWidget {
                 final s = subjects[index];
                 return SizedBox(
                   width: 120,
-                  child: UnifiedAnimeCard(
-                    subject: s,
-                    onTap: () => onOpen(s),
-                  ),
+                  child: UnifiedAnimeCard(subject: s, onTap: () => onOpen(s)),
                 );
               },
             ),

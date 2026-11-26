@@ -2,9 +2,11 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:koneko/common/providers.dart';
 import 'package:koneko/features/detail/subject_detail_page.dart';
-import 'package:koneko/ui/koneko_icon.dart';
+import 'package:koneko/ui/koneko_glyphs.dart';
+import 'package:koneko/ui/koneko_scaffold.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:koneko_contract/koneko_contract.dart';
+import 'package:prism_ui/icons/icons.dart';
 import 'package:prism_ui/prism_ui.dart';
 
 class SchedulePage extends ConsumerStatefulWidget {
@@ -47,35 +49,21 @@ class _SchedulePageState extends ConsumerState<SchedulePage> {
       items.sort((a, b) => b.airedEpisodes.compareTo(a.airedEpisodes));
     }
 
-    return SafeArea(
-      bottom: false,
-      child: LayoutBuilder(
+    return KonekoScaffold(
+      title: '2026 秋季新番',
+      actions: [
+        IconButtonData(
+          glyph: Glyphs.sort,
+          tooltip: _sortByScore ? '当前：评分优先' : '当前：更新优先',
+          onPressed: () => setState(() => _sortByScore = !_sortByScore),
+        ),
+      ],
+      body: LayoutBuilder(
         builder: (context, constraints) {
           final isWide = constraints.maxWidth >= 760;
           return CustomScrollView(
             slivers: [
-              SliverToBoxAdapter(
-                child: KonekoPageHeader(
-                  title: '2026 秋季新番',
-                  subtitle: '10—12 月放送时间表',
-                  actions: [
-                    KonekoChip(
-                      label: _sortByScore ? '评分优先' : '更新优先',
-                      height: 36,
-                      fontSize: 12.5,
-                      leading: KonekoIcon(
-                        KonekoIcons.sliders,
-                        size: 14,
-                        color: colorScheme.primary,
-                      ),
-                      backgroundColor: SurfaceLevel.card.colorOf(colorScheme),
-                      foregroundColor: colorScheme.onSurface,
-                      onPressed: () =>
-                          setState(() => _sortByScore = !_sortByScore),
-                    ),
-                  ],
-                ),
-              ),
+              const KonekoScrollStart(),
               SliverToBoxAdapter(
                 child: SizedBox(
                   height: 44,
@@ -116,22 +104,21 @@ class _SchedulePageState extends ConsumerState<SchedulePage> {
                     ? SliverGrid(
                         gridDelegate:
                             const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          crossAxisSpacing: 14,
-                          mainAxisSpacing: 14,
-                          mainAxisExtent: 124,
-                        ),
+                              crossAxisCount: 2,
+                              crossAxisSpacing: 14,
+                              mainAxisSpacing: 14,
+                              mainAxisExtent: 124,
+                            ),
                         delegate: SliverChildBuilderDelegate(
                           (context, index) => _ScheduleCard(
                             subject: items[index],
                             isWatching: watchingIds.contains(
                               items[index].subjectId,
                             ),
-                            onTap: () => Navigator.of(context).push(
-                              CardPageRoute<void>(
-                                builder: (_) => SubjectDetailPage(
-                                  subjectId: items[index].subjectId,
-                                ),
+                            onTap: () => BaseNavigator.push<void>(
+                              context,
+                              SubjectDetailPage(
+                                subjectId: items[index].subjectId,
                               ),
                             ),
                           ),
@@ -146,11 +133,10 @@ class _SchedulePageState extends ConsumerState<SchedulePage> {
                           isWatching: watchingIds.contains(
                             items[index].subjectId,
                           ),
-                          onTap: () => Navigator.of(context).push(
-                            CardPageRoute<void>(
-                              builder: (_) => SubjectDetailPage(
-                                subjectId: items[index].subjectId,
-                              ),
+                          onTap: () => BaseNavigator.push<void>(
+                            context,
+                            SubjectDetailPage(
+                              subjectId: items[index].subjectId,
                             ),
                           ),
                         ),
@@ -211,9 +197,9 @@ class _ScheduleCard extends StatelessWidget {
                   '${subject.studio} · ${subject.tags.join(" / ")}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: AppTextStyle.caption1.of(context).copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
+                  style: AppTextStyle.caption1
+                      .of(context)
+                      .copyWith(color: colorScheme.onSurfaceVariant),
                 ),
                 const SizedBox(height: 10),
                 Wrap(
@@ -224,8 +210,8 @@ class _ScheduleCard extends StatelessWidget {
                       label: subject.score.toStringAsFixed(1),
                       height: 24,
                       fontSize: 11.5,
-                      leading: const KonekoIcon(
-                        KonekoIcons.star,
+                      leading: const GlyphIcon(
+                        KonekoGlyphs.star,
                         size: 11,
                         color: Color(0xFFE09F24),
                       ),
@@ -240,8 +226,9 @@ class _ScheduleCard extends StatelessWidget {
                         label: '在追',
                         height: 24,
                         fontSize: 11.5,
-                        backgroundColor:
-                            colorScheme.primary.withValues(alpha: 0.14),
+                        backgroundColor: colorScheme.primary.withValues(
+                          alpha: 0.14,
+                        ),
                         foregroundColor: colorScheme.primary,
                       ),
                   ],

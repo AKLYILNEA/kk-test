@@ -1,7 +1,8 @@
 import 'package:flutter/widgets.dart';
 
 const String kAppName = 'Koneko';
-const String kAppVersion = '0.0.1';
+const String kAppVersion = '0.0.2';
+const kAppLocale = Locale('zh', 'CN');
 const String kPackageName = 'com.anime.koneko';
 const String kRepoUrl = 'https://github.com/AKLYILNEA/kk-test';
 const String kPrismUiUrl = 'https://github.com/chen08209/prism_ui';
@@ -30,9 +31,9 @@ const List<int> kDefaultPrimaryColors = [
 final RegExp kEmojiPattern = RegExp(
   r'(?:[\u{1F1E6}-\u{1F1FF}]{2}|'
   r'[\u{1F300}-\u{1F9FF}\u{1FA00}-\u{1FAFF}\u{2600}-\u{27BF}]'
-  r'(?:\uFE0F|\u{1F3FB}-\u{1F3FF})?'
+  r'\uFE0F?[\u{1F3FB}-\u{1F3FF}]?'
   r'(?:\u200D[\u{1F300}-\u{1F9FF}\u{1FA00}-\u{1FAFF}\u{2600}-\u{27BF}]'
-  r'(?:\uFE0F|\u{1F3FB}-\u{1F3FF})?)*)',
+  r'\uFE0F?[\u{1F3FB}-\u{1F3FF}]?)*)',
   unicode: true,
 );
 

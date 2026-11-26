@@ -8,6 +8,7 @@ import 'package:koneko/common/providers.dart';
 import 'package:koneko/features/theme/font_family_page.dart';
 import 'package:koneko/features/theme/theme_preview.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
+import 'package:koneko/ui/koneko_scaffold.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:koneko/ui/palette.dart';
 import 'package:prism_ui/icons/icons.dart';
@@ -16,11 +17,7 @@ import 'package:prism_ui/prism_ui.dart';
 /// 07B · 1:1 FlClash ThemeView with interactive MiniScreen preview, HCT Palette,
 /// instant custom Font Manager entry, and default Twemoji (no emoji switcher).
 class ThemePage extends ConsumerStatefulWidget {
-  const ThemePage({
-    super.key,
-    this.showBack = true,
-    this.bottomPadding = 0,
-  });
+  const ThemePage({super.key, this.showBack = true, this.bottomPadding = 0});
 
   final bool showBack;
   final double bottomPadding;
@@ -36,10 +33,8 @@ class _ThemePageState extends ConsumerState<ThemePage> {
     showSheet<void>(
       context: context,
       props: const SheetProps(detents: [0.9]),
-      builder: (_) => _CustomColorSheet(
-        initialColor: initial,
-        onConfirmed: onConfirmed,
-      ),
+      builder: (_) =>
+          _CustomColorSheet(initialColor: initial, onConfirmed: onConfirmed),
     );
   }
 
@@ -74,29 +69,27 @@ class _ThemePageState extends ConsumerState<ThemePage> {
       liquidGlass: liquidGlass,
     );
 
-    final sysScale = systemTextScaleOf(context)
-        .clamp(kMinTextScale, kMaxTextScale)
-        .toDouble();
+    final sysScale = systemTextScaleOf(
+      context,
+    ).clamp(kMinTextScale, kMaxTextScale).toDouble();
     final effectiveScale =
         _draftScale ??
         (settings.customTextScaleEnabled ? settings.textScale : sysScale);
     final scalePct = '${(effectiveScale * 100).round()}%';
 
-    return Surface(
-      color: SurfaceLevel.page.colorOf(colorScheme),
-      child: SafeArea(
-        bottom: false,
-        child: ListView(
+    return KonekoScaffold(
+      title: '外观主题',
+      showBack: widget.showBack,
+      body: Builder(
+        builder: (context) => ListView(
           padding: EdgeInsets.only(
-            bottom: 32 + MediaQuery.paddingOf(context).bottom + widget.bottomPadding,
+            top: context.contentTopPadding,
+            bottom:
+                32 +
+                MediaQuery.paddingOf(context).bottom +
+                widget.bottomPadding,
           ),
           children: [
-            KonekoPageHeader(
-              title: '外观主题',
-              subtitle: 'FlClash 调色盘与自定义字体管理 · Twemoji 默认',
-              showBack: widget.showBack,
-            ),
-            const SizedBox(height: 8),
             const ThemeLivePreview(),
             const SizedBox(height: 16),
 
@@ -133,7 +126,7 @@ class _ThemePageState extends ConsumerState<ThemePage> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: generateGroup([
                 DecorationListItem(
-                  leading: const GlyphIcon(KonekoGlyphs.moon),
+                  leading: const GlyphIcon(KonekoGlyphs.pureBlack),
                   title: const Text('纯黑模式'),
                   subtitle: const Text('深色模式下启用 OLED 纯黑背景'),
                   trailing: Switch(
@@ -239,9 +232,8 @@ class _ThemePageState extends ConsumerState<ThemePage> {
                   ),
                 ),
               ],
-              onChanged: (v) => notifier.update(
-                (s) => s.copyWith(floatingNavigationBar: v),
-              ),
+              onChanged: (v) =>
+                  notifier.update((s) => s.copyWith(floatingNavigationBar: v)),
             ),
             const SizedBox(height: 16),
 
@@ -359,14 +351,13 @@ class _ThemePageState extends ConsumerState<ThemePage> {
                       ),
                       subtitle: const Text('支持导入本地 TTF / OTF，切换后零重启生效'),
                       trailing: const GlyphIcon(Glyphs.chevronForward),
-                      onPressed: () => Navigator.of(context).push(
-                        CardPageRoute<void>(
-                          builder: (_) => const FontFamilyPage(),
-                        ),
+                      onPressed: () => BaseNavigator.push<void>(
+                        context,
+                        const FontFamilyPage(),
                       ),
                     ),
                     const DecorationListItem(
-                      leading: Text('🐱', style: TextStyle(fontSize: 20)),
+                      leading: EmojiText('🐱', style: TextStyle(fontSize: 20)),
                       title: Text('Emoji 字体'),
                       subtitle: Text('全局固定使用 Twemoji 渲染，无需额外配置'),
                       trailing: KonekoChip(label: 'Twemoji 默认'),
@@ -387,10 +378,7 @@ class _ThemePageState extends ConsumerState<ThemePage> {
                 spacing: 8,
                 children: [
                   SegmentedControl<bool>(
-                    segments: const [
-                      (false, '跟随系统'),
-                      (true, '自定义'),
-                    ],
+                    segments: const [(false, '跟随系统'), (true, '自定义')],
                     value: settings.customTextScaleEnabled,
                     onChanged: (enable) {
                       setState(() => _draftScale = null);
@@ -443,9 +431,11 @@ class _ThemePageState extends ConsumerState<ThemePage> {
                           children: [
                             Text(
                               'A',
-                              style: AppTextStyle.footnote.of(context).copyWith(
-                                color: colorScheme.onSurfaceVariant,
-                              ),
+                              style: AppTextStyle.footnote
+                                  .of(context)
+                                  .copyWith(
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
                             ),
                             Expanded(
                               child: Slider(
@@ -466,9 +456,11 @@ class _ThemePageState extends ConsumerState<ThemePage> {
                             ),
                             Text(
                               'A',
-                              style: AppTextStyle.title2.of(context).copyWith(
-                                color: colorScheme.onSurfaceVariant,
-                              ),
+                              style: AppTextStyle.title2
+                                  .of(context)
+                                  .copyWith(
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
                             ),
                           ],
                         ),
@@ -573,21 +565,17 @@ class _SwatchDot extends StatelessWidget {
           decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           child: Center(
             child: selected
-                ? const GlyphIcon(
-                    Glyphs.check,
-                    size: 16,
-                    color: Colors.white,
-                  )
+                ? const GlyphIcon(Glyphs.check, size: 16, color: Colors.white)
                 : isSystem
-                    ? const Text(
-                        '系',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
-                      )
-                    : null,
+                ? const Text(
+                    '系',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  )
+                : null,
           ),
         ),
       ),

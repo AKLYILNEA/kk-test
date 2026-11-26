@@ -5,7 +5,7 @@ import 'package:koneko/common/providers.dart';
 import 'package:koneko/features/detail/subject_detail_page.dart';
 import 'package:koneko/features/player/player_page.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
-import 'package:koneko/ui/koneko_icon.dart';
+import 'package:koneko/ui/koneko_scaffold.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:koneko_contract/koneko_contract.dart';
 import 'package:prism_ui/icons/icons.dart';
@@ -69,54 +69,49 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
       });
     }
 
-    return SafeArea(
-      bottom: false,
-      child: LayoutBuilder(
+    return KonekoScaffold(
+      title: '追番',
+      actions: [
+        IconButtonData(
+          glyph: Glyphs.search,
+          tooltip: '筛选收藏',
+          onPressed: () => setState(() => _showSearch = !_showSearch),
+        ),
+        IconButtonData(
+          glyph: Glyphs.sort,
+          tooltip: _sortByRecent ? '当前：最近观看' : '当前：按评分排序',
+          onPressed: () {
+            setState(() => _sortByRecent = !_sortByRecent);
+            showKonekoBanner(
+              context,
+              _sortByRecent ? '已切换为：最近观看排序' : '已切换为：评分优先排序',
+            );
+          },
+        ),
+        IconButtonData(
+          glyph: KonekoGlyphs.sync,
+          tooltip: '同步 Bangumi',
+          onPressed: () {
+            showKonekoBanner(
+              context,
+              '已与 Bangumi 收藏同步（Mock 演示）',
+              level: BannerLevel.success,
+            );
+          },
+        ),
+      ],
+      body: LayoutBuilder(
         builder: (context, constraints) {
           final width = constraints.maxWidth;
           final columns = width >= 1080
               ? 3
               : width >= 700
-                  ? 2
-                  : 1;
+              ? 2
+              : 1;
 
           return CustomScrollView(
             slivers: [
-              SliverToBoxAdapter(
-                child: KonekoPageHeader(
-                  title: '追番',
-                  actions: [
-                    KonekoCircleButton(
-                      glyph: Glyphs.search,
-                      tooltip: '筛选收藏',
-                      onPressed: () =>
-                          setState(() => _showSearch = !_showSearch),
-                    ),
-                    KonekoCircleButton(
-                      glyph: Glyphs.sort,
-                      tooltip: _sortByRecent ? '当前：最近观看' : '当前：按评分排序',
-                      onPressed: () {
-                        setState(() => _sortByRecent = !_sortByRecent);
-                        showKonekoBanner(
-                          context,
-                          _sortByRecent ? '已切换为：最近观看排序' : '已切换为：评分优先排序',
-                        );
-                      },
-                    ),
-                    KonekoCircleButton(
-                      glyph: KonekoGlyphs.refresh,
-                      tooltip: '同步 Bangumi',
-                      onPressed: () {
-                        showKonekoBanner(
-                          context,
-                          '已与 Bangumi 收藏同步（Mock 演示）',
-                          level: BannerLevel.success,
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ),
+              const KonekoScrollStart(),
               if (_showSearch)
                 SliverToBoxAdapter(
                   child: Padding(
@@ -162,9 +157,9 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                   child: Center(
                     child: Text(
                       '该分类下暂无番剧',
-                      style: AppTextStyle.subheadline.of(context).copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
+                      style: AppTextStyle.subheadline
+                          .of(context)
+                          .copyWith(color: colorScheme.onSurfaceVariant),
                     ),
                   ),
                 )
@@ -183,8 +178,9 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                               const SizedBox(height: 12),
                           itemBuilder: (context, index) {
                             final entry = filtered[index];
-                            final subject =
-                                catalog.getSubjectById(entry.subjectId)!;
+                            final subject = catalog.getSubjectById(
+                              entry.subjectId,
+                            )!;
                             final hist = history
                                 .where((h) => h.subjectId == entry.subjectId)
                                 .firstOrNull;
@@ -204,8 +200,9 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                               ),
                               onCycleStatus: () {
                                 const values = CollectionStatus.values;
-                                final next = values[
-                                    (values.indexOf(entry.status) + 1) % 4];
+                                final next =
+                                    values[(values.indexOf(entry.status) + 1) %
+                                        4];
                                 ref
                                     .read(libraryProvider.notifier)
                                     .setStatus(entry.subjectId, next);
@@ -216,45 +213,47 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                       : SliverGrid(
                           gridDelegate:
                               SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: columns,
-                            crossAxisSpacing: 14,
-                            mainAxisSpacing: 14,
-                            mainAxisExtent: 186,
-                          ),
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) {
-                              final entry = filtered[index];
-                              final subject =
-                                  catalog.getSubjectById(entry.subjectId)!;
-                              final hist = history
-                                  .where((h) => h.subjectId == entry.subjectId)
-                                  .firstOrNull;
-                              return _FlClashWatchCard(
-                                subject: subject,
-                                entry: entry,
-                                history: hist,
-                                onOpenDetail: () => _openDetail(subject),
-                                onQuickPlay: () => _openPlayer(
-                                  subject,
-                                  hist?.lastEpisode ??
-                                      (entry.watchedEpisodes > 0
-                                          ? entry.watchedEpisodes
-                                          : 1),
-                                  hist?.lastRuleId ?? 'rule_yhdmp',
-                                  hist?.lastRuleName ?? '樱花源 · XPath',
-                                ),
-                                onCycleStatus: () {
-                                  const values = CollectionStatus.values;
-                                  final next = values[
-                                      (values.indexOf(entry.status) + 1) % 4];
-                                  ref
-                                      .read(libraryProvider.notifier)
-                                      .setStatus(entry.subjectId, next);
-                                },
-                              );
-                            },
-                            childCount: filtered.length,
-                          ),
+                                crossAxisCount: columns,
+                                crossAxisSpacing: 14,
+                                mainAxisSpacing: 14,
+                                mainAxisExtent: 186,
+                              ),
+                          delegate: SliverChildBuilderDelegate((
+                            context,
+                            index,
+                          ) {
+                            final entry = filtered[index];
+                            final subject = catalog.getSubjectById(
+                              entry.subjectId,
+                            )!;
+                            final hist = history
+                                .where((h) => h.subjectId == entry.subjectId)
+                                .firstOrNull;
+                            return _FlClashWatchCard(
+                              subject: subject,
+                              entry: entry,
+                              history: hist,
+                              onOpenDetail: () => _openDetail(subject),
+                              onQuickPlay: () => _openPlayer(
+                                subject,
+                                hist?.lastEpisode ??
+                                    (entry.watchedEpisodes > 0
+                                        ? entry.watchedEpisodes
+                                        : 1),
+                                hist?.lastRuleId ?? 'rule_yhdmp',
+                                hist?.lastRuleName ?? '樱花源 · XPath',
+                              ),
+                              onCycleStatus: () {
+                                const values = CollectionStatus.values;
+                                final next =
+                                    values[(values.indexOf(entry.status) + 1) %
+                                        4];
+                                ref
+                                    .read(libraryProvider.notifier)
+                                    .setStatus(entry.subjectId, next);
+                              },
+                            );
+                          }, childCount: filtered.length),
                         ),
                 ),
             ],
@@ -265,10 +264,9 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
   }
 
   void _openDetail(AnimeSubject subject) {
-    Navigator.of(context).push(
-      CardPageRoute<void>(
-        builder: (_) => SubjectDetailPage(subjectId: subject.subjectId),
-      ),
+    BaseNavigator.push<void>(
+      context,
+      SubjectDetailPage(subjectId: subject.subjectId),
     );
   }
 
@@ -278,14 +276,13 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
     String ruleId,
     String ruleName,
   ) {
-    Navigator.of(context).push(
-      CardPageRoute<void>(
-        builder: (_) => PlayerPage(
-          subjectId: subject.subjectId,
-          initialEpisode: episode,
-          initialRuleId: ruleId,
-          initialRuleName: ruleName,
-        ),
+    BaseNavigator.push<void>(
+      context,
+      PlayerPage(
+        subjectId: subject.subjectId,
+        initialEpisode: episode,
+        initialRuleId: ruleId,
+        initialRuleName: ruleName,
       ),
     );
   }
@@ -373,9 +370,9 @@ class _FlClashWatchCard extends StatelessWidget {
                       subject.originalTitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: AppTextStyle.caption1.of(context).copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
+                      style: AppTextStyle.caption1
+                          .of(context)
+                          .copyWith(color: colorScheme.onSurfaceVariant),
                     ),
                     const SizedBox(height: 8),
                     Wrap(
@@ -386,11 +383,12 @@ class _FlClashWatchCard extends StatelessWidget {
                           label: entry.status.label,
                           height: 24,
                           fontSize: 11,
-                          backgroundColor:
-                              colorScheme.primary.withValues(alpha: 0.14),
+                          backgroundColor: colorScheme.primary.withValues(
+                            alpha: 0.14,
+                          ),
                           foregroundColor: colorScheme.primary,
-                          trailing: KonekoIcon(
-                            KonekoIcons.chevronDown,
+                          trailing: GlyphIcon(
+                            Glyphs.chevronDown,
                             size: 12,
                             color: colorScheme.primary,
                           ),
@@ -472,7 +470,7 @@ class _FlClashWatchCard extends StatelessWidget {
                 KonekoCircleButton(
                   size: 34,
                   iconSize: 15,
-                  icon: KonekoIcons.play,
+                  glyph: KonekoGlyphs.play,
                   fillColor: colorScheme.primary,
                   foregroundColor: colorScheme.onPrimary,
                   tooltip: '续播',

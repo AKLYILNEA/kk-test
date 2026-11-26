@@ -36,6 +36,7 @@ class HomeShell extends ConsumerWidget {
     SidebarDestination(glyph: KonekoGlyphs.puzzle, label: '规则管理'),
     SidebarDestination(glyph: KonekoGlyphs.palette, label: '外观主题'),
     SidebarDestination(glyph: KonekoGlyphs.info, label: '关于'),
+    SidebarDestination(glyph: KonekoGlyphs.user, label: '我的'),
   ];
 
   @override
@@ -47,57 +48,66 @@ class HomeShell extends ConsumerWidget {
     final navNotifier = ref.read(navIndexProvider.notifier);
 
     if (isMobile) {
-      final mobileIndex = rawIndex.clamp(0, _mobileDestinations.length - 1);
+      const mobileIndices = [0, 1, 2, 8];
+      final mobileIndex = rawIndex < 3 ? rawIndex : 3;
+      void select(int index) => navNotifier.select(mobileIndices[index]);
       final dockInset = settings.floatingNavigationBar
           ? NavigationDock.insetOf(context) + 8
           : 0.0;
 
-      final page = _buildMobilePage(mobileIndex, dockInset);
-      final animatedPage = _TabTransition(
+      final pages = _ShellPages(
         index: mobileIndex,
+        count: _mobileDestinations.length,
         mode: settings.tabAnimation,
-        child: KeyedSubtree(key: ValueKey(mobileIndex), child: page),
+        pageBuilder: (_, index) => _buildMobilePage(index, dockInset),
       );
 
       return Surface(
         color: SurfaceLevel.page.colorOf(colorScheme),
-        child: settings.floatingNavigationBar
-            ? Stack(
+        child: Column(
+          children: [
+            Expanded(
+              child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  animatedPage,
-                  Align(
-                    alignment: Alignment.bottomCenter,
-                    child: NavigationDock(
-                      destinations: _mobileDestinations,
-                      selectedIndex: mobileIndex,
-                      onSelected: navNotifier.select,
-                    ),
-                  ),
-                ],
-              )
-            : Column(
-                children: [
-                  Expanded(child: animatedPage),
-                  NavigationBar(
-                    selectedIndex: mobileIndex,
-                    onDestinationSelected: navNotifier.select,
-                    destinations: [
-                      for (final d in _mobileDestinations)
-                        NavigationDestination(
-                          icon: GlyphIcon(d.glyph),
-                          label: d.label,
+                  pages,
+                  if (settings.floatingNavigationBar)
+                    Align(
+                      alignment: Alignment.bottomCenter,
+                      child: BarItemPresence.held(
+                        child: NavigationDock(
+                          destinations: _mobileDestinations,
+                          selectedIndex: mobileIndex,
+                          onSelected: select,
                         ),
-                    ],
-                  ),
+                      ),
+                    ),
                 ],
               ),
+            ),
+            if (!settings.floatingNavigationBar)
+              NavigationBar(
+                selectedIndex: mobileIndex,
+                onDestinationSelected: select,
+                destinations: [
+                  for (final (index, destination)
+                      in _mobileDestinations.indexed)
+                    NavigationDestination(
+                      icon: AnimatedGlyph(
+                        glyph: destination.glyph,
+                        filled: index == mobileIndex,
+                      ),
+                      label: destination.label,
+                    ),
+                ],
+              ),
+          ],
+        ),
       );
     }
 
     // Desktop / Wide layout with authentic prism_ui NavigationSidebar
     final desktopIndex = rawIndex.clamp(0, _desktopDestinations.length - 1);
-    final page = _buildDesktopPage(desktopIndex);
     final canExpandInline = ViewScope.sizeOf(context).width >= 960;
 
     return Surface(
@@ -107,9 +117,7 @@ class HomeShell extends ConsumerWidget {
         children: [
           Surface(
             color: colorScheme.chromeSurface,
-            shape: BorderDirectional(
-              end: Divider.createBorderSide(context),
-            ),
+            shape: BorderDirectional(end: Divider.createBorderSide(context)),
             child: NavigationSidebar(
               destinations: _desktopDestinations,
               selectedIndex: desktopIndex,
@@ -119,16 +127,19 @@ class HomeShell extends ConsumerWidget {
                   ? () => ref
                         .read(themeSettingsProvider.notifier)
                         .update(
-                          (s) => s.copyWith(sidebarExpanded: !s.sidebarExpanded),
+                          (s) =>
+                              s.copyWith(sidebarExpanded: !s.sidebarExpanded),
                         )
                   : null,
             ),
           ),
           Expanded(
-            child: _TabTransition(
+            child: _ShellPages(
               index: desktopIndex,
+              count: _desktopDestinations.length,
               mode: settings.tabAnimation,
-              child: KeyedSubtree(key: ValueKey(desktopIndex), child: page),
+              desktop: true,
+              pageBuilder: (_, index) => _buildDesktopPage(index),
             ),
           ),
         ],
@@ -151,47 +162,216 @@ class HomeShell extends ConsumerWidget {
     4 => const HistoryPage(showBack: false),
     5 => const RulesPage(showBack: false),
     6 => const ThemePage(showBack: false),
-    _ => const AboutPage(showBack: false),
+    7 => const AboutPage(showBack: false),
+    _ => const MyPage(),
   };
 }
 
-class _TabTransition extends StatelessWidget {
-  const _TabTransition({
+// The PageView preserves each destination. For distant switches it swaps the
+// outgoing page into the adjacent slot so intermediate pages never flash by.
+class _ShellPages extends StatefulWidget {
+  const _ShellPages({
     required this.index,
+    required this.count,
     required this.mode,
-    required this.child,
+    required this.pageBuilder,
+    this.desktop = false,
   });
 
   final int index;
+  final int count;
   final TabAnimationMode mode;
-  final Widget child;
+  final IndexedWidgetBuilder pageBuilder;
+  final bool desktop;
+
+  @override
+  State<_ShellPages> createState() => _ShellPagesState();
+}
+
+class _ShellPagesState extends State<_ShellPages> {
+  late final _controller = PageController(initialPage: widget.index);
+  List<int>? _order;
+  int _switch = 0;
+
+  @override
+  void didUpdateWidget(covariant _ShellPages oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.index != widget.index) {
+      final request = ++_switch;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && request == _switch) {
+          _showPage(widget.index, request);
+        }
+      });
+    }
+  }
+
+  Future<void> _showPage(int index, int request) async {
+    if (!_controller.hasClients) return;
+    final position = _controller.page?.round() ?? index;
+    final current = _order?[position] ?? position;
+    if (_order != null) {
+      setState(() => _order = null);
+      _controller.jumpToPage(current);
+    }
+    if (widget.desktop || context.disableAnimations) {
+      _controller.jumpToPage(index);
+      return;
+    }
+    if ((index - current).abs() > 1) {
+      final adjacent = index > current ? index - 1 : index + 1;
+      setState(() {
+        _order = List.generate(widget.count, (slot) => slot)
+          ..[adjacent] = current
+          ..[current] = adjacent;
+      });
+      _controller.jumpToPage(adjacent);
+    }
+    final fade = widget.mode == TabAnimationMode.fade;
+    await _controller.animateToPage(
+      index,
+      duration: fade ? fadeTabDuration : kTabScrollDuration,
+      curve: fade ? fadeTabCurve : Curves.easeOut,
+    );
+    if (mounted && request == _switch && _order != null) {
+      setState(() => _order = null);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedSwitcher(
-      duration: context.motionDuration(
-        mode == TabAnimationMode.fade
-            ? const Duration(milliseconds: 200)
-            : const Duration(milliseconds: 240),
-      ),
-      switchInCurve: Curves.easeOutCubic,
-      switchOutCurve: Curves.easeInCubic,
-      transitionBuilder: (child, animation) {
-        if (mode == TabAnimationMode.fade) {
-          return FadeTransition(opacity: animation, child: child);
+    return PageView.builder(
+      controller: _controller,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: widget.count,
+      findChildIndexCallback: (key) {
+        final index = (key as ValueKey<int>).value;
+        return _order?.indexOf(index) ?? index;
+      },
+      itemBuilder: (context, position) {
+        final index = _order?[position] ?? position;
+        final active = index == widget.index;
+        Widget page = PageFocusScope(child: widget.pageBuilder(context, index));
+        if (widget.desktop) {
+          page = _DesktopStack(active: active, child: page);
         }
-        return FadeTransition(
-          opacity: animation,
-          child: SlideTransition(
-            position: Tween<Offset>(
-              begin: const Offset(0.03, 0),
-              end: Offset.zero,
-            ).animate(animation),
-            child: child,
+        return KeepScope(
+          key: ValueKey(index),
+          child: _TabPage(
+            controller: _controller,
+            position: position,
+            fade: !widget.desktop && widget.mode == TabAnimationMode.fade,
+            active: active,
+            child: PageActivityScope(
+              isActive: active,
+              child: TickerMode(
+                enabled: active,
+                child: ExcludeFocus(excluding: !active, child: page),
+              ),
+            ),
           ),
         );
       },
-      child: child,
+    );
+  }
+}
+
+class _TabPage extends StatefulWidget {
+  const _TabPage({
+    required this.controller,
+    required this.position,
+    required this.fade,
+    required this.active,
+    required this.child,
+  });
+
+  final PageController controller;
+  final int position;
+  final bool fade;
+  final bool active;
+  final Widget child;
+
+  @override
+  State<_TabPage> createState() => _TabPageState();
+}
+
+class _TabPageState extends State<_TabPage> {
+  final _snapshot = SnapshotController();
+
+  @override
+  void dispose() {
+    _snapshot.dispose();
+    super.dispose();
+  }
+
+  double get _delta {
+    final controller = widget.controller;
+    if (!controller.hasClients) return 0;
+    final metrics = controller.position;
+    if (!metrics.hasContentDimensions || metrics.viewportDimension == 0) {
+      return 0;
+    }
+    return (widget.position - metrics.pixels / metrics.viewportDimension).clamp(
+      -1.0,
+      1.0,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final glass = LiquidGlassScope.of(context);
+    final rtl = Directionality.of(context) == TextDirection.rtl;
+    final liveArrival = widget.fade && !glass && widget.active;
+    return AnimatedBuilder(
+      animation: widget.controller,
+      builder: (_, child) {
+        final offset = _delta;
+        _snapshot.allowSnapshotting = !liveArrival && offset.abs() > 0.001;
+        final delta = widget.fade ? offset : 0.0;
+        return FractionalTranslation(
+          translation: Offset(rtl ? delta : -delta, 0),
+          child: Opacity(opacity: 1 - delta.abs(), child: child),
+        );
+      },
+      child: SnapshotWidget(
+        controller: _snapshot,
+        mode: SnapshotMode.permissive,
+        autoresize: true,
+        child: LiquidGlassHost(enabled: glass, child: widget.child),
+      ),
+    );
+  }
+}
+
+class _DesktopStack extends StatefulWidget {
+  const _DesktopStack({required this.active, required this.child});
+
+  final bool active;
+  final Widget child;
+
+  @override
+  State<_DesktopStack> createState() => _DesktopStackState();
+}
+
+class _DesktopStackState extends State<_DesktopStack> {
+  final _navigator = GlobalKey<NavigatorState>();
+
+  @override
+  Widget build(BuildContext context) {
+    return NavigatorPopHandler(
+      enabled: widget.active,
+      onPopWithResult: (result) => _navigator.currentState?.pop(result),
+      child: Navigator(
+        key: _navigator,
+        pages: [RootPage(child: widget.child)],
+        onDidRemovePage: (_) {},
+      ),
     );
   }
 }
