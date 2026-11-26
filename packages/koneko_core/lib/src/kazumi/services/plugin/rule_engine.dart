@@ -357,8 +357,8 @@ class _DefaultRuleRequestExecutor implements RuleRequestExecutor {
     );
     final headers = <String, dynamic>{
       'referer': Uri.parse(config.baseUrl).toString(),
-      if (verifiedUa != null) 'user-agent': verifiedUa,
-      if (cookies != null) 'cookie': cookies,
+      'user-agent': ?verifiedUa,
+      'cookie': ?cookies,
       for (final entry in request.headers.entries)
         entry.key.toLowerCase(): entry.value,
     };

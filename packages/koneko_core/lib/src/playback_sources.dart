@@ -272,8 +272,8 @@ class KazumiSources implements PlaybackSources {
             page: page,
             headers: {
               ...rule.buildHttpHeaders(),
-              if (verifiedUa != null) 'user-agent': verifiedUa,
-              if (cookies != null) 'cookie': cookies,
+              'user-agent': ?verifiedUa,
+              'cookie': ?cookies,
             },
             legacy: rule.useLegacyParser,
           ),
@@ -296,7 +296,7 @@ class KazumiSources implements PlaybackSources {
     final headers = <String, String>{
       'user-agent': verifiedUa ?? _browserUserAgent,
       'referer': page.toString(),
-      if (cookies != null) 'cookie': cookies,
+      'cookie': ?cookies,
       ...episode.headers,
     };
     if (_isMedia(page)) return PlayableMedia(page, headers: headers);
