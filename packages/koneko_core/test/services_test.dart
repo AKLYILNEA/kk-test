@@ -410,6 +410,8 @@ class _DirectSource implements PlaybackSources {
   Future<PlayableMedia> resolve(SourceEpisode episode) async =>
       PlayableMedia(episode.page);
   @override
+  Future<int?> verifyPlayable(PlayableMedia media) async => 12;
+  @override
   Future<RuleProbeResult> probeRule(
     AnimeSubject subject,
     String ruleId, {
