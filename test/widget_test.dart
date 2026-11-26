@@ -4,8 +4,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:koneko/main.dart';
 import 'package:koneko_contract/koneko_contract.dart';
 import 'package:koneko_mock/koneko_mock.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
   test('Animeko multi-source history merges legacy Kazumi records by subjectId', () {
     final now = DateTime.now();
     final existing = MockSeedData.initialMergedHistory();

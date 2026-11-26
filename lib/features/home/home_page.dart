@@ -237,7 +237,9 @@ class _TopSummaryDeck extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
                       children: [
                         KonekoChip(
                           label: '继续观看',
@@ -247,10 +249,9 @@ class _TopSummaryDeck extends StatelessWidget {
                               colorScheme.primary.withValues(alpha: 0.14),
                           foregroundColor: colorScheme.primary,
                         ),
-                        const SizedBox(width: 6),
                         if (history != null && history!.mergedSourceCount > 1)
                           KonekoChip(
-                            label: '已合并 ${history!.mergedSourceCount} 源',
+                            label: '合并 ${history!.mergedSourceCount} 源',
                             height: 22,
                             fontSize: 10.5,
                           ),
@@ -298,15 +299,21 @@ class _TopSummaryDeck extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    spacing: 6,
                     children: [
-                      Text(
-                        '本周在追',
-                        style: AppTextStyle.caption1.of(context).copyWith(
-                          color: colorScheme.onSurfaceVariant,
+                      Flexible(
+                        child: Text(
+                          '在追',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyle.caption1.of(context).copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
                         ),
                       ),
                       Text(
                         '$watchingCount 部',
+                        maxLines: 1,
                         style: AppTextStyle.subheadline
                             .of(context, emphasized: true)
                             .copyWith(color: colorScheme.onSurface),
@@ -322,15 +329,21 @@ class _TopSummaryDeck extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    spacing: 6,
                     children: [
-                      Text(
-                        'Kazumi 规则',
-                        style: AppTextStyle.caption1.of(context).copyWith(
-                          color: colorScheme.onSurfaceVariant,
+                      Flexible(
+                        child: Text(
+                          '规则',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyle.caption1.of(context).copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
                         ),
                       ),
                       Text(
-                        '$enabledRulesCount 可用 · $pct%',
+                        '$enabledRulesCount 源 · $pct%',
+                        maxLines: 1,
                         style: AppTextStyle.subheadline
                             .of(context, emphasized: true)
                             .copyWith(color: colorScheme.primary),

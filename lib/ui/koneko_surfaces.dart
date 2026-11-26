@@ -183,21 +183,23 @@ class KonekoChip extends StatelessWidget {
             leading!,
             const SizedBox(width: 4),
           ],
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            strutStyle: StrutStyle(
-              fontSize: fontSize,
-              height: 1.0,
-              forceStrutHeight: true,
-              leadingDistribution: TextLeadingDistribution.even,
-            ),
-            style: AppTextStyle.caption1.of(context, emphasized: true).copyWith(
-              fontSize: fontSize,
-              height: 1.0,
-              leadingDistribution: TextLeadingDistribution.even,
-              color: fg,
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              strutStyle: StrutStyle(
+                fontSize: fontSize,
+                height: 1.0,
+                forceStrutHeight: true,
+                leadingDistribution: TextLeadingDistribution.even,
+              ),
+              style: AppTextStyle.caption1.of(context, emphasized: true).copyWith(
+                fontSize: fontSize,
+                height: 1.0,
+                leadingDistribution: TextLeadingDistribution.even,
+                color: fg,
+              ),
             ),
           ),
           if (trailing != null) ...[
@@ -217,7 +219,7 @@ class KonekoChip extends StatelessWidget {
           clipsChild: true,
           selected: selected,
           onPressed: onPressed,
-          child: Center(child: row),
+          child: Center(widthFactor: 1.0, child: row),
         ),
       );
     }
@@ -226,7 +228,7 @@ class KonekoChip extends StatelessWidget {
       height: height,
       child: DecoratedBox(
         decoration: ShapeDecoration(color: bg, shape: AppShape.full),
-        child: Center(child: row),
+        child: Center(widthFactor: 1.0, child: row),
       ),
     );
   }
