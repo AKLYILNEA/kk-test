@@ -79,8 +79,9 @@ class LocalOfflineLibrary implements OfflineLibrary {
     if (_active.containsKey(id)) return;
     final pendingRemoval = _afterCancel[id];
     if (pendingRemoval != null) await pendingRemoval;
-    if (_active.containsKey(id) || _items[id]?.state == OfflineState.ready)
+    if (_active.containsKey(id) || _items[id]?.state == OfflineState.ready) {
       return;
+    }
     if (_active.length >= 3) throw StateError('同时下载的剧集已达上限');
     final token = _active[id] = CancelToken();
     final finished = _finished[id] = Completer<void>();
