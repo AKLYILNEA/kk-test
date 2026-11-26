@@ -2315,7 +2315,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                     onTap: () async {
                       setState(() => _drawerOpen = false);
                       await _setFullscreen(false);
-                      if (mounted) {
+                      if (context.mounted) {
                         unawaited(showKonekoDanmakuSettingsSheet(context));
                       }
                     },

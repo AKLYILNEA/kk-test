@@ -36,7 +36,7 @@ class _DanmakuSettingsSheetBody extends ConsumerWidget {
     4 => '常规 (4)',
     5 => '中等 (5)',
     6 => '半粗 (6)',
-    >= 7 => '粗体 ($weight)',
+    _ => '粗体 ($weight)',
   };
 
   @override
