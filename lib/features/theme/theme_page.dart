@@ -7,6 +7,7 @@ import 'package:koneko/common/font_manager.dart';
 import 'package:koneko/common/providers.dart';
 import 'package:koneko/features/theme/font_family_page.dart';
 import 'package:koneko/features/theme/theme_preview.dart';
+import 'package:koneko/ui/koneko_danmaku_sheet.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
 import 'package:koneko/ui/koneko_scaffold.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
@@ -48,24 +49,22 @@ class _ThemePageState extends ConsumerState<ThemePage> {
       brightness: Brightness.light,
       primaryColor: settings.primaryColor,
       colorStyle: settings.colorStyle,
-      pureBlack: settings.pureBlack,
     );
     final darkScheme = buildKonekoColorScheme(
       brightness: Brightness.dark,
       primaryColor: settings.primaryColor,
       colorStyle: settings.colorStyle,
-      pureBlack: settings.pureBlack,
     );
     final liquidGlass = settings.liquidGlass != LiquidGlassMode.none;
 
     final lightMini = MiniScreen(
       colorScheme: lightScheme,
-      floatingBar: settings.floatingNavigationBar,
+      floatingBar: true,
       liquidGlass: liquidGlass,
     );
     final darkMini = MiniScreen(
       colorScheme: darkScheme,
-      floatingBar: settings.floatingNavigationBar,
+      floatingBar: true,
       liquidGlass: liquidGlass,
     );
 
@@ -121,28 +120,6 @@ class _ThemePageState extends ConsumerState<ThemePage> {
             ),
             const SizedBox(height: 16),
 
-            // Pure Black
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: KonekoGroup(
-                items: [
-                  DecorationListItem(
-                    leading: const GlyphIcon(KonekoGlyphs.pureBlack),
-                    title: const Text('纯黑模式'),
-                    trailing: Switch(
-                      value: settings.pureBlack,
-                      onChanged: (v) =>
-                          notifier.update((s) => s.copyWith(pureBlack: v)),
-                    ),
-                    onPressed: () => notifier.update(
-                      (s) => s.copyWith(pureBlack: !s.pureBlack),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-
             // Theme Color Swatches + Custom Palette + ColorStyle
             InfoHeader(
               info: const Info(label: '主题色', glyph: KonekoGlyphs.palette),
@@ -189,7 +166,7 @@ class _ThemePageState extends ConsumerState<ThemePage> {
                       });
                     },
                   ),
-                  SegmentedControl<ColorStyle>(
+                  KonekoSegmentedBar<ColorStyle>(
                     segments: const [
                       (ColorStyle.soft, '柔和'),
                       (ColorStyle.vivid, '鲜艳'),
@@ -205,39 +182,6 @@ class _ThemePageState extends ConsumerState<ThemePage> {
             ),
             const SizedBox(height: 16),
 
-            // Navigation Bar Style
-            PreviewChoiceGroup<bool>(
-              info: const Info(label: '底栏样式', glyph: KonekoGlyphs.navBar),
-              value: settings.floatingNavigationBar,
-              choices: [
-                PreviewChoice(
-                  value: true,
-                  label: '悬浮底栏',
-                  pictogram: MiniScreenThumb(
-                    screen: MiniScreen(
-                      colorScheme: colorScheme,
-                      floatingBar: true,
-                      liquidGlass: liquidGlass,
-                    ),
-                  ),
-                ),
-                PreviewChoice(
-                  value: false,
-                  label: '经典底栏',
-                  pictogram: MiniScreenThumb(
-                    screen: MiniScreen(
-                      colorScheme: colorScheme,
-                      floatingBar: false,
-                      liquidGlass: false,
-                    ),
-                  ),
-                ),
-              ],
-              onChanged: (v) =>
-                  notifier.update((s) => s.copyWith(floatingNavigationBar: v)),
-            ),
-            const SizedBox(height: 16),
-
             // Tab Animation
             PreviewChoiceGroup<TabAnimationMode>(
               info: const Info(label: '切换动画', glyph: KonekoGlyphs.motion),
@@ -249,7 +193,7 @@ class _ThemePageState extends ConsumerState<ThemePage> {
                   pictogram: MiniScreenThumb(
                     screen: MiniScreen(
                       colorScheme: colorScheme,
-                      floatingBar: settings.floatingNavigationBar,
+                      floatingBar: true,
                       liquidGlass: liquidGlass,
                       selected: 1,
                       previous: 0,
@@ -264,7 +208,7 @@ class _ThemePageState extends ConsumerState<ThemePage> {
                   pictogram: MiniScreenThumb(
                     screen: MiniScreen(
                       colorScheme: colorScheme,
-                      floatingBar: settings.floatingNavigationBar,
+                      floatingBar: true,
                       liquidGlass: liquidGlass,
                       selected: 1,
                       previous: 0,
@@ -323,8 +267,9 @@ class _ThemePageState extends ConsumerState<ThemePage> {
             ),
             const SizedBox(height: 16),
 
+            // Font & Danmaku Settings
             const InfoHeader(
-              info: Info(label: '字体', glyph: KonekoGlyphs.font),
+              info: Info(label: '字体与弹幕', glyph: KonekoGlyphs.font),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -344,7 +289,8 @@ class _ThemePageState extends ConsumerState<ThemePage> {
                                 color: colorScheme.primary,
                               ),
                         ),
-                        title: Text(
+                        title: const Text('字体'),
+                        subtitle: Text(
                           name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -355,6 +301,17 @@ class _ThemePageState extends ConsumerState<ThemePage> {
                           context,
                           const FontFamilyPage(),
                         ),
+                      ),
+                      DecorationListItem(
+                        leading: GlyphIcon(
+                          KonekoGlyphs.danmaku,
+                          color: colorScheme.primary,
+                        ),
+                        title: const Text('弹幕设置'),
+                        subtitle: const Text('区域、字号与来源'),
+                        trailing: const GlyphIcon(Glyphs.chevronForward),
+                        onPressed: () =>
+                            openKonekoDanmakuSettingsPage(context),
                       ),
                     ],
                   );
@@ -370,9 +327,9 @@ class _ThemePageState extends ConsumerState<ThemePage> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               child: Column(
-                spacing: 8,
+                spacing: 10,
                 children: [
-                  SegmentedControl<bool>(
+                  KonekoSegmentedBar<bool>(
                     segments: const [(false, '跟随系统'), (true, '自定义')],
                     value: settings.customTextScaleEnabled,
                     onChanged: (enable) {
@@ -494,6 +451,7 @@ class _ColorSwatches extends StatelessWidget {
       decoration: ShapeDecoration(
         color: level.colorOf(colorScheme),
         shape: AppShape.xl,
+        shadows: konekoCardShadows(colorScheme),
       ),
       child: Wrap(
         spacing: 12,

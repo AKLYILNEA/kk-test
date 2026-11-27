@@ -91,6 +91,14 @@ final offlineUpdatesProvider = StreamProvider<List<OfflineEpisode>>((ref) {
   return ref.watch(offlineLibraryProvider)?.changes ?? const Stream.empty();
 });
 
+final bangumiProfileProvider = FutureProvider<BangumiProfile?>((ref) async {
+  ref.watch(trackingUpdatesProvider);
+  final secrets = await ref.watch(secretsProvider)?.read();
+  final token = secrets?.bangumiToken.trim() ?? '';
+  if (token.isEmpty) return null;
+  return ref.watch(onlineCatalogProvider)?.loadProfile(token);
+});
+
 final loadTrackedSubjectsProvider = FutureProvider<void>((ref) async {
   final catalog = ref.watch(onlineCatalogProvider);
   if (catalog == null) return;

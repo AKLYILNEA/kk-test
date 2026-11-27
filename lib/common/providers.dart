@@ -118,13 +118,13 @@ class ThemeSettings {
         : kDefaultPrimaryColors;
     return ThemeSettings(
       themeMode: parseMode(map['themeMode']),
-      pureBlack: map['pureBlack'] == true,
+      pureBlack: false,
       primaryColor: map.containsKey('primaryColor')
           ? map['primaryColor'] as int?
           : kDefaultPrimaryColor,
       primaryColors: colors.isEmpty ? kDefaultPrimaryColors : colors,
       colorStyle: parseStyle(map['colorStyle']),
-      floatingNavigationBar: map['floatingNavigationBar'] != false,
+      floatingNavigationBar: true,
       tabAnimation: parseAnim(map['tabAnimation']),
       liquidGlass: parseGlass(map['liquidGlass']),
       customTextScaleEnabled: map['customTextScaleEnabled'] == true,
@@ -227,16 +227,15 @@ ColorScheme buildKonekoColorScheme({
   required Brightness brightness,
   required int? primaryColor,
   required ColorStyle colorStyle,
-  required bool pureBlack,
+  bool pureBlack = false,
   Color? overrideColor,
 }) {
   final seed = overrideColor ?? Color(primaryColor ?? kDefaultPrimaryColor);
-  final scheme = seededColorScheme(
+  return seededColorScheme(
     seedColor: seed,
     brightness: brightness,
     style: colorStyle,
   );
-  return scheme.toPureBlack(pureBlack);
 }
 
 ThemeData buildKonekoTheme({

@@ -174,7 +174,7 @@ void main() {
       await tester.tap(_barAction('关闭搜索'));
       await tester.pumpAndSettle();
 
-      await tester.tap(_barAction('修改「星海旅人：北境编年史」的追番状态'));
+      await tester.tap(find.byTooltip('修改「星海旅人：北境编年史」的追番状态'));
       await tester.pumpAndSettle();
       expect(find.text('修改追番状态'), findsOneWidget);
       await tester.tap(find.text('想看').first);
@@ -252,14 +252,14 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.textContaining('关联系列'), findsWidgets);
 
-      await tester.drag(find.byType(PageView).last, const Offset(320, 0));
+      await tester.tap(find.text('角色'));
       await tester.pumpAndSettle();
       expect(find.text('暂无角色'), findsOneWidget);
 
-      final commentsTab = find.textContaining('评论吐槽');
-      await tester.ensureVisible(commentsTab);
+      final commentsTab = find.textContaining('评论');
+      await tester.ensureVisible(commentsTab.first);
       await tester.pumpAndSettle();
-      await tester.tap(commentsTab);
+      await tester.tap(commentsTab.first);
       await tester.pumpAndSettle();
       expect(find.textContaining('Bangumi 吐槽箱'), findsOneWidget);
       expect(find.text('星屑旅人'), findsOneWidget);

@@ -13,7 +13,7 @@ Dio networkClient() => Dio(
     sendTimeout: const Duration(seconds: 12),
     headers: {
       'user-agent':
-          'AKLYILNEA/Koneko/0.0.9 (https://github.com/AKLYILNEA/kk-test)',
+          'AKLYILNEA/Koneko/0.0.10 (https://github.com/AKLYILNEA/kk-test)',
     },
   ),
 );
@@ -49,6 +49,7 @@ class BangumiCatalog implements OnlineCatalog {
   static const _base = 'https://api.bgm.tv';
   static const _nextBase = 'https://next.bgm.tv';
   static const _cacheKey = 'koneko_bangumi_cache_v1';
+  static const _profileCacheKey = 'koneko_bangumi_profile_v1';
   final SharedPreferences _preferences;
   final Dio _client;
   final _changes = StreamController<void>.broadcast();
@@ -64,7 +65,11 @@ class BangumiCatalog implements OnlineCatalog {
   final _week = <int, List<int>>{};
   final _seasonCalendars = <String, Map<int, List<int>>>{};
   final _queries = <String, List<int>>{};
+  final _tagFeeds = <String, List<int>>{};
+  final _tagOffsets = <String, int>{};
   List<int> _trending = [];
+  int _trendingOffset = 0;
+  bool _usedNextTrending = true;
   Future<void>? _refresh;
 
   @override
@@ -117,30 +122,13 @@ class BangumiCatalog implements OnlineCatalog {
       _refresh ??= _fetchHome().whenComplete(() => _refresh = null);
 
   Future<void> _fetchHome() async {
-    final now = DateTime.now();
-    final month = ((now.month - 1) ~/ 3) * 3 + 1;
-    final start = DateTime(now.year, month);
-    final end = DateTime(now.year, month + 3);
-    String ymd(DateTime date) => date.toIso8601String().split('T').first;
-
     final requests = <Future<void>>[
-      _client
-          .post<dynamic>(
-            '$_base/v0/search/subjects',
-            queryParameters: {'limit': 50},
-            data: {
-              'keyword': '',
-              'sort': 'heat',
-              'filter': {
-                'type': [2],
-                'air_date': ['>=${ymd(start)}', '<${ymd(end)}'],
-                'nsfw': false,
-              },
-            },
-          )
-          .then<void>((response) {
-            _trending = _readSubjects(jsonObject(response.data)['data']);
-          }),
+      _fetchTrendingPage(offset: 0, limit: 36).then<void>((ids) {
+        if (ids.isNotEmpty) {
+          _trending = ids;
+          _trendingOffset = ids.length;
+        }
+      }),
       _fetchCurrentCalendar().then<void>((days) {
         if (days.isNotEmpty) {
           _week
@@ -161,6 +149,149 @@ class BangumiCatalog implements OnlineCatalog {
     if (errors.length == requests.length ||
         (_trending.isEmpty && _week.isEmpty && errors.isNotEmpty)) {
       throw errors.first;
+    }
+  }
+
+  Future<List<int>> _fetchTrendingPage({
+    required int offset,
+    required int limit,
+  }) async {
+    // Primary: Kazumi's next.bgm.tv /p1/trending/subjects (rich global trending feed).
+    if (_usedNextTrending || offset == 0) {
+      try {
+        final response = await _client.get<dynamic>(
+          '$_nextBase/p1/trending/subjects',
+          queryParameters: {'type': 2, 'limit': limit, 'offset': offset},
+        );
+        final rows = jsonList(jsonObject(response.data)['data']);
+        final rawSubjects = <Object?>[
+          for (final item in rows)
+            if (jsonObject(item)['subject'] is Map) jsonObject(item)['subject'],
+        ];
+        final ids = _readSubjects(rawSubjects);
+        if (ids.isNotEmpty) {
+          _usedNextTrending = true;
+          return ids;
+        }
+      } on Object {
+        if (offset == 0) _usedNextTrending = false;
+      }
+    }
+
+    // Fallback: Bangumi v0 search sorted by heat across all anime (not 1-quarter only).
+    final response = await _client.post<dynamic>(
+      '$_base/v0/search/subjects',
+      queryParameters: {'limit': limit, 'offset': offset},
+      data: {
+        'keyword': '',
+        'sort': 'heat',
+        'filter': {
+          'type': [2],
+          'nsfw': false,
+        },
+      },
+    );
+    return _readSubjects(jsonObject(response.data)['data']);
+  }
+
+  @override
+  Future<bool> loadMoreTrending({String? tag}) async {
+    final cleanedTag = tag?.trim() ?? '';
+    if (cleanedTag.isEmpty || cleanedTag == '全部') {
+      final offset = _trendingOffset > 0 ? _trendingOffset : _trending.length;
+      final page = await _fetchTrendingPage(offset: offset, limit: 24);
+      if (page.isEmpty) return false;
+      final merged = <int>{..._trending, ...page}.toList();
+      _trending = merged;
+      _trendingOffset = offset + page.length;
+      _notify();
+      return page.length >= 16;
+    }
+
+    final existing = _tagFeeds[cleanedTag] ?? const <int>[];
+    final offset = _tagOffsets[cleanedTag] ?? existing.length;
+    final response = await _client.post<dynamic>(
+      '$_base/v0/search/subjects',
+      queryParameters: {'limit': 30, 'offset': offset},
+      data: {
+        'keyword': '',
+        'sort': 'heat',
+        'filter': {
+          'type': [2],
+          'tag': [cleanedTag],
+          'nsfw': false,
+        },
+      },
+    );
+    final ids = _readSubjects(jsonObject(response.data)['data']);
+    if (ids.isEmpty) return false;
+    _tagFeeds[cleanedTag] = <int>{...existing, ...ids}.toList();
+    _tagOffsets[cleanedTag] = offset + ids.length;
+    _notify();
+    return ids.length >= 20;
+  }
+
+  @override
+  Future<BangumiProfile?> loadProfile(String token) async {
+    final trimmed = token.trim();
+    if (trimmed.isEmpty) return null;
+    try {
+      final account = jsonObject(await get('/v0/me', token: trimmed));
+      final username = jsonString(account['username']).trim();
+      final nickname = jsonString(account['nickname']).trim();
+      final id = jsonInt(account['id']);
+      if (username.isEmpty && nickname.isEmpty && id <= 0) {
+        return _readCachedProfile();
+      }
+      final avatar = jsonObject(account['avatar']);
+      final avatarUrl = _normalizeImageUrl(
+        jsonString(avatar['large']).isNotEmpty
+            ? jsonString(avatar['large'])
+            : jsonString(avatar['medium']),
+      );
+      final profile = BangumiProfile(
+        id: id,
+        username: username,
+        nickname: nickname.isNotEmpty ? nickname : username,
+        sign: jsonString(account['sign']).trim(),
+        avatarUrl: avatarUrl,
+      );
+      unawaited(
+        _preferences.setString(
+          _profileCacheKey,
+          jsonEncode({
+            'id': profile.id,
+            'username': profile.username,
+            'nickname': profile.nickname,
+            'sign': profile.sign,
+            'avatarUrl': profile.avatarUrl,
+          }),
+        ),
+      );
+      return profile;
+    } on Object {
+      return _readCachedProfile();
+    }
+  }
+
+  BangumiProfile? _readCachedProfile() {
+    final raw = _preferences.getString(_profileCacheKey);
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final map = jsonObject(jsonDecode(raw));
+      final username = jsonString(map['username']);
+      final nickname = jsonString(map['nickname']);
+      final id = jsonInt(map['id']);
+      if (username.isEmpty && nickname.isEmpty && id <= 0) return null;
+      return BangumiProfile(
+        id: id,
+        username: username,
+        nickname: nickname.isNotEmpty ? nickname : username,
+        sign: jsonString(map['sign']),
+        avatarUrl: jsonString(map['avatarUrl']),
+      );
+    } on FormatException {
+      return null;
     }
   }
 
@@ -547,10 +678,19 @@ class BangumiCatalog implements OnlineCatalog {
   @override
   List<AnimeSubject> getAllSubjects() => _items(_subjects.keys);
   @override
-  List<AnimeSubject> getTrending({String? tag}) => _items(
-    _trending.isEmpty ? _week.values.expand((day) => day).toSet() : _trending,
-    tag,
-  );
+  List<AnimeSubject> getTrending({String? tag}) {
+    final cleanedTag = tag?.trim() ?? '';
+    if (cleanedTag.isNotEmpty && cleanedTag != '全部') {
+      final tagIds = _tagFeeds[cleanedTag];
+      if (tagIds != null && tagIds.isNotEmpty) {
+        return _items(tagIds);
+      }
+    }
+    return _items(
+      _trending.isEmpty ? _week.values.expand((day) => day).toSet() : _trending,
+      tag,
+    );
+  }
   @override
   List<AnimeSubject> getByWeekday(int weekday) =>
       _items(_week[weekday] ?? const []);

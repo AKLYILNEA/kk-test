@@ -52,9 +52,7 @@ class HomeShell extends ConsumerWidget {
       const mobileIndices = [0, 1, 2, 8];
       final mobileIndex = rawIndex < 3 ? rawIndex : 3;
       void select(int index) => navNotifier.select(mobileIndices[index]);
-      final dockInset = settings.floatingNavigationBar
-          ? NavigationDock.insetOf(context) + 8
-          : 0.0;
+      final dockInset = NavigationDock.insetOf(context) + 8;
 
       final pages = _ShellPages(
         index: mobileIndex,
@@ -65,43 +63,20 @@ class HomeShell extends ConsumerWidget {
 
       return Surface(
         color: SurfaceLevel.page.colorOf(colorScheme),
-        child: Column(
+        child: Stack(
+          fit: StackFit.expand,
           children: [
-            Expanded(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  pages,
-                  if (settings.floatingNavigationBar)
-                    Align(
-                      alignment: Alignment.bottomCenter,
-                      child: BarItemPresence.held(
-                        child: NavigationDock(
-                          destinations: _mobileDestinations,
-                          selectedIndex: mobileIndex,
-                          onSelected: select,
-                        ),
-                      ),
-                    ),
-                ],
+            pages,
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: BarItemPresence.held(
+                child: NavigationDock(
+                  destinations: _mobileDestinations,
+                  selectedIndex: mobileIndex,
+                  onSelected: select,
+                ),
               ),
             ),
-            if (!settings.floatingNavigationBar)
-              NavigationBar(
-                selectedIndex: mobileIndex,
-                onDestinationSelected: select,
-                destinations: [
-                  for (final (index, destination)
-                      in _mobileDestinations.indexed)
-                    NavigationDestination(
-                      icon: AnimatedGlyph(
-                        glyph: destination.glyph,
-                        filled: index == mobileIndex,
-                      ),
-                      label: destination.label,
-                    ),
-                ],
-              ),
           ],
         ),
       );

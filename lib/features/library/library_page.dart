@@ -6,7 +6,6 @@ import 'package:koneko/common/feature_feedback.dart';
 import 'package:koneko/common/providers.dart';
 import 'package:koneko/features/detail/subject_detail_page.dart';
 import 'package:koneko/features/my/service_settings_page.dart';
-import 'package:koneko/features/player/player_page.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
 import 'package:koneko/ui/koneko_scaffold.dart';
 import 'package:koneko/ui/koneko_sheet.dart';
@@ -215,9 +214,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
     ref.watch(catalogUpdatesProvider);
     final catalog = ref.watch(catalogRepositoryProvider);
     final entries = ref.watch(libraryProvider);
-    final history = {
-      for (final item in ref.watch(historyProvider)) item.subjectId: item,
-    };
 
     int countOf(CollectionStatus? status) => status == null
         ? entries.length
@@ -268,21 +264,13 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
       body: LayoutBuilder(
         builder: (context, constraints) {
           final width = constraints.maxWidth;
-          final columns = width >= 1150
+          final columns = width >= 1120
               ? 6
-              : width >= 930
+              : width >= 860
               ? 5
-              : width >= 680
+              : width >= 600
               ? 4
-              : width >= 470
-              ? 3
-              : 2;
-          const spacing = 12.0;
-          final cardWidth = (width - 28 - spacing * (columns - 1)) / columns;
-          final scale = MediaQuery.textScalerOf(context);
-          final titleHeight = scale.scale(AppTextStyle.footnote.size) * 1.25;
-          final metaHeight = scale.scale(AppTextStyle.caption1.size) * 1.25;
-          final footerHeight = 24 + titleHeight * 2 + metaHeight;
+              : 3;
 
           return CustomScrollView(
             scrollCacheExtent: const ScrollCacheExtent.pixels(600),
@@ -321,42 +309,29 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
               else
                 SliverPadding(
                   padding: EdgeInsets.fromLTRB(
-                    14,
                     12,
-                    14,
+                    10,
+                    12,
                     24 + widget.bottomPadding,
                   ),
                   sliver: SliverGrid(
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: columns,
-                      crossAxisSpacing: spacing,
-                      mainAxisSpacing: 16,
-                      mainAxisExtent: cardWidth * 1.32 + footerHeight,
+                      crossAxisSpacing: 10,
+                      mainAxisSpacing: 12,
+                      childAspectRatio: 0.56,
                     ),
                     delegate: SliverChildBuilderDelegate((context, index) {
                       final entry = filtered[index];
                       final subject = catalog.getSubjectById(entry.subjectId)!;
-                      final watched = history[entry.subjectId];
-                      return _LibraryPosterCard(
+                      return UnifiedAnimeCard(
                         subject: subject,
-                        entry: entry,
-                        history: watched,
-                        showStatus: _filter == null,
-                        footerHeight: footerHeight,
+                        corner: 16,
+                        compact: true,
+                        statusGlyph: _statusGlyph(entry.status),
+                        statusColor: _statusColor(entry.status, colorScheme),
+                        statusTooltip: '修改「${subject.title}」的追番状态',
                         onStatusTap: () => _pickStatus(subject, entry),
-                        onResume:
-                            watched != null &&
-                                entry.status == CollectionStatus.watching
-                            ? () => BaseNavigator.push<void>(
-                                context,
-                                PlayerPage(
-                                  subjectId: subject.subjectId,
-                                  initialEpisode: watched.lastEpisode,
-                                  initialRuleId: watched.lastRuleId,
-                                  initialRuleName: watched.lastRuleName,
-                                ),
-                              )
-                            : null,
                         onTap: () => BaseNavigator.push<void>(
                           context,
                           SubjectDetailPage(subjectId: subject.subjectId),
@@ -371,151 +346,21 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
       ),
     );
   }
-}
 
-class _LibraryPosterCard extends StatelessWidget {
-  const _LibraryPosterCard({
-    required this.subject,
-    required this.entry,
-    required this.history,
-    required this.showStatus,
-    required this.footerHeight,
-    required this.onStatusTap,
-    required this.onResume,
-    required this.onTap,
-  });
+  static Glyph _statusGlyph(CollectionStatus status) => switch (status) {
+    CollectionStatus.watching => KonekoGlyphs.play,
+    CollectionStatus.wish => KonekoGlyphs.heart,
+    CollectionStatus.watched => Glyphs.check,
+    CollectionStatus.onHold => KonekoGlyphs.pause,
+    CollectionStatus.dropped => Glyphs.close,
+  };
 
-  final AnimeSubject subject;
-  final CollectionEntry entry;
-  final MergedHistoryEntry? history;
-  final bool showStatus;
-  final double footerHeight;
-  final VoidCallback onStatusTap;
-  final VoidCallback? onResume;
-  final VoidCallback onTap;
-
-  String get _subtitle {
-    if (entry.status == CollectionStatus.watched) return '已看完';
-    if (history case final watched?
-        when entry.status == CollectionStatus.watching ||
-            entry.status == CollectionStatus.onHold) {
-      final percent = (watched.progressRatio * 100).round();
-      return percent > 0
-          ? '第 ${watched.lastEpisode} 话 · $percent%'
-          : '看到第 ${watched.lastEpisode} 话';
-    }
-    if (entry.watchedEpisodes > 0) {
-      return subject.totalEpisodes > 0
-          ? '已看 ${entry.watchedEpisodes}/${subject.totalEpisodes} 话'
-          : '已看 ${entry.watchedEpisodes} 话';
-    }
-    return [
-      if (subject.year > 0) '${subject.year}',
-      if (subject.score > 0) '${subject.score.toStringAsFixed(1)} 分',
-      if (subject.year <= 0 && subject.score <= 0) entry.status.label,
-    ].join(' · ');
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colorScheme;
-    return KonekoCard(
-      corner: 18,
-      padding: EdgeInsets.zero,
-      onPressed: onTap,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: KonekoPosterArt(
-              subject: subject,
-              overlayBadges: [
-                Positioned(
-                  top: 7,
-                  right: 7,
-                  child: TonalButtonTheme(
-                    size: TonalButtonSize.section,
-                    child: ElasticPress(
-                      child: AppBarActionButton(
-                        data: IconButtonData(
-                          glyph: Glyphs.more,
-                          tooltip: '修改「${subject.title}」的追番状态',
-                          onPressed: onStatusTap,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                if (showStatus)
-                  Positioned(
-                    top: 10,
-                    left: 9,
-                    child: KonekoChip(
-                      label: entry.status.label,
-                      height: 24,
-                      fontSize: 11,
-                      backgroundColor: colors.surface.withValues(alpha: 0.9),
-                      foregroundColor: colors.onSurface,
-                      onPressed: onStatusTap,
-                    ),
-                  ),
-                if (onResume != null)
-                  Positioned(
-                    bottom: 9,
-                    right: 9,
-                    child: Semantics(
-                      button: true,
-                      label: '继续播放 ${subject.title}',
-                      child: PressSurface(
-                        fill: colors.primary,
-                        shape: AppShape.full,
-                        onPressed: onResume,
-                        child: SizedBox.square(
-                          dimension: 40,
-                          child: Center(
-                            child: GlyphIcon(
-                              KonekoGlyphs.play,
-                              color: colors.onPrimary,
-                              size: 16,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          SizedBox(
-            height: footerHeight,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(11, 9, 11, 9),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    subject.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTextStyle.footnote
-                        .of(context, emphasized: true)
-                        .copyWith(color: colors.onSurface, height: 1.25),
-                  ),
-                  Text(
-                    _subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTextStyle.caption1
-                        .of(context)
-                        .copyWith(color: colors.onSurfaceVariant, height: 1.25),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  static Color _statusColor(CollectionStatus status, ColorScheme scheme) =>
+      switch (status) {
+        CollectionStatus.watching => scheme.primary,
+        CollectionStatus.wish => const Color(0xFFE07A5F),
+        CollectionStatus.watched => const Color(0xFF2E9E6B),
+        CollectionStatus.onHold => const Color(0xFF5B7C99),
+        CollectionStatus.dropped => const Color(0xFF7B7F8A),
+      };
 }

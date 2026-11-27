@@ -948,8 +948,12 @@ class UnifiedAnimeCard extends StatelessWidget {
     this.isTracking = false,
     this.showTopRank = false,
     this.statusBadgeLabel,
+    this.statusGlyph,
+    this.statusColor,
+    this.statusTooltip,
     this.onStatusTap,
     this.showMetaLine = true,
+    this.compact = false,
     this.corner = 22,
   });
 
@@ -958,8 +962,12 @@ class UnifiedAnimeCard extends StatelessWidget {
   final bool isTracking;
   final bool showTopRank;
   final String? statusBadgeLabel;
+  final Glyph? statusGlyph;
+  final Color? statusColor;
+  final String? statusTooltip;
   final VoidCallback? onStatusTap;
   final bool showMetaLine;
+  final bool compact;
   final double corner;
 
   @override
@@ -999,7 +1007,36 @@ class UnifiedAnimeCard extends StatelessWidget {
                         foregroundColor: colorScheme.onPrimary,
                       ),
                     ),
-                  if (statusBadgeLabel != null)
+                  if (statusGlyph != null)
+                    Positioned(
+                      top: compact ? 6 : 7,
+                      right: compact ? 6 : 7,
+                      child: Semantics(
+                        button: onStatusTap != null,
+                        label: statusTooltip ?? '修改追番状态',
+                        child: Tooltip(
+                          message: statusTooltip ?? '修改追番状态',
+                          child: SizedBox.square(
+                            dimension: compact ? 26 : 28,
+                            child: PressSurface(
+                              fill: (statusColor ?? colorScheme.primary)
+                                  .withValues(alpha: 0.9),
+                              shape: AppShape.full,
+                              clipsChild: true,
+                              onPressed: onStatusTap,
+                              child: Center(
+                                child: GlyphIcon(
+                                  statusGlyph!,
+                                  size: compact ? 13 : 14,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                  else if (statusBadgeLabel != null)
                     Positioned(
                       top: 7,
                       right: 7,
@@ -1038,16 +1075,16 @@ class UnifiedAnimeCard extends StatelessWidget {
                     ),
                   if (subject.score > 0)
                     Positioned(
-                      right: 8,
-                      bottom: 8,
+                      right: compact ? 6 : 8,
+                      bottom: compact ? 6 : 8,
                       child: KonekoChip(
                         label: subject.score.toStringAsFixed(1),
-                        height: 22,
-                        fontSize: 11,
-                        leading: const GlyphIcon(
+                        height: compact ? 19 : 22,
+                        fontSize: compact ? 10 : 11,
+                        leading: GlyphIcon(
                           KonekoGlyphs.star,
-                          size: 11,
-                          color: Color(0xFFFFC145),
+                          size: compact ? 10 : 11,
+                          color: const Color(0xFFFFC145),
                         ),
                         backgroundColor: Colors.black.withValues(alpha: 0.58),
                         foregroundColor: Colors.white,
@@ -1058,7 +1095,9 @@ class UnifiedAnimeCard extends StatelessWidget {
             ),
             if (showMetaLine)
               Padding(
-                padding: const EdgeInsets.fromLTRB(10, 9, 10, 10),
+                padding: compact
+                    ? const EdgeInsets.fromLTRB(8, 7, 8, 8)
+                    : const EdgeInsets.fromLTRB(10, 9, 10, 10),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -1068,16 +1107,22 @@ class UnifiedAnimeCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: AppTextStyle.subheadline
                           .of(context, emphasized: true)
-                          .copyWith(color: colorScheme.onSurface, fontSize: 14),
+                          .copyWith(
+                            color: colorScheme.onSurface,
+                            fontSize: compact ? 12.5 : 14,
+                          ),
                     ),
-                    const SizedBox(height: 4),
+                    SizedBox(height: compact ? 2 : 4),
                     Text(
                       subjectMetaCaption(subject),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: AppTextStyle.caption1
                           .of(context)
-                          .copyWith(color: colorScheme.onSurfaceVariant),
+                          .copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                            fontSize: compact ? 10.5 : null,
+                          ),
                     ),
                   ],
                 ),

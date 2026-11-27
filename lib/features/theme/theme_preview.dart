@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:koneko/common/constants.dart';
 import 'package:koneko/common/providers.dart';
+import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:prism_ui/prism_ui.dart';
 
 class PreviewChoice<T> {
@@ -16,7 +17,7 @@ class PreviewChoice<T> {
   final Widget pictogram;
 }
 
-/// Ported 1:1 from FlClash's [PreviewChoiceGroup].
+/// Elevated preview choice group matching Koneko's unified card shadow language.
 class PreviewChoiceGroup<T> extends StatelessWidget {
   const PreviewChoiceGroup({
     super.key,
@@ -39,16 +40,20 @@ class PreviewChoiceGroup<T> extends StatelessWidget {
         InfoHeader(info: info),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: generateGroup([
-            for (final choice in choices)
-              DecorationListItem(
-                leading: ExcludeSemantics(child: choice.pictogram),
-                title: Text(choice.label),
-                isSelected: choice.value == value,
-                trailing: choice.value == value ? const SelectionCheck() : null,
-                onPressed: () => onChanged(choice.value),
-              ),
-          ]),
+          child: KonekoGroup(
+            items: [
+              for (final choice in choices)
+                DecorationListItem(
+                  leading: ExcludeSemantics(child: choice.pictogram),
+                  title: Text(choice.label),
+                  isSelected: choice.value == value,
+                  trailing: choice.value == value
+                      ? const SelectionCheck()
+                      : null,
+                  onPressed: () => onChanged(choice.value),
+                ),
+            ],
+          ),
         ),
       ],
     );
@@ -97,7 +102,8 @@ class _ColorSchemeTween extends Tween<ColorScheme> {
   ColorScheme lerp(double t) => ColorScheme.lerp(begin!, end!, t);
 }
 
-/// Interactive live mini-phone preview of Koneko's theme settings (FlClash style).
+/// Interactive live mini-phone preview of Koneko's theme settings with distinct
+/// layouts for all 4 destinations (推荐 / 时间表 / 追番 / 我的).
 class ThemeLivePreview extends ConsumerStatefulWidget {
   const ThemeLivePreview({super.key});
 
@@ -107,7 +113,7 @@ class ThemeLivePreview extends ConsumerStatefulWidget {
 
 class _ThemeLivePreviewState extends ConsumerState<ThemeLivePreview>
     with SingleTickerProviderStateMixin {
-  static const double _phoneWidth = 168;
+  static const double _phoneWidth = 172;
   static const _duration = Duration(milliseconds: 300);
 
   late final AnimationController _slide = AnimationController(
@@ -158,6 +164,7 @@ class _ThemeLivePreviewState extends ConsumerState<ThemeLivePreview>
   @override
   Widget build(BuildContext context) {
     final settings = ref.watch(themeSettingsProvider);
+    final outerScheme = context.colorScheme;
     final brightness = switch (settings.themeMode) {
       ThemeMode.light => Brightness.light,
       ThemeMode.dark => Brightness.dark,
@@ -167,7 +174,6 @@ class _ThemeLivePreviewState extends ConsumerState<ThemeLivePreview>
       brightness: brightness,
       primaryColor: settings.primaryColor,
       colorStyle: settings.colorStyle,
-      pureBlack: settings.pureBlack,
     );
     final liquidGlass = settings.liquidGlass != LiquidGlassMode.none;
     final corner = AppCorner.fit(_phoneWidth);
@@ -177,32 +183,51 @@ class _ThemeLivePreviewState extends ConsumerState<ThemeLivePreview>
       padding: const EdgeInsets.symmetric(vertical: 22),
       alignment: Alignment.center,
       decoration: ShapeDecoration(
-        color: context.raisedSurfaceLevel.colorOf(context.colorScheme),
+        color: SurfaceLevel.card.colorOf(outerScheme),
         shape: AppShape.xxl,
+        shadows: konekoCardShadows(outerScheme),
       ),
-      child: SizedBox(
-        width: _phoneWidth,
-        child: AspectRatio(
-          aspectRatio: 9 / 17,
-          child: ClipRSuperellipse(
+      child: DecoratedBox(
+        decoration: ShapeDecoration(
+          shape: SuperellipseBorder(
             borderRadius: AppRadius.all(corner),
-            child: TweenAnimationBuilder<ColorScheme>(
-              tween: _ColorSchemeTween(end: scheme),
-              duration: _duration,
-              builder: (_, animatedScheme, _) => AnimatedSwitcher(
+            side: BorderSide(
+              color: outerScheme.outlineVariant.withValues(alpha: 0.24),
+              width: 1,
+            ),
+          ),
+          shadows: [
+            BoxShadow(
+              color: outerScheme.shadow.withValues(alpha: 0.14),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: SizedBox(
+          width: _phoneWidth,
+          child: AspectRatio(
+            aspectRatio: 9 / 17,
+            child: ClipRSuperellipse(
+              borderRadius: AppRadius.all(corner),
+              child: TweenAnimationBuilder<ColorScheme>(
+                tween: _ColorSchemeTween(end: scheme),
                 duration: _duration,
-                child: AnimatedBuilder(
-                  key: ValueKey((settings.floatingNavigationBar, liquidGlass)),
-                  animation: _slideCurve,
-                  builder: (_, _) => MiniScreen(
-                    colorScheme: animatedScheme,
-                    floatingBar: settings.floatingNavigationBar,
-                    liquidGlass: liquidGlass,
-                    selected: _selected,
-                    previous: _previous,
-                    progress: _previous == null ? 1 : _slideCurve.value,
-                    tabAnimation: settings.tabAnimation,
-                    onSelect: _select,
+                builder: (_, animatedScheme, _) => AnimatedSwitcher(
+                  duration: _duration,
+                  child: AnimatedBuilder(
+                    key: ValueKey(liquidGlass),
+                    animation: _slideCurve,
+                    builder: (_, _) => MiniScreen(
+                      colorScheme: animatedScheme,
+                      floatingBar: true,
+                      liquidGlass: liquidGlass,
+                      selected: _selected,
+                      previous: _previous,
+                      progress: _previous == null ? 1 : _slideCurve.value,
+                      tabAnimation: settings.tabAnimation,
+                      onSelect: _select,
+                    ),
                   ),
                 ),
               ),
@@ -322,8 +347,8 @@ class _DiagonalClipper extends CustomClipper<Path> {
 class _MiniGeometry {
   _MiniGeometry(this.size, {required bool floatingBar})
     : unit = size.width / 20 {
-    margin = unit * 1.5;
-    final barHeight = floatingBar ? unit * 3.2 : unit * 3.6;
+    margin = unit * 1.4;
+    final barHeight = floatingBar ? unit * 3.1 : unit * 3.5;
     pageBottom = floatingBar ? 0 : barHeight;
     bar = floatingBar
         ? Rect.fromLTWH(
@@ -393,7 +418,7 @@ class _MiniScreenPainter extends CustomPainter {
     final unit = geometry.unit;
     final dock = SurfaceLevel.floatingOf(colorScheme).colorOf(colorScheme);
     final shadow = BoxShadow(
-      color: colorScheme.shadow.withValues(alpha: 0.12),
+      color: colorScheme.shadow.withValues(alpha: 0.14),
       blurRadius: unit,
       offset: Offset(0, unit * 0.3),
     );
@@ -421,10 +446,12 @@ class _MiniScreenPainter extends CustomPainter {
 
   void _paintPages(Canvas canvas, _MiniGeometry geometry, {MaskFilter? blur}) {
     final size = geometry.size;
-    canvas.drawRect(
-      Offset.zero & size,
-      Paint()..color = SurfaceLevel.page.colorOf(colorScheme),
-    );
+    final dark = colorScheme.brightness == Brightness.dark;
+    // Distinct slightly-contrasted page backdrop so mini cards stand out clearly
+    final pageBg = dark
+        ? Color.lerp(SurfaceLevel.page.colorOf(colorScheme), Colors.black, 0.25)!
+        : SurfaceLevel.page.colorOf(colorScheme);
+    canvas.drawRect(Offset.zero & size, Paint()..color = pageBg);
     canvas.save();
     canvas.clipRect(Offset.zero & size, doAntiAlias: false);
     final prev = previous;
@@ -435,7 +462,13 @@ class _MiniScreenPainter extends CustomPainter {
       _paintPage(canvas, geometry, selected, 0, opacity: progress, blur: blur);
     } else {
       final dir = prev > selected ? -1 : 1;
-      _paintPage(canvas, geometry, prev, -dir * size.width * progress, blur: blur);
+      _paintPage(
+        canvas,
+        geometry,
+        prev,
+        -dir * size.width * progress,
+        blur: blur,
+      );
       _paintPage(
         canvas,
         geometry,
@@ -471,10 +504,30 @@ class _MiniScreenPainter extends CustomPainter {
       canvas.save();
     }
     canvas.clipRect(content, doAntiAlias: false);
+
+    final dark = colorScheme.brightness == Brightness.dark;
     final card = SurfaceLevel.card.colorOf(colorScheme);
-    final block = SurfaceLevel.block.colorOf(colorScheme);
-    final text = colorScheme.onSurface.withValues(alpha: 0.72);
-    final line = colorScheme.onSurfaceVariant.withValues(alpha: 0.38);
+    final text = colorScheme.onSurface.withValues(alpha: 0.78);
+    final line = colorScheme.onSurfaceVariant.withValues(alpha: 0.44);
+    final cardShadows = blur != null
+        ? null
+        : [
+            BoxShadow(
+              color: colorScheme.shadow.withValues(alpha: dark ? 0.32 : 0.10),
+              blurRadius: u * 0.85,
+              offset: Offset(0, u * 0.25),
+            ),
+          ];
+
+    // Distinct tinted anime poster art tones so covers pop cleanly in light & dark mode
+    final posters = <Color>[
+      colorScheme.primary.withValues(alpha: dark ? 0.45 : 0.34),
+      colorScheme.tertiary.withValues(alpha: dark ? 0.45 : 0.34),
+      colorScheme.secondary.withValues(alpha: dark ? 0.48 : 0.36),
+      Color.lerp(colorScheme.primary, colorScheme.tertiary, 0.5)!
+          .withValues(alpha: dark ? 0.45 : 0.34),
+    ];
+
     Rect r(double x, double y, double w, double h) => Rect.fromLTWH(
       content.left + x * u,
       content.top + y * u,
@@ -482,41 +535,232 @@ class _MiniScreenPainter extends CustomPainter {
       h * u,
     );
     final w = content.width / u;
-    _fill(canvas, r(0, 0.5, 6.5, 1.1), text, AppShape.full, blur: blur);
-    _fill(canvas, r(w - 2, 0.1, 2, 2), card, AppShape.circle, blur: blur);
-    if (index % 4 == 0) {
-      // Home: top deck + 2-col unified anime cards
-      _fill(canvas, r(0, 2.8, w, 5.2), card, AppShape.md, blur: blur);
-      _fill(canvas, r(w - 3.6, 4.1, 2.6, 2.6), colorScheme.primary, AppShape.circle, blur: blur);
-      _fill(canvas, r(1.0, 3.8, 5.5, 0.9), text, AppShape.full, blur: blur);
-      _fill(canvas, r(1.0, 5.2, 4.0, 0.7), line, AppShape.full, blur: blur);
-      final cw = (w - 0.8) / 2;
-      for (var row = 0; row < 2; row++) {
-        for (var col = 0; col < 2; col++) {
-          final x = col * (cw + 0.8);
-          final y = 9.0 + row * 9.6;
-          _fill(canvas, r(x, y, cw, 8.8), card, AppShape.md, blur: blur);
-          _fill(canvas, r(x, y, cw, 5.8), block, AppShape.md, blur: blur);
-          _fill(canvas, r(x + 0.7, y + 6.5, cw - 1.6, 0.8), text, AppShape.full, blur: blur);
-        }
-      }
-    } else {
-      // Library / Schedule / My cards
-      for (var i = 0; i < 4; i++) {
-        final y = 2.8 + i * 6.4;
-        _fill(canvas, r(0, y, w, 5.6), card, AppShape.md, blur: blur);
-        _fill(canvas, r(0.8, y + 0.8, 2.8, 4.0), block, AppShape.sm, blur: blur);
-        _fill(canvas, r(4.4, y + 1.1, 7.2, 0.9), text, AppShape.full, blur: blur);
-        _fill(canvas, r(4.4, y + 2.6, 5.0, 0.7), line, AppShape.full, blur: blur);
+
+    // Header title + right action circle
+    _fill(canvas, r(0, 0.5, 5.4, 1.15), text, AppShape.full, blur: blur);
+    _fill(
+      canvas,
+      r(w - 2.0, 0.1, 2.0, 2.0),
+      card,
+      AppShape.circle,
+      shadows: cardShadows,
+      blur: blur,
+    );
+
+    switch (index % 4) {
+      case 0:
+        // Page 0 · 推荐: Animeko featured showcase banner + tag strip + 2-col anime grid
         _fill(
           canvas,
-          r(4.4, y + 4.1, w - 5.4, 0.55),
-          i == 0 ? colorScheme.primary : block,
-          AppShape.full,
+          r(0, 2.7, w, 6.2),
+          colorScheme.primary.withValues(alpha: dark ? 0.42 : 0.26),
+          AppShape.md,
+          shadows: cardShadows,
           blur: blur,
         );
-      }
+        _fill(
+          canvas,
+          r(0.8, 3.4, 3.4, 4.8),
+          colorScheme.primary.withValues(alpha: dark ? 0.72 : 0.55),
+          AppShape.sm,
+          blur: blur,
+        );
+        _fill(canvas, r(5.0, 3.8, 3.0, 0.8), colorScheme.primary, AppShape.full, blur: blur);
+        _fill(canvas, r(5.0, 5.2, 8.6, 0.9), text, AppShape.full, blur: blur);
+        _fill(canvas, r(5.0, 6.6, 6.0, 0.7), line, AppShape.full, blur: blur);
+        // Carousel indicator dots
+        _fill(canvas, r(w / 2 - 1.8, 9.3, 1.6, 0.45), colorScheme.primary, AppShape.full, blur: blur);
+        _fill(canvas, r(w / 2 + 0.3, 9.3, 0.5, 0.45), line, AppShape.full, blur: blur);
+        _fill(canvas, r(w / 2 + 1.2, 9.3, 0.5, 0.45), line, AppShape.full, blur: blur);
+        // Tag pills
+        for (var i = 0; i < 4; i++) {
+          _fill(
+            canvas,
+            r(i * 4.2, 10.4, 3.5, 1.3),
+            i == 0 ? colorScheme.primary : card,
+            AppShape.full,
+            shadows: i == 0 ? null : cardShadows,
+            blur: blur,
+          );
+        }
+        // 2-col elevated anime cards with distinct tinted covers
+        final cw = (w - 0.9) / 2;
+        for (var row = 0; row < 2; row++) {
+          for (var col = 0; col < 2; col++) {
+            final x = col * (cw + 0.9);
+            final y = 12.5 + row * 9.8;
+            final posterColor = posters[(row * 2 + col) % posters.length];
+            _fill(
+              canvas,
+              r(x, y, cw, 9.0),
+              card,
+              AppShape.md,
+              shadows: cardShadows,
+              blur: blur,
+            );
+            _fill(canvas, r(x, y, cw, 6.1), posterColor, AppShape.md, blur: blur);
+            _fill(canvas, r(x + 0.7, y + 6.8, cw - 1.6, 0.75), text, AppShape.full, blur: blur);
+            _fill(canvas, r(x + 0.7, y + 7.9, cw * 0.55, 0.55), line, AppShape.full, blur: blur);
+          }
+        }
+      case 1:
+        // Page 1 · 时间表: Weekday selector strip + horizontal airing schedule cards
+        for (var i = 0; i < 5; i++) {
+          _fill(
+            canvas,
+            r(i * 3.45, 2.7, 2.9, 1.45),
+            i == 1 ? colorScheme.primary : card,
+            AppShape.full,
+            shadows: i == 1 ? null : cardShadows,
+            blur: blur,
+          );
+        }
+        for (var i = 0; i < 4; i++) {
+          final y = 5.0 + i * 5.8;
+          _fill(
+            canvas,
+            r(0, y, w, 5.0),
+            card,
+            AppShape.md,
+            shadows: cardShadows,
+            blur: blur,
+          );
+          _fill(
+            canvas,
+            r(0.7, y + 0.7, 2.7, 3.6),
+            posters[i % posters.length],
+            AppShape.sm,
+            blur: blur,
+          );
+          _fill(canvas, r(4.1, y + 1.0, 7.6, 0.85), text, AppShape.full, blur: blur);
+          _fill(canvas, r(4.1, y + 2.35, 5.2, 0.65), line, AppShape.full, blur: blur);
+          _fill(
+            canvas,
+            r(w - 3.3, y + 3.1, 2.5, 1.1),
+            colorScheme.primary.withValues(alpha: 0.22),
+            AppShape.full,
+            blur: blur,
+          );
+        }
+      case 2:
+        // Page 2 · 追番: Status filter chips + 3-col compact poster grid with top-right status icons
+        for (var i = 0; i < 4; i++) {
+          _fill(
+            canvas,
+            r(i * 4.2, 2.7, 3.6, 1.35),
+            i == 0 ? colorScheme.primary : card,
+            AppShape.full,
+            shadows: i == 0 ? null : cardShadows,
+            blur: blur,
+          );
+        }
+        final cw3 = (w - 1.4) / 3;
+        final statusColors = [
+          colorScheme.primary,
+          const Color(0xFFE07A5F),
+          const Color(0xFF2E9E6B),
+        ];
+        for (var row = 0; row < 3; row++) {
+          for (var col = 0; col < 3; col++) {
+            final x = col * (cw3 + 0.7);
+            final y = 4.9 + row * 8.1;
+            _fill(
+              canvas,
+              r(x, y, cw3, 7.3),
+              card,
+              AppShape.sm,
+              shadows: cardShadows,
+              blur: blur,
+            );
+            _fill(
+              canvas,
+              r(x, y, cw3, 5.0),
+              posters[(row * 3 + col) % posters.length],
+              AppShape.sm,
+              blur: blur,
+            );
+            // Top-right circular status icon dot
+            _fill(
+              canvas,
+              r(x + cw3 - 1.35, y + 0.4, 0.95, 0.95),
+              statusColors[(row + col) % statusColors.length],
+              AppShape.circle,
+              blur: blur,
+            );
+            _fill(
+              canvas,
+              r(x + 0.5, y + 5.6, cw3 - 1.0, 0.65),
+              text,
+              AppShape.full,
+              blur: blur,
+            );
+          }
+        }
+      default:
+        // Page 3 · 我的: Bangumi profile card + grouped settings rows + About card
+        _fill(
+          canvas,
+          r(0, 2.7, w, 4.8),
+          card,
+          AppShape.md,
+          shadows: cardShadows,
+          blur: blur,
+        );
+        _fill(
+          canvas,
+          r(1.0, 3.7, 2.8, 2.8),
+          const Color(0xFFF09199).withValues(alpha: 0.45),
+          AppShape.circle,
+          blur: blur,
+        );
+        _fill(canvas, r(4.6, 4.0, 5.4, 0.9), text, AppShape.full, blur: blur);
+        _fill(canvas, r(4.6, 5.4, 7.2, 0.65), line, AppShape.full, blur: blur);
+        // Grouped settings list card
+        _fill(
+          canvas,
+          r(0, 8.6, w, 13.6),
+          card,
+          AppShape.md,
+          shadows: cardShadows,
+          blur: blur,
+        );
+        for (var i = 0; i < 5; i++) {
+          final rowY = 9.4 + i * 2.55;
+          _fill(
+            canvas,
+            r(1.0, rowY, 1.4, 1.4),
+            colorScheme.primary.withValues(alpha: 0.72),
+            AppShape.sm,
+            blur: blur,
+          );
+          _fill(
+            canvas,
+            r(3.2, rowY + 0.3, 6.4 - (i % 2) * 1.4, 0.8),
+            text,
+            AppShape.full,
+            blur: blur,
+          );
+          _fill(
+            canvas,
+            r(w - 1.6, rowY + 0.35, 0.6, 0.6),
+            line,
+            AppShape.circle,
+            blur: blur,
+          );
+        }
+        // Bottom About mini card
+        _fill(
+          canvas,
+          r(0, 23.2, w, 3.2),
+          card,
+          AppShape.md,
+          shadows: cardShadows,
+          blur: blur,
+        );
+        _fill(canvas, r(1.0, 24.1, 1.4, 1.4), colorScheme.primary, AppShape.circle, blur: blur);
+        _fill(canvas, r(3.2, 24.4, 5.0, 0.8), text, AppShape.full, blur: blur);
     }
+
     canvas.restore();
   }
 

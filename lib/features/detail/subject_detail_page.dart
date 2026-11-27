@@ -10,14 +10,13 @@ import 'package:koneko/features/player/player_page.dart';
 import 'package:koneko/features/player/rule_verify_page.dart';
 import 'package:koneko/features/rules/rules_page.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
-import 'package:koneko/ui/koneko_image.dart';
 import 'package:koneko/ui/koneko_scaffold.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:koneko_contract/koneko_contract.dart';
 import 'package:prism_ui/icons/icons.dart';
 import 'package:prism_ui/prism_ui.dart';
 
-enum _DetailSection { play, overview, characters, relations, credits, comments }
+enum _DetailSection { play, characters, relations, comments }
 
 class SubjectDetailPage extends ConsumerStatefulWidget {
   const SubjectDetailPage({super.key, required this.subjectId});
@@ -31,8 +30,7 @@ class SubjectDetailPage extends ConsumerStatefulWidget {
 class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
   String _selectedRuleId = '';
   String _selectedRuleName = '';
-  int _sectionIndex = 0;
-  final _pages = PageController();
+  _DetailSection _section = _DetailSection.play;
 
   // Live parallel probe results per enabled rule (mirrors PlayerPage).
   final Map<String, RuleProbeResult> _liveProbes = {};
@@ -48,7 +46,6 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
   @override
   void dispose() {
     _probeGeneration++;
-    _pages.dispose();
     super.dispose();
   }
 
@@ -232,7 +229,7 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
         _extraTotal ??
         commentsAsync.value?.total ??
         catalog.getComments(subject.subjectId).length;
-    final commentsTabLabel = commentCount > 0 ? '评论吐槽 ($commentCount)' : '评论吐槽';
+    final commentsTabLabel = commentCount > 0 ? '评论 ($commentCount)' : '评论';
 
     return KonekoScaffold(
       title: '番剧详情',
@@ -320,23 +317,15 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
             onLoadMore: (count) => _loadMoreComments(count),
           );
 
-          final tabs = KonekoAutoScrollChipBar(
-            labels: ['播放', '简介', '角色', '关联', '制作人员', commentsTabLabel],
-            selectedIndex: _sectionIndex,
-            onSelected: (index) {
-              if ((index - _sectionIndex).abs() != 1 ||
-                  context.disableAnimations) {
-                _pages.jumpToPage(index);
-              } else {
-                unawaited(
-                  _pages.animateToPage(
-                    index,
-                    duration: const Duration(milliseconds: 250),
-                    curve: Curves.easeOutCubic,
-                  ),
-                );
-              }
-            },
+          final sectionSwitcher = KonekoSegmentedBar<_DetailSection>(
+            segments: [
+              const (_DetailSection.play, '播放'),
+              const (_DetailSection.characters, '角色'),
+              const (_DetailSection.relations, '关联'),
+              (_DetailSection.comments, commentsTabLabel),
+            ],
+            value: _section,
+            onChanged: (value) => setState(() => _section = value),
           );
 
           final playCards = isWide
@@ -354,78 +343,61 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
                   children: [episodeCard, sourcesCard],
                 );
 
-          // Leave the toolbar's inset fixed so the pinned tabs stay tappable.
-          return Padding(
-            padding: EdgeInsets.only(top: context.contentTopPadding),
-            child: NestedScrollView(
-              headerSliverBuilder: (context, _) => [
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
-                  sliver: SliverToBoxAdapter(child: heroCard),
-                ),
-                SliverOverlapAbsorber(
-                  handle: NestedScrollView.sliverOverlapAbsorberHandleFor(
-                    context,
-                  ),
-                  sliver: PinnedHeaderSliver(
-                    child: ColoredBox(
-                      color: SurfaceLevel.page.colorOf(context.colorScheme),
-                      child: tabs,
-                    ),
+          final bottomPad = 28 + MediaQuery.paddingOf(context).bottom;
+
+          return CustomScrollView(
+            scrollCacheExtent: const ScrollCacheExtent.pixels(600),
+            slivers: [
+              const KonekoScrollStart(),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+                sliver: SliverToBoxAdapter(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    spacing: 14,
+                    children: [heroCard, sectionSwitcher],
                   ),
                 ),
-              ],
-              body: PageView.builder(
-                controller: _pages,
-                itemCount: _DetailSection.values.length,
-                onPageChanged: (index) => setState(() => _sectionIndex = index),
-                itemBuilder: (context, index) {
-                  final section = _DetailSection.values[index];
-                  final content = switch (section) {
-                    _DetailSection.play => SliverToBoxAdapter(child: playCards),
-                    _DetailSection.overview => SliverToBoxAdapter(
-                      child: _OverviewCard(subject: subject),
-                    ),
-                    _DetailSection.characters => SubjectCharactersSliver(
+              ),
+              ...switch (_section) {
+                _DetailSection.play => [
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(16, 14, 16, bottomPad),
+                    sliver: SliverToBoxAdapter(child: playCards),
+                  ),
+                ],
+                _DetailSection.characters => [
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+                    sliver: SubjectCharactersSliver(
                       subjectId: subject.subjectId,
                     ),
-                    _DetailSection.relations => SubjectRelationsSliver(
+                  ),
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(16, 0, 16, bottomPad),
+                    sliver: SubjectCreditsSliver(subjectId: subject.subjectId),
+                  ),
+                ],
+                _DetailSection.relations => [
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(16, 14, 16, bottomPad),
+                    sliver: SubjectRelationsSliver(
                       subjectId: subject.subjectId,
                       onOpenAnime: (id) => BaseNavigator.push<void>(
                         context,
                         SubjectDetailPage(subjectId: id),
                       ),
                     ),
-                    _DetailSection.credits => SubjectCreditsSliver(
-                      subjectId: subject.subjectId,
-                    ),
-                    _DetailSection.comments => SliverToBoxAdapter(
-                      child: commentsCard,
-                    ),
-                  };
-                  return CustomScrollView(
-                    key: PageStorageKey(section),
-                    primary: true,
-                    slivers: [
-                      SliverOverlapInjector(
-                        handle: NestedScrollView.sliverOverlapAbsorberHandleFor(
-                          context,
-                        ),
-                      ),
-                      SliverPadding(
-                        padding: EdgeInsets.fromLTRB(
-                          16,
-                          10,
-                          16,
-                          28 + MediaQuery.paddingOf(context).bottom,
-                        ),
-                        sliver: content,
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
+                  ),
+                ],
+                _DetailSection.comments => [
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(16, 14, 16, bottomPad),
+                    sliver: SliverToBoxAdapter(child: commentsCard),
+                  ),
+                ],
+              },
+            ],
           );
         },
       ),
@@ -433,7 +405,7 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
   }
 }
 
-class _HeroCard extends StatelessWidget {
+class _HeroCard extends StatefulWidget {
   const _HeroCard({
     required this.subject,
     required this.entry,
@@ -451,8 +423,20 @@ class _HeroCard extends StatelessWidget {
   final ValueChanged<CollectionStatus> onStatusChanged;
 
   @override
+  State<_HeroCard> createState() => _HeroCardState();
+}
+
+class _HeroCardState extends State<_HeroCard> {
+  bool _summaryExpanded = false;
+
+  @override
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
+    final subject = widget.subject;
+    final summary = subject.summary.trim();
+    final summaryStyle = AppTextStyle.subheadline
+        .of(context)
+        .copyWith(color: colorScheme.onSurfaceVariant, height: 1.55);
 
     return KonekoCard(
       corner: 30,
@@ -581,7 +565,7 @@ class _HeroCard extends StatelessWidget {
             fill: colorScheme.primary,
             shape: AppShape.full,
             clipsChild: true,
-            onPressed: onPlay,
+            onPressed: widget.onPlay,
             child: SizedBox(
               height: 46,
               child: Row(
@@ -594,9 +578,9 @@ class _HeroCard extends StatelessWidget {
                     color: colorScheme.onPrimary,
                   ),
                   Text(
-                    hasHistory
-                        ? '继续播放 · 第 $currentEp 话'
-                        : '立即播放 · 第 $currentEp 话',
+                    widget.hasHistory
+                        ? '继续播放 · 第 ${widget.currentEp} 话'
+                        : '立即播放 · 第 ${widget.currentEp} 话',
                     style: AppTextStyle.callout
                         .of(context, emphasized: true)
                         .copyWith(color: colorScheme.onPrimary),
@@ -620,52 +604,73 @@ class _HeroCard extends StatelessWidget {
                     label: status.label,
                     height: 34,
                     fontSize: 12.5,
-                    selected: entry?.status == status,
-                    onPressed: () => onStatusChanged(status),
+                    selected: widget.entry?.status == status,
+                    onPressed: () => widget.onStatusChanged(status),
                   ),
                 ),
             ],
           ),
-        ],
-      ),
-    );
-  }
-}
+          if (summary.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            KonekoBlock(
+              corner: 18,
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final painter = TextPainter(
+                    text: TextSpan(text: summary, style: summaryStyle),
+                    maxLines: 3,
+                    textDirection: Directionality.of(context),
+                    textScaler: MediaQuery.textScalerOf(context),
+                  )..layout(maxWidth: constraints.maxWidth);
+                  final overflows = painter.didExceedMaxLines;
+                  painter.dispose();
 
-class _OverviewCard extends StatelessWidget {
-  const _OverviewCard({required this.subject});
-
-  final AnimeSubject subject;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = context.colorScheme;
-    final summary = subject.summary.trim();
-    return KonekoCard(
-      corner: 24,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        spacing: 12,
-        children: [
-          Text(
-            '剧情简介',
-            style: AppTextStyle.headline.of(context, emphasized: true),
-          ),
-          Text(
-            summary.isEmpty ? '暂无剧情简介' : summary,
-            style: AppTextStyle.body
-                .of(context)
-                .copyWith(color: colorScheme.onSurfaceVariant, height: 1.55),
-          ),
-          if (subject.tags.isNotEmpty)
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final tag in subject.tags)
-                  KonekoChip(label: tag, height: 26, fontSize: 12),
-              ],
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      AnimatedSize(
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeOutCubic,
+                        alignment: Alignment.topCenter,
+                        child: Text(
+                          summary,
+                          maxLines: _summaryExpanded ? null : 3,
+                          overflow: _summaryExpanded
+                              ? TextOverflow.visible
+                              : TextOverflow.ellipsis,
+                          style: summaryStyle,
+                        ),
+                      ),
+                      if (overflows) ...[
+                        const SizedBox(height: 6),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: PressSurface(
+                            fill: Colors.transparent,
+                            shape: AppShape.full,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            onPressed: () => setState(
+                              () => _summaryExpanded = !_summaryExpanded,
+                            ),
+                            child: Text(
+                              _summaryExpanded ? '收起' : '展开全部',
+                              style: AppTextStyle.caption1
+                                  .of(context, emphasized: true)
+                                  .copyWith(color: colorScheme.primary),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  );
+                },
+              ),
             ),
+          ],
         ],
       ),
     );

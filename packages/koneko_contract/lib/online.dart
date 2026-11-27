@@ -154,10 +154,28 @@ class SubjectRelation {
   final String? imageUrl;
 }
 
+class BangumiProfile {
+  const BangumiProfile({
+    required this.id,
+    required this.username,
+    required this.nickname,
+    this.sign = '',
+    this.avatarUrl = '',
+  });
+
+  final int id;
+  final String username;
+  final String nickname;
+  final String sign;
+  final String avatarUrl;
+}
+
 abstract interface class OnlineCatalog implements CatalogRepository {
   Stream<void> get changes;
   String get seasonTitle;
   Future<void> refresh();
+  Future<bool> loadMoreTrending({String? tag});
+  Future<BangumiProfile?> loadProfile(String token);
   Future<void> loadSubject(int id);
   Future<List<SubjectCharacter>> loadCharacters(int subjectId);
   Future<List<SubjectPerson>> loadCredits(int subjectId);
