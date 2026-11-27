@@ -19,17 +19,25 @@ import 'package:prism_ui/route_scope.dart';
 final _pushSpring = SpringDescription.withDurationAndBounce(
   duration: const Duration(milliseconds: 300),
 );
+final _closeSpring = SpringDescription.withDurationAndBounce(
+  duration: const Duration(milliseconds: 250),
+);
 const _pushSpeed = 9.0;
 const _settleTolerance = Tolerance(distance: 1e-3, velocity: 1e-2);
+const _closeTolerance = Tolerance(distance: 0.012, velocity: 0.14);
 
 /// For what reads a route's duration rather than following its animation.
-Duration _settlingTimeOf(SpringDescription spring, double launchSpeed) {
+Duration _settlingTimeOf(
+  SpringDescription spring,
+  double launchSpeed, {
+  Tolerance tolerance = _settleTolerance,
+}) {
   final simulation = SpringSimulation(
     spring,
     0,
     1,
     launchSpeed,
-    tolerance: _settleTolerance,
+    tolerance: tolerance,
   );
   var milliseconds = 0;
   while (!simulation.isDone(milliseconds / 1000)) {
@@ -124,7 +132,7 @@ mixin CardRouteMixin<T> on ModalRoute<T> {
   SpringDescription get openSpring => _pushSpring;
 
   @protected
-  SpringDescription get closeSpring => _pushSpring;
+  SpringDescription get closeSpring => _closeSpring;
 
   /// The speed a spring from rest sets off at, as a multiple of its distance
   /// a second.
@@ -225,53 +233,87 @@ mixin CardRouteMixin<T> on ModalRoute<T> {
   final _motionSnapshot = SnapshotController();
   Animation<double>? _sheetCover;
   var _glass = false;
+  var _touchReleased = false;
 
   // Impeller redraws a moving page (and re-captures its LiquidGlass panes) in
-  // full on every frame unless snapshotted. Snapshot both covered pages
-  // throughout push/pop/drag-back (refreshing on didPopNext/gesture start) and
-  // incoming non-zoom CardPageRoutes once DeferredPushRouteMixin releases.
+  // full on every frame unless snapshotted. Snapshot covered pages while
+  // visibly moving (releasing early on touch or near the end of pop settle),
+  // incoming non-zoom CardPageRoutes once DeferredPushRouteMixin releases,
+  // and interactive drag-back gestures. Intentionally avoid snapshotting
+  // button-triggered pops (`animation.status == reverse`) so press highlights
+  // smoothly release while the body RepaintBoundary stays GPU-cached.
   void _updateMotionSnapshot() {
     final animation = this.animation!;
     final secondary = secondaryAnimation!;
     final dragged = navigator?.userGestureInProgress ?? false;
     final underMovingSheet =
         !_glass && (_sheetCover?.status.isAnimating ?? false);
+    final secondaryReversingTail =
+        secondary.status == AnimationStatus.reverse && secondary.value < 0.025;
     final coveredMoving =
-        secondary.isAnimating ||
-        (!secondary.isDismissed && !secondary.isCompleted);
+        !_touchReleased &&
+        !secondaryReversingTail &&
+        (secondary.isAnimating ||
+            (!secondary.isDismissed && !secondary.isCompleted));
     final pushReady = switch (this) {
       final DeferredPushRouteMixin<T> deferred => deferred.isDeferredPushReady,
       _ => true,
     };
     final incomingPushSnapshot =
+        !_touchReleased &&
         !recedesCovered &&
         animation.status == AnimationStatus.forward &&
         pushReady;
     _motionSnapshot.allowSnapshotting =
         underMovingSheet ||
         (_coveredByZoom.value
-            ? animation.isCompleted && secondary.isAnimating
+            ? !_touchReleased &&
+                  !secondaryReversingTail &&
+                  animation.isCompleted &&
+                  secondary.isAnimating
             : coveredMoving ||
                   incomingPushSnapshot ||
                   (!recedesCovered &&
-                      ((animation.status.isAnimating &&
-                              (animation.status == AnimationStatus.reverse ||
-                                  dragged)) ||
+                      ((animation.status.isAnimating && dragged) ||
                           _isDragBackActive)));
+  }
+
+  void _releaseSnapshotForTouch() {
+    if (_touchReleased || !_motionSnapshot.allowSnapshotting) {
+      return;
+    }
+    _touchReleased = true;
+    _motionSnapshot.allowSnapshotting = false;
+  }
+
+  void _handleSecondaryTick() {
+    updateBarItems();
+    if (_motionSnapshot.allowSnapshotting &&
+        secondaryAnimation!.status == AnimationStatus.reverse &&
+        secondaryAnimation!.value < 0.025) {
+      _updateMotionSnapshot();
+    }
   }
 
   @protected
   void syncMotionSnapshot() => _updateMotionSnapshot();
 
   void retakeSnapshot() {
+    _touchReleased = false;
     if (!_motionSnapshot.allowSnapshotting) {
+      _updateMotionSnapshot();
       return;
     }
     _motionSnapshot.allowSnapshotting = false;
     _updateMotionSnapshot();
   }
 
-  void _handleStatus(AnimationStatus _) {
+  void _handleStatus(AnimationStatus status) {
+    if (status == AnimationStatus.forward ||
+        status == AnimationStatus.dismissed ||
+        status == AnimationStatus.completed) {
+      _touchReleased = false;
+    }
     updateBarItems();
     _updateMotionSnapshot();
   }
@@ -302,8 +344,11 @@ mixin CardRouteMixin<T> on ModalRoute<T> {
       _settlingTimeOf(openSpring, openLaunchSpeed);
 
   @override
-  Duration get reverseTransitionDuration =>
-      _settlingTimeOf(closeSpring, closeLaunchSpeed);
+  Duration get reverseTransitionDuration => _settlingTimeOf(
+    closeSpring,
+    closeLaunchSpeed,
+    tolerance: _closeTolerance,
+  );
 
   @override
   DelegatedTransitionBuilder? get delegatedTransition => _cardRouteMotion;
@@ -348,7 +393,7 @@ mixin CardRouteMixin<T> on ModalRoute<T> {
       ..addListener(updateBarItems)
       ..addStatusListener(_handleStatus);
     secondaryAnimation!
-      ..addListener(updateBarItems)
+      ..addListener(_handleSecondaryTick)
       ..addStatusListener(_handleStatus);
     _coveredByZoom
       ..addListener(_updateMotionSnapshot)
@@ -365,7 +410,7 @@ mixin CardRouteMixin<T> on ModalRoute<T> {
       ..removeListener(updateBarItems)
       ..removeStatusListener(_handleStatus);
     secondaryAnimation!
-      ..removeListener(updateBarItems)
+      ..removeListener(_handleSecondaryTick)
       ..removeStatusListener(_handleStatus);
     _userGesture?.removeListener(_handleUserGesture);
     _sheetCover?.removeStatusListener(_handleSheetCoverStatus);
@@ -384,12 +429,16 @@ mixin CardRouteMixin<T> on ModalRoute<T> {
     _updateMotionSnapshot();
     // The snapshot has no host over it, so one within takes the page's panes
     // for it, and they come out as glass rather than a flat tint.
-    return RepaintBoundary(
-      child: SnapshotWidget(
-        controller: _motionSnapshot,
-        mode: SnapshotMode.permissive,
-        autoresize: true,
-        child: LiquidGlassHost(enabled: _glass, child: child),
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (_) => _releaseSnapshotForTouch(),
+      child: RepaintBoundary(
+        child: SnapshotWidget(
+          controller: _motionSnapshot,
+          mode: SnapshotMode.permissive,
+          autoresize: true,
+          child: LiquidGlassHost(enabled: _glass, child: child),
+        ),
       ),
     );
   }
@@ -405,7 +454,7 @@ mixin CardRouteMixin<T> on ModalRoute<T> {
       target,
       velocity ??
           (target - from) * (opens ? openLaunchSpeed : closeLaunchSpeed),
-      tolerance: _settleTolerance,
+      tolerance: opens ? _settleTolerance : _closeTolerance,
       snapToEnd: true,
     );
     final settle = ArrivingSimulation(simulation, end: target);

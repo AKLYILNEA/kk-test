@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform;
@@ -71,6 +70,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   Timer? _brightnessTimer;
   Timer? _hudTimer;
   Timer? _bufferTimer;
+  Timer? _probeFlushTimer;
   bool _bufferDelayed = false;
   Duration? _positionAtOpen;
   Completer<void>? _sourceCancellation;
@@ -78,6 +78,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   List<SourceEpisode> _choices = const [];
   List<DanmakuItem> _danmaku = const [];
   final Map<String, RuleProbeResult> _probes = {};
+  final _sourcesRevision = ValueNotifier<int>(0);
   final _pendingProbes = <(String, String?), Future<RuleProbeResult>>{};
   final TextEditingController _sourceKeywordController =
       TextEditingController();
@@ -96,13 +97,20 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   bool _changingBrightness = false;
   _PanelTab _panelTab = _PanelTab.play;
   _DrawerTab _drawer = _DrawerTab.episodes;
-  int _epPageIndex = 0;
+  late int _epPageIndex = ((widget.initialEpisode - 1) ~/ _pageSize).clamp(
+    0,
+    999,
+  );
   String? _error;
   Uri? _errorVerifyUrl;
   String? _errorVerifyRuleId;
   String? _errorVerifyRuleName;
   String? _activeHitUrl;
-  String? _loadingHint;
+  late String? _loadingHint = widget.offline != null
+      ? '正在打开离线缓存…'
+      : (widget.initialRuleName.isNotEmpty
+            ? '正在加载 ${widget.initialRuleName}…'
+            : '正在准备播放…');
   String? _danmakuError;
   bool _danmakuLoading = false;
   int _request = 0;
@@ -153,17 +161,40 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     _request++;
     _sourceCancellation?.complete();
     _bufferTimer?.cancel();
+    _probeFlushTimer?.cancel();
     _danmakuRequest++;
     _probeGeneration++;
     _saveTimer?.cancel();
     _brightnessTimer?.cancel();
     _hudTimer?.cancel();
     _sourceKeywordController.dispose();
+    _sourcesRevision.dispose();
     unawaited(_subscription?.cancel());
     _playbackStatus.dispose();
     unawaited(_session?.dispose());
     super.dispose();
   }
+
+  void _bumpSources({bool immediate = false}) {
+    if (!mounted) return;
+    if (immediate) {
+      _probeFlushTimer?.cancel();
+      _probeFlushTimer = null;
+      _sourcesRevision.value++;
+      return;
+    }
+    _probeFlushTimer ??= Timer(const Duration(milliseconds: 80), () {
+      _probeFlushTimer = null;
+      if (mounted) _sourcesRevision.value++;
+    });
+  }
+
+  void _syncEpisodePage(int episode) {
+    _epPageIndex = ((episode - 1) ~/ _pageSize).clamp(0, 999);
+  }
+
+  String _formatSpeed(double speed) =>
+      '${speed == speed.roundToDouble() ? speed.toStringAsFixed(0) : speed}x';
 
   void _armHudAutoHide() {
     _hudTimer?.cancel();
@@ -321,21 +352,31 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       _lastCheckpoint = -1;
       _lastCompleted = false;
     });
+    _bumpSources(immediate: true);
     _watchBuffering();
     _armHudAutoHide();
     unawaited(_loadDanmaku());
   }
 
-  void _watchBuffering() {
+  void _watchBuffering({Duration delay = const Duration(seconds: 8)}) {
     if (!_pageActive || !_waitingForPlayback) {
       _bufferTimer?.cancel();
       _bufferTimer = null;
       if (_bufferDelayed) setState(() => _bufferDelayed = false);
       return;
     }
-    _bufferTimer ??= Timer(const Duration(seconds: 8), () {
+    _bufferTimer ??= Timer(delay, () {
       if (mounted) setState(() => _bufferDelayed = true);
     });
+  }
+
+  void _continueWaiting() {
+    _bufferTimer?.cancel();
+    _bufferTimer = null;
+    if (_bufferDelayed) {
+      setState(() => _bufferDelayed = false);
+    }
+    _watchBuffering(delay: const Duration(seconds: 12));
   }
 
   Future<RuleProbeResult> _probe(
@@ -370,8 +411,11 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   }
 
   /// Probes ALL enabled rules in parallel so the user can see exact search hits
-  /// for every source (aligned with Kazumi's SourceSheet).
-  Future<void> _probeAllEnabledRules({String? customKeyword}) async {
+  /// for every source without triggering full-page rebuild storms on startup.
+  Future<void> _probeAllEnabledRules({
+    String? customKeyword,
+    bool forceRefresh = false,
+  }) async {
     final resolver = ref.read(playbackSourcesProvider);
     if (resolver == null) return;
     var subject = _subject;
@@ -390,20 +434,29 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     if (enabledRules.isEmpty) return;
 
     final gen = ++_probeGeneration;
-    setState(() {
-      for (final rule in enabledRules) {
-        _probes[rule.id] = RuleProbeResult(
-          ruleId: rule.id,
-          ruleName: rule.name,
-          state: RuleProbeState.searching,
-          message: '正在搜索...',
-        );
-      }
-    });
+    final toProbe = <RulePluginMeta>[];
+    for (final rule in enabledRules) {
+      final existing = _probes[rule.id];
+      final reuseExisting =
+          !forceRefresh &&
+          customKeyword == null &&
+          existing != null &&
+          existing.state != RuleProbeState.searching;
+      if (reuseExisting) continue;
+      toProbe.add(rule);
+      _probes[rule.id] = RuleProbeResult(
+        ruleId: rule.id,
+        ruleName: rule.name,
+        state: RuleProbeState.searching,
+        message: '正在搜索...',
+      );
+    }
+    _bumpSources(immediate: true);
+    if (toProbe.isEmpty) return;
 
     final targetSubject = subject;
     await Future.wait(
-      enabledRules.map((rule) async {
+      toProbe.map((rule) async {
         final result = await _probe(
           resolver,
           targetSubject,
@@ -411,9 +464,13 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           keyword: customKeyword,
         );
         if (!mounted || gen != _probeGeneration) return;
-        setState(() => _probes[rule.id] = result);
+        _probes[rule.id] = result;
+        _bumpSources();
       }),
     );
+    if (mounted && gen == _probeGeneration) {
+      _bumpSources(immediate: true);
+    }
   }
 
   Future<void> _verifyRule(
@@ -440,14 +497,13 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     final resolver = ref.read(playbackSourcesProvider);
     final subject = _subject;
     if (resolver != null && subject != null) {
-      setState(() {
-        _probes[ruleId] = RuleProbeResult(
-          ruleId: ruleId,
-          ruleName: ruleName,
-          state: RuleProbeState.searching,
-          message: '验证通过，重新搜索中...',
-        );
-      });
+      _probes[ruleId] = RuleProbeResult(
+        ruleId: ruleId,
+        ruleName: ruleName,
+        state: RuleProbeState.searching,
+        message: '验证通过，重新搜索中...',
+      );
+      _bumpSources(immediate: true);
       final result = await resolver.probeRule(
         subject,
         ruleId,
@@ -456,7 +512,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
             : _sourceKeywordController.text.trim(),
       );
       if (mounted) {
-        setState(() => _probes[ruleId] = result);
+        _probes[ruleId] = result;
+        _bumpSources(immediate: true);
         if (result.state == RuleProbeState.found) {
           await _openEpisode(_episode, ruleId: ruleId);
         }
@@ -478,32 +535,55 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     final resolver = ref.read(playbackSourcesProvider);
     if (session == null || resolver == null) return;
     _checkpoint();
+    final prevEpisode = _episode;
+    final wasLoaded = _loaded;
+    final prevPosition = _status.position;
     final request = _beginSourceRequest();
     final cancelled = _sourceCancellation!.future;
     ++_danmakuRequest;
     setState(() {
       _loading = true;
-      _loadingHint = '正在加载 $ruleName...';
+      _loadingHint = '正在加载 $ruleName…';
       _loaded = false;
       _error = null;
       _errorVerifyUrl = null;
       _errorVerifyRuleId = null;
       _errorVerifyRuleName = null;
+      _scrub = null;
+      _danmaku = const [];
+      _danmakuError = null;
       _ruleId = ruleId;
       _ruleName = ruleName;
       _activeHitUrl = hit.sourceUrl;
     });
+    _bumpSources(immediate: true);
     try {
       await session.setPlaying(false).timeout(const Duration(seconds: 4));
       if (!_isCurrent(request)) return;
       final options = await resolver.loadEpisodesFromHit(ruleId, hit);
       if (!_isCurrent(request)) return;
-      final available = options.where((e) => e.number == _episode).toList();
+      if (options.isEmpty) throw StateError('该结果暂无可选剧集');
+      final available = options.where((e) => e.number == prevEpisode).toList();
       final targetLines = available.isNotEmpty ? available : [options.first];
+      final targetNumber = targetLines.first.number;
       setState(() {
         _choices = options;
-        _episode = targetLines.first.number;
+        _episode = targetNumber;
+        _syncEpisodePage(targetNumber);
       });
+      _bumpSources(immediate: true);
+      if (available.isEmpty && targetNumber != prevEpisode && mounted) {
+        showKonekoBanner(
+          context,
+          '该源暂无第 $prevEpisode 话，已切换至第 $targetNumber 话',
+        );
+      }
+      final resumeAt =
+          targetNumber == prevEpisode &&
+              wasLoaded &&
+              prevPosition > Duration.zero
+          ? prevPosition
+          : _resumeAt(targetNumber);
       Object? lastErr;
       for (final episodeSource in targetLines) {
         if (!_isCurrent(request)) return;
@@ -513,7 +593,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
               .timeout(const Duration(seconds: 15));
           if (!_isCurrent(request)) return;
           await session
-              .open(media, startAt: _resumeAt(episodeSource.number))
+              .open(media, startAt: resumeAt)
               .timeout(const Duration(seconds: 8));
           if (!_isCurrent(request)) return;
           if (!_pageActive) await session.setPlaying(false);
@@ -581,9 +661,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     ++_danmakuRequest;
     setState(() {
       _episode = episode;
+      _syncEpisodePage(episode);
       _loaded = false;
       _loading = true;
-      _loadingHint = autoSelectFastest ? '正在寻找可用播放源…' : null;
+      _loadingHint = autoSelectFastest ? '正在并发优选最快播放源…' : '正在加载第 $episode 话…';
       _error = null;
       _errorVerifyUrl = null;
       _errorVerifyRuleId = null;
@@ -674,6 +755,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
             _ruleId = id;
             _ruleName = options.first.ruleName;
           });
+          _bumpSources(immediate: true);
           final currentLine = _source?.line;
           final orderedLines = choice != null
               ? [choice]
@@ -802,7 +884,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           if (!isSearching()) return;
           if (generation == _probeGeneration &&
               _sourceKeywordController.text.trim().isEmpty) {
-            setState(() => _probes[rule.id] = probe);
+            _probes[rule.id] = probe;
+            _bumpSources();
           }
           if (probe.state == RuleProbeState.captchaRequired) {
             if (probe.verifyUrl != null) captcha ??= probe;
@@ -880,6 +963,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       _activeHitUrl = selection.hit.sourceUrl;
       _loadingHint = '正在打开 ${line.ruleName}…';
     });
+    _bumpSources(immediate: true);
     await session
         .open(selection.media, startAt: initialPosition)
         .timeout(const Duration(seconds: 8));
@@ -977,27 +1061,116 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     }
   }
 
+  Widget _buildSheetSearchBar({
+    required BuildContext context,
+    required TextEditingController controller,
+    required String hintText,
+    required String actionLabel,
+    required bool busy,
+    required VoidCallback onSubmit,
+    VoidCallback? onClear,
+  }) {
+    final colorScheme = context.colorScheme;
+    return KonekoCard(
+      corner: 20,
+      padding: const EdgeInsets.fromLTRB(14, 6, 8, 6),
+      child: Row(
+        spacing: 8,
+        children: [
+          GlyphIcon(
+            Glyphs.search,
+            size: 16,
+            color: colorScheme.onSurfaceVariant,
+          ),
+          Expanded(
+            child: ValueListenableBuilder<TextEditingValue>(
+              valueListenable: controller,
+              builder: (context, value, _) => Row(
+                spacing: 4,
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: controller,
+                      autocorrect: false,
+                      textInputAction: TextInputAction.search,
+                      style: AppTextStyle.subheadline
+                          .of(context)
+                          .copyWith(color: colorScheme.onSurface),
+                      decoration: InputDecoration.collapsed(
+                        hintText: hintText,
+                        hintStyle: AppTextStyle.subheadline
+                            .of(context)
+                            .copyWith(
+                              color: colorScheme.onSurfaceVariant.withValues(
+                                alpha: 0.72,
+                              ),
+                            ),
+                      ),
+                      onSubmitted: (_) => onSubmit(),
+                    ),
+                  ),
+                  if (value.text.isNotEmpty)
+                    SizedBox(
+                      width: 28,
+                      height: 28,
+                      child: PressSurface(
+                        fill: Colors.transparent,
+                        shape: AppShape.full,
+                        onPressed: () {
+                          controller.clear();
+                          onClear?.call();
+                        },
+                        child: Center(
+                          child: GlyphIcon(
+                            Glyphs.close,
+                            size: 14,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          KonekoChip(
+            label: busy ? '搜索中' : actionLabel,
+            height: 32,
+            fontSize: 12.5,
+            backgroundColor: busy
+                ? colorScheme.primary.withValues(alpha: 0.55)
+                : colorScheme.primary,
+            foregroundColor: colorScheme.onPrimary,
+            onPressed: busy ? null : onSubmit,
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _openDanmakuSearchSheet() async {
     final source = ref.read(danmakuProvider);
     if (source == null) return;
-    final searchController = TextEditingController(text: _subject?.title ?? '');
+    final initialQuery = _subject?.title.trim() ?? '';
+    final searchController = TextEditingController(text: initialQuery);
     List<DanmakuAnimeMatch> matches = const [];
     DanmakuAnimeMatch? selectedAnime;
     bool searching = false;
+    bool autoTriggered = false;
     String? error;
 
     await showKonekoSheet<void>(
       context: context,
       title: '手动匹配弹幕',
       subtitle: '搜索弹弹Play 番剧并选择对应集数',
-      detents: const [0.72, 0.92],
+      detents: const [0.74, 0.92],
       bodyBuilder: (sheetContext) {
         return StatefulBuilder(
           builder: (sheetContext, setSheetState) {
             final colorScheme = sheetContext.colorScheme;
             Future<void> doSearch() async {
               final q = searchController.text.trim();
-              if (q.isEmpty) return;
+              if (q.isEmpty || searching) return;
               setSheetState(() {
                 searching = true;
                 error = null;
@@ -1005,76 +1178,137 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
               });
               try {
                 final res = await source.searchAnimes(q);
+                if (!sheetContext.mounted) return;
                 setSheetState(() {
                   matches = res;
                   searching = false;
-                  if (res.isEmpty) error = '未找到匹配的弹幕番剧';
+                  if (res.isEmpty) error = '未找到匹配的弹幕番剧，可尝试精简关键词';
                 });
               } on Object {
+                if (!sheetContext.mounted) return;
                 setSheetState(() {
                   searching = false;
-                  error = '弹幕库搜索失败，请检查网络';
+                  error = '弹幕库搜索失败，请检查网络后重试';
                 });
               }
+            }
+
+            if (!autoTriggered && initialQuery.isNotEmpty) {
+              autoTriggered = true;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (sheetContext.mounted) unawaited(doSearch());
+              });
             }
 
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
-                  child: Row(
-                    spacing: 8,
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: searchController,
-                          decoration: const InputDecoration(
-                            hintText: '输入番剧名称搜索弹幕...',
-                          ),
-                          onSubmitted: (_) => unawaited(doSearch()),
-                        ),
-                      ),
-                      FilledButton(
-                        onPressed: searching
-                            ? null
-                            : () => unawaited(doSearch()),
-                        child: const Text('搜索'),
-                      ),
-                    ],
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                  child: _buildSheetSearchBar(
+                    context: sheetContext,
+                    controller: searchController,
+                    hintText: '输入番剧名称搜索弹幕…',
+                    actionLabel: '搜索',
+                    busy: searching,
+                    onSubmit: () => unawaited(doSearch()),
                   ),
                 ),
                 if (selectedAnime != null)
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                    child: Row(
-                      children: [
-                        KonekoChip(
-                          label: '← 返回番剧列表',
-                          height: 28,
-                          fontSize: 12,
-                          onPressed: () =>
-                              setSheetState(() => selectedAnime = null),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            selectedAnime!.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTextStyle.footnote
-                                .of(sheetContext, emphasized: true)
-                                .copyWith(color: colorScheme.onSurface),
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                    child: KonekoCard(
+                      corner: 18,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      child: Row(
+                        spacing: 10,
+                        children: [
+                          KonekoChip(
+                            label: '返回列表',
+                            height: 28,
+                            fontSize: 12,
+                            leading: GlyphIcon(
+                              Glyphs.backFor(Theme.of(sheetContext).platform),
+                              size: 12,
+                              color: colorScheme.onSurface,
+                            ),
+                            backgroundColor: SurfaceLevel.block.colorOf(
+                              colorScheme,
+                            ),
+                            foregroundColor: colorScheme.onSurface,
+                            onPressed: () =>
+                                setSheetState(() => selectedAnime = null),
                           ),
-                        ),
-                      ],
+                          Expanded(
+                            child: Text(
+                              selectedAnime!.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTextStyle.footnote
+                                  .of(sheetContext, emphasized: true)
+                                  .copyWith(color: colorScheme.onSurface),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 Expanded(
                   child: searching
-                      ? const Center(child: ActivityIndicator())
+                      ? Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            spacing: 10,
+                            children: [
+                              const ActivityIndicator(),
+                              Text(
+                                '正在检索弹弹Play 弹幕库…',
+                                style: AppTextStyle.footnote
+                                    .of(sheetContext)
+                                    .copyWith(
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
+                              ),
+                            ],
+                          ),
+                        )
                       : error != null
-                      ? Center(child: Text(error!))
+                      ? Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+                          child: Align(
+                            alignment: Alignment.topCenter,
+                            child: KonekoCard(
+                              corner: 22,
+                              padding: const EdgeInsets.all(20),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                spacing: 12,
+                                children: [
+                                  Text(
+                                    error!,
+                                    textAlign: TextAlign.center,
+                                    style: AppTextStyle.subheadline
+                                        .of(sheetContext)
+                                        .copyWith(
+                                          color: colorScheme.onSurfaceVariant,
+                                        ),
+                                  ),
+                                  KonekoChip(
+                                    label: '重新搜索',
+                                    height: 32,
+                                    fontSize: 12.5,
+                                    backgroundColor: colorScheme.primary,
+                                    foregroundColor: colorScheme.onPrimary,
+                                    onPressed: () => unawaited(doSearch()),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        )
                       : selectedAnime != null
                       ? ListView(
                           padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
@@ -1085,8 +1319,22 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                                   DecorationListItem(
                                     title: Text(ep.title),
                                     subtitle: Text('第 ${ep.episodeNumber} 话'),
-                                    trailing: const GlyphIcon(
-                                      Glyphs.chevronForward,
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      spacing: 6,
+                                      children: [
+                                        if (ep.episodeNumber == _episode)
+                                          KonekoChip(
+                                            label: '当前话',
+                                            height: 22,
+                                            fontSize: 10.5,
+                                            backgroundColor: colorScheme.primary
+                                                .withValues(alpha: 0.14),
+                                            foregroundColor:
+                                                colorScheme.primary,
+                                          ),
+                                        const GlyphIcon(Glyphs.chevronForward),
+                                      ],
                                     ),
                                     onPressed: () {
                                       Navigator.of(sheetContext).pop();
@@ -1103,12 +1351,23 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                           ],
                         )
                       : matches.isEmpty
-                      ? Center(
-                          child: Text(
-                            '点击「搜索」从弹弹Play 匹配对应番剧',
-                            style: AppTextStyle.footnote
-                                .of(sheetContext)
-                                .copyWith(color: colorScheme.onSurfaceVariant),
+                      ? Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+                          child: Align(
+                            alignment: Alignment.topCenter,
+                            child: KonekoCard(
+                              corner: 22,
+                              padding: const EdgeInsets.all(20),
+                              child: Text(
+                                '输入番剧名称并点击「搜索」，从弹弹Play 匹配对应番剧与剧集',
+                                textAlign: TextAlign.center,
+                                style: AppTextStyle.footnote
+                                    .of(sheetContext)
+                                    .copyWith(
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
+                              ),
+                            ),
                           ),
                         )
                       : ListView(
@@ -1438,8 +1697,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           onDoubleTap: !_loaded
               ? null
               : () => session?.setPlaying(!status.playing),
-          onVerticalDragUpdate: (event) =>
-              _adjustBrightness(-event.delta.dy * .004),
+          onVerticalDragUpdate: _fullscreen
+              ? (event) => _adjustBrightness(-event.delta.dy * .004)
+              : null,
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -1467,10 +1727,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
               children: [
                 const ActivityIndicator(color: Colors.white),
                 if (_loading && (_loadingHint?.isNotEmpty ?? false))
-                  _GlassPill(
+                  _HudSurface(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
+                      horizontal: 12,
+                      vertical: 5,
                     ),
                     child: Text(
                       _loadingHint!,
@@ -1486,10 +1746,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           Center(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: _GlassPill(
+              child: _HudSurface(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 14,
-                  vertical: 10,
+                  vertical: 12,
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -1501,12 +1761,19 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                       overflow: TextOverflow.ellipsis,
                       style: _style(context, small: !_fullscreen),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 10),
                     Wrap(
                       spacing: 8,
                       runSpacing: 6,
                       alignment: WrapAlignment.center,
                       children: [
+                        if (_bufferDelayed &&
+                            _error == null &&
+                            status.error == null)
+                          _HudAction(
+                            label: '继续等待',
+                            onTap: _continueWaiting,
+                          ),
                         if (_errorVerifyUrl != null &&
                             _errorVerifyRuleId != null)
                           _HudAction(
@@ -1575,7 +1842,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
             left: 16,
             right: 16,
             child: Center(
-              child: _GlassPill(
+              child: _HudSurface(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 12,
                   vertical: 5,
@@ -1714,17 +1981,31 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                 label: collection?.status.label ?? '追番',
                 height: 32,
                 fontSize: 12,
+                leading: collection != null
+                    ? GlyphIcon(
+                        konekoStatusGlyph(collection.status),
+                        size: 13,
+                        fill: 1,
+                        color: konekoStatusColor(collection.status),
+                      )
+                    : GlyphIcon(
+                        KonekoGlyphs.bookmark,
+                        size: 13,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
                 backgroundColor: collection != null
-                    ? colorScheme.primary.withValues(alpha: 0.14)
+                    ? konekoStatusColor(
+                        collection.status,
+                      ).withValues(alpha: 0.14)
                     : SurfaceLevel.card.colorOf(colorScheme),
                 foregroundColor: collection != null
-                    ? colorScheme.primary
+                    ? konekoStatusColor(collection.status)
                     : colorScheme.onSurface,
                 trailing: GlyphIcon(
                   Glyphs.chevronDown,
                   size: 12,
                   color: collection != null
-                      ? colorScheme.primary
+                      ? konekoStatusColor(collection.status)
                       : colorScheme.onSurfaceVariant,
                 ),
                 onPressed: () =>
@@ -1802,7 +2083,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       context: context,
       title: '切换播放源',
       subtitle: _ruleName.isEmpty ? '选择可用线路或自定义搜索' : '当前：$_ruleName',
-      detents: const [0.76, 0.94],
+      detents: const [0.78, 0.94],
       actions: [
         IconButtonData(
           glyph: KonekoGlyphs.refresh,
@@ -1812,19 +2093,42 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
               customKeyword: _sourceKeywordController.text.trim().isEmpty
                   ? null
                   : _sourceKeywordController.text.trim(),
+              forceRefresh: true,
             ),
           ),
         ),
       ],
       bodyBuilder: (sheetContext) {
-        return StatefulBuilder(
-          builder: (sheetContext, setSheetState) {
+        return ListenableBuilder(
+          listenable: _sourcesRevision,
+          builder: (sheetContext, _) {
+            final colorScheme = sheetContext.colorScheme;
             final enabledRules = _prioritizedRules(
               rules.where((r) => r.enabled).toList(),
             );
             final lines = _choices
                 .where((item) => item.number == _episode)
                 .toList();
+            final foundCount = enabledRules
+                .where((r) => _probes[r.id]?.state == RuleProbeState.found)
+                .length;
+            final doneCount = enabledRules.where((r) {
+              final state = _probes[r.id]?.state;
+              return state != null && state != RuleProbeState.searching;
+            }).length;
+            final anySearching =
+                enabledRules.isNotEmpty && doneCount < enabledRules.length;
+
+            void runKeywordProbe() {
+              final kw = _sourceKeywordController.text.trim();
+              unawaited(
+                _probeAllEnabledRules(
+                  customKeyword: kw.isEmpty ? null : kw,
+                  forceRefresh: true,
+                ),
+              );
+            }
+
             return ArrivalCacheExtentBuilder(
               builder: (context, cacheExtent) => CustomScrollView(
                 scrollCacheExtent: cacheExtent,
@@ -1832,111 +2136,206 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                   SliverPadding(
                     padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
                     sliver: SliverToBoxAdapter(
-                      child: Row(
-                        spacing: 8,
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _sourceKeywordController,
-                              autocorrect: false,
-                              decoration: InputDecoration(
-                                hintText:
-                                    '自定义搜索词（默认：${_subject?.title ?? ''}）',
-                              ),
-                              onSubmitted: (v) {
-                                unawaited(
-                                  _probeAllEnabledRules(
-                                    customKeyword: v.trim().isEmpty
-                                        ? null
-                                        : v.trim(),
-                                  ),
-                                );
-                                setSheetState(() {});
-                              },
-                            ),
-                          ),
-                          KonekoChip(
-                            label: '检索',
-                            height: 38,
-                            fontSize: 13,
-                            backgroundColor: sheetContext.colorScheme.primary,
-                            foregroundColor: sheetContext.colorScheme.onPrimary,
-                            onPressed: () {
-                              final kw = _sourceKeywordController.text.trim();
-                              unawaited(
-                                _probeAllEnabledRules(
-                                  customKeyword: kw.isEmpty ? null : kw,
-                                ),
-                              );
-                              setSheetState(() {});
-                            },
-                          ),
-                        ],
+                      child: _buildSheetSearchBar(
+                        context: sheetContext,
+                        controller: _sourceKeywordController,
+                        hintText: '自定义搜索词（默认：${_subject?.title ?? ''}）',
+                        actionLabel: '检索',
+                        busy: false,
+                        onSubmit: runKeywordProbe,
+                        onClear: runKeywordProbe,
                       ),
                     ),
                   ),
+                  if (enabledRules.isNotEmpty)
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                      sliver: SliverToBoxAdapter(
+                        child: KonekoCard(
+                          corner: 22,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          child: Row(
+                            spacing: 10,
+                            children: [
+                              Container(
+                                width: 32,
+                                height: 32,
+                                decoration: ShapeDecoration(
+                                  color: colorScheme.primary.withValues(
+                                    alpha: 0.12,
+                                  ),
+                                  shape: SuperellipseBorder(
+                                    borderRadius: AppRadius.all(10),
+                                  ),
+                                ),
+                                child: Center(
+                                  child: anySearching
+                                      ? const SizedBox(
+                                          width: 15,
+                                          height: 15,
+                                          child: ActivityIndicator(),
+                                        )
+                                      : GlyphIcon(
+                                          KonekoGlyphs.puzzle,
+                                          size: 15,
+                                          color: colorScheme.primary,
+                                        ),
+                                ),
+                              ),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      anySearching
+                                          ? '正在并发检测播放源 ($doneCount/${enabledRules.length})'
+                                          : '共 ${enabledRules.length} 个播放源 · $foundCount 个可用',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: AppTextStyle.footnote
+                                          .of(sheetContext, emphasized: true)
+                                          .copyWith(
+                                            color: colorScheme.onSurface,
+                                          ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      _ruleName.isEmpty
+                                          ? '点击任意结果即可立即切换播放'
+                                          : '当前：$_ruleName${_source != null ? ' · ${_source!.line}' : ''}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: AppTextStyle.caption1
+                                          .of(sheetContext)
+                                          .copyWith(
+                                            color: colorScheme.onSurfaceVariant,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              KonekoChip(
+                                label: '自动优选',
+                                height: 30,
+                                fontSize: 12,
+                                backgroundColor: colorScheme.primary.withValues(
+                                  alpha: 0.14,
+                                ),
+                                foregroundColor: colorScheme.primary,
+                                onPressed: () {
+                                  Navigator.of(sheetContext).pop();
+                                  unawaited(
+                                    _openEpisode(
+                                      _episode,
+                                      autoSelectFastest: true,
+                                    ),
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
                   if (lines.length > 1)
                     SliverPadding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                       sliver: SliverToBoxAdapter(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          spacing: 8,
-                          children: [
-                            Text(
-                              '当前源线路',
-                              style: AppTextStyle.caption1
-                                  .of(sheetContext, emphasized: true)
-                                  .copyWith(
-                                    color: sheetContext
-                                        .colorScheme
-                                        .onSurfaceVariant,
-                                  ),
-                            ),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                for (final line in lines)
-                                  KonekoChip(
-                                    label: line.line,
-                                    height: 32,
-                                    fontSize: 12.5,
-                                    selected:
-                                        line.line == _source?.line &&
-                                        line.page == _source?.page,
-                                    onPressed: () {
-                                      Navigator.of(sheetContext).pop();
-                                      unawaited(
-                                        _openEpisode(
-                                          _episode,
-                                          ruleId: line.ruleId,
-                                          choice: line,
-                                        ),
-                                      );
-                                    },
-                                  ),
-                              ],
-                            ),
-                          ],
+                        child: KonekoCard(
+                          corner: 22,
+                          padding: const EdgeInsets.all(14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            spacing: 10,
+                            children: [
+                              Text(
+                                _ruleName.isNotEmpty
+                                    ? '当前源线路 · $_ruleName'
+                                    : '当前源线路',
+                                style: AppTextStyle.footnote
+                                    .of(sheetContext, emphasized: true)
+                                    .copyWith(
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
+                              ),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  for (final line in lines)
+                                    KonekoChip(
+                                      label: line.line,
+                                      height: 32,
+                                      fontSize: 12.5,
+                                      selected:
+                                          line.line == _source?.line &&
+                                          line.page == _source?.page,
+                                      backgroundColor:
+                                          line.line == _source?.line &&
+                                              line.page == _source?.page
+                                          ? colorScheme.primary
+                                          : SurfaceLevel.block.colorOf(
+                                              colorScheme,
+                                            ),
+                                      foregroundColor:
+                                          line.line == _source?.line &&
+                                              line.page == _source?.page
+                                          ? colorScheme.onPrimary
+                                          : colorScheme.onSurface,
+                                      onPressed: () {
+                                        Navigator.of(sheetContext).pop();
+                                        unawaited(
+                                          _openEpisode(
+                                            _episode,
+                                            ruleId: line.ruleId,
+                                            choice: line,
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
                   if (enabledRules.isEmpty)
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Center(
-                          child: TextButton(
-                            onPressed: () async {
-                              Navigator.of(sheetContext).pop();
-                              await BaseNavigator.push<void>(
-                                context,
-                                const RulesPage(showBack: true),
-                              );
-                              if (mounted) await _start();
-                            },
-                            child: const Text('添加播放规则'),
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                      sliver: SliverToBoxAdapter(
+                        child: KonekoCard(
+                          corner: 24,
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            spacing: 12,
+                            children: [
+                              Text(
+                                '暂未启用任何播放规则',
+                                style: AppTextStyle.subheadline
+                                    .of(sheetContext, emphasized: true)
+                                    .copyWith(color: colorScheme.onSurface),
+                              ),
+                              KonekoChip(
+                                label: '添加播放规则',
+                                height: 34,
+                                fontSize: 13,
+                                backgroundColor: colorScheme.primary,
+                                foregroundColor: colorScheme.onPrimary,
+                                onPressed: () async {
+                                  Navigator.of(sheetContext).pop();
+                                  await BaseNavigator.push<void>(
+                                    context,
+                                    const RulesPage(showBack: true),
+                                  );
+                                  if (mounted) await _start();
+                                },
+                              ),
+                            ],
                           ),
                         ),
                       ),
@@ -1947,8 +2346,16 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                       sliver: SliverList.separated(
                         itemCount: enabledRules.length,
                         separatorBuilder: (_, _) => const SizedBox(height: 10),
-                        itemBuilder: (context, index) =>
-                            _buildRuleProbeCard(context, enabledRules[index]),
+                        itemBuilder: (itemContext, index) =>
+                            _buildRuleProbeCard(
+                              itemContext,
+                              enabledRules[index],
+                              onDismissSheet: () {
+                                if (sheetContext.mounted) {
+                                  Navigator.of(sheetContext).pop();
+                                }
+                              },
+                            ),
                       ),
                     ),
                 ],
@@ -1970,9 +2377,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   }) {
     final colorScheme = context.colorScheme;
     final lines = _choices.where((item) => item.number == _episode).toList();
-    final enabledRules = _prioritizedRules(
-      rules.where((r) => r.enabled).toList(),
-    );
 
     final sourceEpNums = <int>{
       for (final item in _choices) item.number,
@@ -1998,7 +2402,109 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     return ListView(
       padding: EdgeInsets.fromLTRB(16, 2, 16, bottomPadding + 12),
       children: [
-        // 1. Episodes card (spacious primary section)
+        // 1. Sleek, airy Danmaku card on top
+        KonekoCard(
+          corner: 24,
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                spacing: 10,
+                children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: ShapeDecoration(
+                      color: colorScheme.primary.withValues(alpha: 0.12),
+                      shape: SuperellipseBorder(
+                        borderRadius: AppRadius.all(11),
+                      ),
+                    ),
+                    child: Center(
+                      child: GlyphIcon(
+                        KonekoGlyphs.danmaku,
+                        size: 16,
+                        color: colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '弹幕',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyle.headline
+                              .of(context, emphasized: true)
+                              .copyWith(color: colorScheme.onSurface),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _danmakuLoading
+                              ? '正在拉取弹幕…'
+                              : _danmakuError ??
+                                    (_showDanmaku
+                                        ? (_danmaku.isNotEmpty
+                                              ? _danmakuSummary()
+                                              : '暂无弹幕')
+                                        : '弹幕已关闭'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyle.caption1
+                              .of(context)
+                              .copyWith(color: colorScheme.onSurfaceVariant),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Switch(
+                    value: _showDanmaku,
+                    onChanged: (value) {
+                      setState(() => _showDanmaku = value);
+                      if (value) unawaited(_loadDanmaku());
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                spacing: 10,
+                children: [
+                  Expanded(
+                    child: _buildDanmakuActionTile(
+                      context: context,
+                      glyph: KonekoGlyphs.tune,
+                      label: '弹幕设置',
+                      onPressed: () =>
+                          unawaited(openKonekoDanmakuSettingsPage(context)),
+                    ),
+                  ),
+                  Expanded(
+                    child: _buildDanmakuActionTile(
+                      context: context,
+                      glyph: Glyphs.search,
+                      label: '手动匹配',
+                      onPressed: _openDanmakuSearchSheet,
+                    ),
+                  ),
+                  Expanded(
+                    child: _buildDanmakuActionTile(
+                      context: context,
+                      glyph: KonekoGlyphs.refresh,
+                      label: '重新拉取',
+                      onPressed: _danmakuLoading ? null : () => _loadDanmaku(),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        // 2. Episodes card (spacious primary section)
         KonekoCard(
           corner: 26,
           padding: const EdgeInsets.all(18),
@@ -2006,7 +2512,25 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Row(
+                spacing: 10,
                 children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: ShapeDecoration(
+                      color: colorScheme.primary.withValues(alpha: 0.12),
+                      shape: SuperellipseBorder(
+                        borderRadius: AppRadius.all(11),
+                      ),
+                    ),
+                    child: Center(
+                      child: GlyphIcon(
+                        KonekoGlyphs.layers,
+                        size: 16,
+                        color: colorScheme.primary,
+                      ),
+                    ),
+                  ),
                   Expanded(
                     child: Text(
                       '选集',
@@ -2107,7 +2631,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                                 _openEpisode(
                                   number,
                                   ruleId: _ruleId.isEmpty ? null : _ruleId,
-                                  autoSelectFastest: _ruleId.isEmpty,
+                                  autoSelectFastest:
+                                      _ruleId.isEmpty ||
+                                      (_error != null && !_loaded),
                                 ),
                               ),
                       ),
@@ -2117,217 +2643,133 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           ),
         ),
         if (!offline) ...[
-          const SizedBox(height: 16),
-          // 2. Clean, airy Playback Sources card
-          KonekoCard(
-            corner: 26,
-            padding: const EdgeInsets.all(18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  spacing: 10,
+          const SizedBox(height: 14),
+          // 3. Live Playback Sources card (scoped ValueListenableBuilder avoids full-page churn)
+          ListenableBuilder(
+            listenable: _sourcesRevision,
+            builder: (context, _) {
+              final enabledRules = _prioritizedRules(
+                rules.where((r) => r.enabled).toList(),
+              );
+              return KonekoCard(
+                corner: 26,
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Container(
-                      width: 34,
-                      height: 34,
-                      decoration: ShapeDecoration(
-                        color: colorScheme.primary.withValues(alpha: 0.12),
-                        shape: SuperellipseBorder(
-                          borderRadius: AppRadius.all(11),
-                        ),
-                      ),
-                      child: Center(
-                        child: GlyphIcon(
-                          KonekoGlyphs.puzzle,
-                          size: 16,
-                          color: colorScheme.primary,
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '播放源',
-                            style: AppTextStyle.headline
-                                .of(context, emphasized: true)
-                                .copyWith(color: colorScheme.onSurface),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            _ruleName.isEmpty
-                                ? '自动匹配最快线路'
-                                : '当前：$_ruleName${_source != null ? ' · ${_source!.line}' : ''}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTextStyle.caption1
-                                .of(context)
-                                .copyWith(color: colorScheme.onSurfaceVariant),
-                          ),
-                        ],
-                      ),
-                    ),
-                    KonekoChip(
-                      label: '搜索 / 全部',
-                      height: 30,
-                      fontSize: 12,
-                      backgroundColor: SurfaceLevel.block.colorOf(colorScheme),
-                      foregroundColor: colorScheme.onSurface,
-                      onPressed: () => unawaited(_openSourcesSheet(rules)),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                if (enabledRules.isEmpty)
-                  TextButton(
-                    onPressed: () async {
-                      await BaseNavigator.push<void>(
-                        context,
-                        const RulesPage(showBack: true),
-                      );
-                      if (mounted) await _start();
-                    },
-                    child: const Text('添加播放规则'),
-                  )
-                else ...[
-                  Column(
-                    spacing: 10,
-                    children: [
-                      for (final rule in enabledRules.take(4))
-                        _buildCompactSourceRow(context, rule),
-                    ],
-                  ),
-                  if (enabledRules.length > 4) ...[
-                    const SizedBox(height: 10),
-                    PressSurface(
-                      fill: SurfaceLevel.block.colorOf(colorScheme),
-                      shape: SuperellipseBorder(
-                        borderRadius: AppRadius.all(14),
-                      ),
-                      clipsChild: true,
-                      onPressed: () => unawaited(_openSourcesSheet(rules)),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        child: Center(
-                          child: Text(
-                            '查看全部 ${enabledRules.length} 个播放源与自定义搜索',
-                            style: AppTextStyle.footnote
-                                .of(context, emphasized: true)
-                                .copyWith(color: colorScheme.primary),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ],
-            ),
-          ),
-        ],
-        const SizedBox(height: 16),
-        // 3. Calm, symmetrical Danmaku card
-        KonekoCard(
-          corner: 26,
-          padding: const EdgeInsets.all(18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                spacing: 10,
-                children: [
-                  Container(
-                    width: 34,
-                    height: 34,
-                    decoration: ShapeDecoration(
-                      color: colorScheme.primary.withValues(alpha: 0.12),
-                      shape: SuperellipseBorder(
-                        borderRadius: AppRadius.all(11),
-                      ),
-                    ),
-                    child: Center(
-                      child: GlyphIcon(
-                        KonekoGlyphs.danmaku,
-                        size: 16,
-                        color: colorScheme.primary,
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    Row(
+                      spacing: 10,
                       children: [
-                        Text(
-                          '弹幕',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTextStyle.headline
-                              .of(context, emphasized: true)
-                              .copyWith(color: colorScheme.onSurface),
+                        Container(
+                          width: 34,
+                          height: 34,
+                          decoration: ShapeDecoration(
+                            color: colorScheme.primary.withValues(alpha: 0.12),
+                            shape: SuperellipseBorder(
+                              borderRadius: AppRadius.all(11),
+                            ),
+                          ),
+                          child: Center(
+                            child: GlyphIcon(
+                              KonekoGlyphs.puzzle,
+                              size: 16,
+                              color: colorScheme.primary,
+                            ),
+                          ),
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          _danmakuLoading
-                              ? '正在拉取弹幕...'
-                              : _danmakuError ??
-                                    (_showDanmaku
-                                        ? (_danmaku.isNotEmpty
-                                              ? _danmakuSummary()
-                                              : '暂无弹幕')
-                                        : '弹幕已关闭'),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTextStyle.caption1
-                              .of(context)
-                              .copyWith(color: colorScheme.onSurfaceVariant),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '播放源',
+                                style: AppTextStyle.headline
+                                    .of(context, emphasized: true)
+                                    .copyWith(color: colorScheme.onSurface),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                _ruleName.isEmpty
+                                    ? '自动匹配最快线路'
+                                    : '当前：$_ruleName${_source != null ? ' · ${_source!.line}' : ''}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTextStyle.caption1
+                                    .of(context)
+                                    .copyWith(
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        KonekoChip(
+                          label: '全部 / 搜索',
+                          height: 30,
+                          fontSize: 12,
+                          backgroundColor: SurfaceLevel.block.colorOf(
+                            colorScheme,
+                          ),
+                          foregroundColor: colorScheme.onSurface,
+                          onPressed: () => unawaited(_openSourcesSheet(rules)),
                         ),
                       ],
                     ),
-                  ),
-                  Switch(
-                    value: _showDanmaku,
-                    onChanged: (value) {
-                      setState(() => _showDanmaku = value);
-                      if (value) unawaited(_loadDanmaku());
-                    },
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              Row(
-                spacing: 10,
-                children: [
-                  Expanded(
-                    child: _buildDanmakuActionTile(
-                      context: context,
-                      glyph: KonekoGlyphs.tune,
-                      label: '弹幕设置',
-                      onPressed: () =>
-                          unawaited(openKonekoDanmakuSettingsPage(context)),
-                    ),
-                  ),
-                  Expanded(
-                    child: _buildDanmakuActionTile(
-                      context: context,
-                      glyph: Glyphs.search,
-                      label: '手动匹配',
-                      onPressed: _openDanmakuSearchSheet,
-                    ),
-                  ),
-                  Expanded(
-                    child: _buildDanmakuActionTile(
-                      context: context,
-                      glyph: KonekoGlyphs.refresh,
-                      label: '重新拉取',
-                      onPressed: _danmakuLoading ? null : () => _loadDanmaku(),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+                    const SizedBox(height: 14),
+                    if (enabledRules.isEmpty)
+                      Center(
+                        child: KonekoChip(
+                          label: '添加播放规则',
+                          height: 34,
+                          fontSize: 13,
+                          backgroundColor: colorScheme.primary,
+                          foregroundColor: colorScheme.onPrimary,
+                          onPressed: () async {
+                            await BaseNavigator.push<void>(
+                              context,
+                              const RulesPage(showBack: true),
+                            );
+                            if (mounted) await _start();
+                          },
+                        ),
+                      )
+                    else ...[
+                      Column(
+                        spacing: 10,
+                        children: [
+                          for (final rule in enabledRules.take(4))
+                            _buildCompactSourceRow(context, rule),
+                        ],
+                      ),
+                      if (enabledRules.length > 4) ...[
+                        const SizedBox(height: 10),
+                        PressSurface(
+                          fill: SurfaceLevel.block.colorOf(colorScheme),
+                          shape: SuperellipseBorder(
+                            borderRadius: AppRadius.all(14),
+                          ),
+                          clipsChild: true,
+                          onPressed: () => unawaited(_openSourcesSheet(rules)),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            child: Center(
+                              child: Text(
+                                '查看全部 ${enabledRules.length} 个播放源与自定义搜索',
+                                style: AppTextStyle.footnote
+                                    .of(context, emphasized: true)
+                                    .copyWith(color: colorScheme.primary),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ],
+                ),
+              );
+            },
           ),
-        ),
+        ],
       ],
     );
   }
@@ -2461,7 +2903,11 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     );
   }
 
-  Widget _buildRuleProbeCard(BuildContext context, RulePluginMeta rule) {
+  Widget _buildRuleProbeCard(
+    BuildContext context,
+    RulePluginMeta rule, {
+    VoidCallback? onDismissSheet,
+  }) {
     final colorScheme = context.colorScheme;
     final probe = _probes[rule.id];
     final state = probe?.state ?? RuleProbeState.searching;
@@ -2469,8 +2915,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
 
     final (badgeText, badgeBg, badgeFg) = switch (state) {
       RuleProbeState.searching => (
-        '搜索中',
-        SurfaceLevel.card.colorOf(colorScheme),
+        '检测中',
+        SurfaceLevel.block.colorOf(colorScheme),
         colorScheme.onSurfaceVariant,
       ),
       RuleProbeState.found => (
@@ -2482,7 +2928,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       ),
       RuleProbeState.noResult => (
         '无结果',
-        SurfaceLevel.card.colorOf(colorScheme),
+        SurfaceLevel.block.colorOf(colorScheme),
         colorScheme.onSurfaceVariant,
       ),
       RuleProbeState.captchaRequired => (
@@ -2491,7 +2937,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
         colorScheme.onWarningContainer,
       ),
       RuleProbeState.error => (
-        '失败',
+        '不可用',
         colorScheme.errorContainer,
         colorScheme.onErrorContainer,
       ),
@@ -2499,22 +2945,31 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
 
     void handleSelectRule() {
       if (state == RuleProbeState.captchaRequired && probe?.verifyUrl != null) {
+        onDismissSheet?.call();
         unawaited(_verifyRule(rule.id, rule.name, probe!.verifyUrl!));
       } else if (state == RuleProbeState.found &&
           probe != null &&
           probe.hits.isNotEmpty) {
+        onDismissSheet?.call();
         unawaited(_openHit(rule.id, rule.name, probe.hits.first));
       } else {
+        onDismissSheet?.call();
         unawaited(_openEpisode(_episode, ruleId: rule.id));
       }
     }
 
-    return KonekoBlock(
-      selected: isCurrent,
-      padding: const EdgeInsets.all(11),
+    return KonekoCard(
+      corner: 22,
+      padding: const EdgeInsets.all(14),
+      color: isCurrent
+          ? Color.alphaBlend(
+              colorScheme.primary.withValues(alpha: 0.08),
+              SurfaceLevel.card.colorOf(colorScheme),
+            )
+          : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        spacing: 8,
+        spacing: 10,
         children: [
           PressSurface(
             fill: Colors.transparent,
@@ -2556,29 +3011,32 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           ),
           if (state == RuleProbeState.found && probe != null)
             Wrap(
-              spacing: 6,
-              runSpacing: 6,
+              spacing: 8,
+              runSpacing: 8,
               children: [
                 for (final hit in probe.hits.take(6))
                   KonekoChip(
                     label: hit.title,
-                    height: 28,
+                    height: 30,
                     fontSize: 12,
                     selected: isCurrent && _activeHitUrl == hit.sourceUrl,
                     backgroundColor: isCurrent && _activeHitUrl == hit.sourceUrl
                         ? colorScheme.primary
-                        : SurfaceLevel.card.colorOf(colorScheme),
+                        : SurfaceLevel.block.colorOf(colorScheme),
                     foregroundColor: isCurrent && _activeHitUrl == hit.sourceUrl
                         ? colorScheme.onPrimary
                         : colorScheme.onSurface,
-                    onPressed: () =>
-                        unawaited(_openHit(rule.id, rule.name, hit)),
+                    onPressed: () {
+                      onDismissSheet?.call();
+                      unawaited(_openHit(rule.id, rule.name, hit));
+                    },
                   ),
               ],
             )
           else if (state == RuleProbeState.captchaRequired &&
               probe?.verifyUrl != null)
             Row(
+              spacing: 8,
               children: [
                 Expanded(
                   child: Text(
@@ -2588,22 +3046,24 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                         .copyWith(color: colorScheme.onSurfaceVariant),
                   ),
                 ),
-                const SizedBox(width: 8),
                 KonekoChip(
                   label: '去验证',
                   height: 28,
                   fontSize: 12,
                   backgroundColor: colorScheme.primary,
                   foregroundColor: colorScheme.onPrimary,
-                  onPressed: () =>
-                      _verifyRule(rule.id, rule.name, probe.verifyUrl!),
+                  onPressed: () {
+                    onDismissSheet?.call();
+                    unawaited(_verifyRule(rule.id, rule.name, probe.verifyUrl!));
+                  },
                 ),
               ],
             )
-          else if (state == RuleProbeState.error ||
-              state == RuleProbeState.noResult)
+          else if ((state == RuleProbeState.error ||
+                  state == RuleProbeState.noResult) &&
+              (probe?.message.isNotEmpty ?? false))
             Text(
-              probe?.message ?? '',
+              probe!.message,
               style: AppTextStyle.caption1
                   .of(context)
                   .copyWith(color: colorScheme.onSurfaceVariant),
@@ -2698,7 +3158,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                       _armHudAutoHide();
                     },
               child: Text(
-                '${_speed == _speed.roundToDouble() ? _speed.toStringAsFixed(0) : _speed}x',
+                _formatSpeed(_speed),
                 style: _style(context, small: true),
               ),
             ),
@@ -2786,7 +3246,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                 ),
               const Spacer(),
               _HudAction(
-                label: '${_speed.toStringAsFixed(2)}x',
+                label: _formatSpeed(_speed),
                 active: _speed != 1,
                 onTap: !_loaded
                     ? null
@@ -2830,12 +3290,13 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     }
     final episodes = uniqueEpisodes.keys.toList()..sort();
 
-    return _GlassPill(
-      padding: const EdgeInsets.all(12),
+    return _HudSurface(
+      padding: const EdgeInsets.all(14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
+            spacing: 6,
             children: [
               Expanded(
                 child: SegmentedControl<_DrawerTab>(
@@ -2890,111 +3351,128 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                           );
                         },
                       ),
-              _DrawerTab.sources => ListView(
-                children: [
-                  if (offline)
-                    Text('离线播放中', style: _style(context))
-                  else ...[
-                    Padding(
-                      padding: const EdgeInsets.only(left: 4, bottom: 6),
-                      child: Text(
-                        '播放源',
-                        style: _style(
-                          context,
-                          small: true,
-                        ).copyWith(color: Colors.white.withValues(alpha: 0.62)),
-                      ),
-                    ),
-                    for (final rule in rules.where((rule) => rule.enabled))
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: _HudAction(
-                          label: () {
-                            final probe = _probes[rule.id];
-                            final suffix = switch (probe?.state) {
-                              RuleProbeState.found =>
-                                ' (${probe!.hits.length})',
-                              RuleProbeState.noResult => ' (无)',
-                              RuleProbeState.captchaRequired => ' (需验证)',
-                              RuleProbeState.error => ' (失败)',
-                              _ => '',
-                            };
-                            return '${rule.name}$suffix';
-                          }(),
-                          active: _ruleId == rule.id,
-                          onTap: () {
-                            final probe = _probes[rule.id];
-                            if (probe?.state ==
-                                    RuleProbeState.captchaRequired &&
-                                probe?.verifyUrl != null) {
+              _DrawerTab.sources => ListenableBuilder(
+                listenable: _sourcesRevision,
+                builder: (context, _) {
+                  final enabledRules = _prioritizedRules(
+                    rules.where((rule) => rule.enabled).toList(),
+                  );
+                  return ListView(
+                    children: [
+                      if (offline)
+                        Text('离线播放中', style: _style(context))
+                      else ...[
+                        if (enabledRules.isNotEmpty) ...[
+                          _HudAction(
+                            label: '自动优选最快源',
+                            active: true,
+                            onTap: () {
+                              setState(() => _drawerOpen = false);
                               unawaited(
-                                _verifyRule(
-                                  rule.id,
-                                  rule.name,
-                                  probe!.verifyUrl!,
-                                ),
+                                _openEpisode(_episode, autoSelectFastest: true),
                               );
-                            } else if (probe?.state == RuleProbeState.found &&
-                                probe != null &&
-                                probe.hits.isNotEmpty) {
-                              unawaited(
-                                _openHit(rule.id, rule.name, probe.hits.first),
-                              );
-                            } else {
-                              unawaited(
-                                _openEpisode(_episode, ruleId: rule.id),
-                              );
-                            }
-                          },
-                        ),
-                      ),
-                    if (lines.isNotEmpty) ...[
-                      Container(
-                        height: 1,
-                        margin: const EdgeInsets.symmetric(vertical: 8),
-                        color: Colors.white.withValues(alpha: 0.14),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.only(left: 4, bottom: 6),
-                        child: Text(
-                          _ruleName.isNotEmpty ? '播放线路 · $_ruleName' : '播放线路',
-                          style: _style(context, small: true).copyWith(
-                            color: Colors.white.withValues(alpha: 0.62),
+                            },
                           ),
-                        ),
-                      ),
-                      for (final line in lines)
+                          const SizedBox(height: 10),
+                        ],
                         Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
-                          child: _HudAction(
-                            label: line.line,
-                            active:
-                                line.line == _source?.line &&
-                                line.page == _source?.page,
-                            onTap: () => unawaited(
-                              _openEpisode(
-                                _episode,
-                                ruleId: line.ruleId,
-                                choice: line,
-                              ),
+                          padding: const EdgeInsets.only(left: 4, bottom: 6),
+                          child: Text(
+                            '播放源',
+                            style: _style(context, small: true).copyWith(
+                              color: Colors.white.withValues(alpha: 0.62),
                             ),
                           ),
                         ),
+                        for (final rule in enabledRules)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: _HudAction(
+                              label: () {
+                                final probe = _probes[rule.id];
+                                final suffix = switch (probe?.state) {
+                                  RuleProbeState.found =>
+                                    probe!.latencyMs > 0
+                                        ? ' (${probe.latencyMs}ms)'
+                                        : ' (${probe.hits.length})',
+                                  RuleProbeState.noResult => ' (无)',
+                                  RuleProbeState.captchaRequired => ' (需验证)',
+                                  RuleProbeState.error => ' (不可用)',
+                                  _ => '',
+                                };
+                                return '${rule.name}$suffix';
+                              }(),
+                              active: _ruleId == rule.id,
+                              onTap: () {
+                                final probe = _probes[rule.id];
+                                if (probe?.state ==
+                                        RuleProbeState.captchaRequired &&
+                                    probe?.verifyUrl != null) {
+                                  unawaited(
+                                    _verifyRule(
+                                      rule.id,
+                                      rule.name,
+                                      probe!.verifyUrl!,
+                                    ),
+                                  );
+                                } else if (probe?.state ==
+                                        RuleProbeState.found &&
+                                    probe != null &&
+                                    probe.hits.isNotEmpty) {
+                                  unawaited(
+                                    _openHit(
+                                      rule.id,
+                                      rule.name,
+                                      probe.hits.first,
+                                    ),
+                                  );
+                                } else {
+                                  unawaited(
+                                    _openEpisode(_episode, ruleId: rule.id),
+                                  );
+                                }
+                              },
+                            ),
+                          ),
+                        if (lines.isNotEmpty) ...[
+                          Container(
+                            height: 1,
+                            margin: const EdgeInsets.symmetric(vertical: 8),
+                            color: Colors.white.withValues(alpha: 0.14),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.only(left: 4, bottom: 6),
+                            child: Text(
+                              _ruleName.isNotEmpty
+                                  ? '播放线路 · $_ruleName'
+                                  : '播放线路',
+                              style: _style(context, small: true).copyWith(
+                                color: Colors.white.withValues(alpha: 0.62),
+                              ),
+                            ),
+                          ),
+                          for (final line in lines)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 6),
+                              child: _HudAction(
+                                label: line.line,
+                                active:
+                                    line.line == _source?.line &&
+                                    line.page == _source?.page,
+                                onTap: () => unawaited(
+                                  _openEpisode(
+                                    _episode,
+                                    ruleId: line.ruleId,
+                                    choice: line,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ],
                     ],
-                    Container(
-                      height: 1,
-                      margin: const EdgeInsets.symmetric(vertical: 8),
-                      color: Colors.white.withValues(alpha: 0.14),
-                    ),
-                    _HudAction(
-                      label: '管理规则',
-                      onTap: () => BaseNavigator.push<void>(
-                        context,
-                        const RulesPage(showBack: true),
-                      ),
-                    ),
-                  ],
-                ],
+                  );
+                },
               ),
               _DrawerTab.danmaku => Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -3106,8 +3584,8 @@ class _EpisodeChipButton extends StatelessWidget {
         ? colorScheme.primary
         : colorScheme.onSurface;
     return SizedBox(
-      width: 56,
-      height: 38,
+      width: 58,
+      height: 40,
       child: PressSurface(
         fill: bg,
         shape: AppShape.md,
@@ -3164,25 +3642,23 @@ class _HudAction extends StatelessWidget {
   }
 }
 
-class _GlassPill extends StatelessWidget {
-  const _GlassPill({required this.child, required this.padding});
+/// Crisp dark translucent video HUD surface with continuous superellipse
+/// corners and zero live-video BackdropFilter GPU overhead.
+class _HudSurface extends StatelessWidget {
+  const _HudSurface({required this.child, required this.padding});
 
   final Widget child;
   final EdgeInsets padding;
 
   @override
-  Widget build(BuildContext context) => ClipRSuperellipse(
-    borderRadius: AppRadius.all(18),
-    child: BackdropFilter(
-      filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: .54),
-          border: Border.all(color: Colors.white.withValues(alpha: .16)),
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: Padding(padding: padding, child: child),
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: ShapeDecoration(
+      color: Colors.black.withValues(alpha: 0.72),
+      shape: SuperellipseBorder(
+        borderRadius: AppRadius.all(18),
+        side: BorderSide(color: Colors.white.withValues(alpha: 0.14)),
       ),
     ),
+    child: Padding(padding: padding, child: child),
   );
 }

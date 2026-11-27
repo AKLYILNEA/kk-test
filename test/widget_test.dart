@@ -651,7 +651,15 @@ void main() {
     expect(find.text('换源与弹幕'), findsNothing);
     expect(find.text('选集'), findsWidgets);
     expect(find.text('评论'), findsOneWidget);
-    expect(find.text('播放源'), findsOneWidget);
+    // Danmaku card is now positioned on top above episodes and sources.
+    expect(find.text('弹幕'), findsOneWidget);
+    expect(find.text('弹幕设置'), findsOneWidget);
+    expect(find.text('手动匹配'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('弹幕')).dy,
+      lessThan(tester.getTopLeft(find.text('选集').last).dy),
+    );
+
     final playerScroll = find
         .descendant(
           of: find.byType(PlayerPage),
@@ -659,14 +667,52 @@ void main() {
         )
         .last;
     await tester.scrollUntilVisible(
-      find.text('手动匹配'),
+      find.text('全部 / 搜索'),
       140,
       scrollable: playerScroll,
     );
     await tester.pumpAndSettle();
-    expect(find.text('弹幕'), findsOneWidget);
-    expect(find.text('弹幕设置'), findsOneWidget);
-    expect(find.text('手动匹配'), findsOneWidget);
+    expect(find.text('播放源'), findsOneWidget);
+
+    await tester.tap(find.text('全部 / 搜索'));
+    await tester.pumpAndSettle();
+    expect(find.text('切换播放源'), findsOneWidget);
+    expect(find.text('自动优选'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('popping detail page settles quickly and responds immediately', (
+    tester,
+  ) async {
+    _setViewport(tester, const Size(420, 880));
+    await tester.pumpWidget(_testApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('星海旅人：北境编年史').first);
+    await tester.pumpAndSettle();
+    expect(find.byType(SubjectDetailPage), findsOneWidget);
+
+    await tester.tap(_barAction('返回'));
+    await tester.pump();
+    // Exiting route must not be frozen in a snapshot during button-triggered pop.
+    final exitingSnapshot = tester.widget<SnapshotWidget>(
+      find
+          .ancestor(
+            of: find.byType(SubjectDetailPage),
+            matching: find.byType(SnapshotWidget),
+          )
+          .first,
+    );
+    expect(exitingSnapshot.controller.allowSnapshotting, isFalse);
+
+    // Pop settles cleanly within ~300ms (no long invisible ghost tail blocking touches).
+    await tester.pump(const Duration(milliseconds: 320));
+    await tester.pump();
+    expect(find.byType(SubjectDetailPage), findsNothing);
+
+    // Immediate interaction on HomePage succeeds without waiting extra frames.
+    await tester.tap(find.text('奇幻'));
+    await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });
 

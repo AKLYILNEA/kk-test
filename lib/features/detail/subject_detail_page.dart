@@ -137,14 +137,23 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
       _probeFlushTimer?.cancel();
       _probeFlushTimer = null;
       final snapshot = _pendingProbes;
-      if (!mounted || gen != _probeGeneration || snapshot == null) return;
+      if (!mounted ||
+          gen != _probeGeneration ||
+          snapshot == null ||
+          !(ModalRoute.of(context)?.isCurrent ?? true)) {
+        return;
+      }
       _liveProbes.value = Map<String, RuleProbeResult>.unmodifiable(snapshot);
     }
 
     await Future.wait(
       enabledRules.map((rule) async {
         final result = await resolver.probeRule(subject, rule.id);
-        if (!mounted || gen != _probeGeneration) return;
+        if (!mounted ||
+            gen != _probeGeneration ||
+            !(ModalRoute.of(context)?.isCurrent ?? true)) {
+          return;
+        }
         (_pendingProbes ??= Map<String, RuleProbeResult>.of(
           _liveProbes.value,
         ))[rule.id] = result;

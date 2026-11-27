@@ -401,7 +401,7 @@ class _KonekoScaffoldState extends State<KonekoScaffold>
           );
         },
       ),
-      body: widget.body,
+      body: RepaintBoundary(child: widget.body),
     );
   }
 }
