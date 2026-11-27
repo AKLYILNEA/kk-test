@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:ui' show ImageFilter;
+import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -112,7 +112,7 @@ class _HomePageState extends ConsumerState<HomePage> {
       for (final e in library)
         if (e.status == CollectionStatus.watching) e.subjectId,
     };
-    final featured = allTrending.take(8).toList();
+    final featured = allTrending.take(10).toList();
 
     return KonekoScaffold(
       title: '推荐',
@@ -151,9 +151,10 @@ class _HomePageState extends ConsumerState<HomePage> {
               if (featured.isNotEmpty)
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.only(top: 4, bottom: 10),
-                    child: _AnimekoTrendingCarousel(
+                    padding: const EdgeInsets.only(top: 2, bottom: 10),
+                    child: _AnimekoHeroCarousel(
                       subjects: featured,
+                      availableWidth: width,
                       onSelect: _openDetail,
                     ),
                   ),
@@ -181,9 +182,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                   child: Center(
                     child: loading.isLoading || _loadingMore
                         ? const ActivityIndicator()
-                        : Text(
-                            loading.hasError ? '加载失败，请稍后重试' : '暂无番剧',
-                          ),
+                        : Text(loading.hasError ? '加载失败，请稍后重试' : '暂无番剧'),
                   ),
                 )
               else ...[
@@ -233,26 +232,28 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 }
 
-/// Animeko-style silky horizontal hot-anime showcase carousel with smooth
-/// scale/parallax transitions, blurred backdrop artwork, and expanding dots.
-class _AnimekoTrendingCarousel extends StatefulWidget {
-  const _AnimekoTrendingCarousel({
+/// Authentic Animeko-style "最高热度" horizontal multi-browse hero carousel:
+/// - Mobile: full-bleed rounded hero artwork card (~78% width) paired with a
+///   peeking vertical slice (~18% width) that smoothly morphs & expands into
+///   the active hero card as you swipe, with crisp white bottom-left title.
+/// - Wide / Desktop: clean horizontal gallery of wide full-bleed artwork cards.
+class _AnimekoHeroCarousel extends StatefulWidget {
+  const _AnimekoHeroCarousel({
     required this.subjects,
+    required this.availableWidth,
     required this.onSelect,
   });
 
   final List<AnimeSubject> subjects;
+  final double availableWidth;
   final ValueChanged<AnimeSubject> onSelect;
 
   @override
-  State<_AnimekoTrendingCarousel> createState() =>
-      _AnimekoTrendingCarouselState();
+  State<_AnimekoHeroCarousel> createState() => _AnimekoHeroCarouselState();
 }
 
-class _AnimekoTrendingCarouselState extends State<_AnimekoTrendingCarousel> {
-  late final PageController _controller = PageController(
-    viewportFraction: 0.90,
-  );
+class _AnimekoHeroCarouselState extends State<_AnimekoHeroCarousel> {
+  final PageController _controller = PageController();
   int _page = 0;
 
   @override
@@ -265,247 +266,249 @@ class _AnimekoTrendingCarouselState extends State<_AnimekoTrendingCarousel> {
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
     final items = widget.subjects;
-    final safePage = _page.clamp(0, items.length - 1).toInt();
+    final isWide = widget.availableWidth >= 640;
 
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        SizedBox(
-          height: 186,
-          child: PageView.builder(
-            controller: _controller,
-            clipBehavior: Clip.none,
-            physics: const BouncingScrollPhysics(),
-            itemCount: items.length,
-            onPageChanged: (index) => setState(() => _page = index),
-            itemBuilder: (context, index) {
-              final subject = items[index];
-              return AnimatedBuilder(
-                animation: _controller,
-                builder: (context, child) {
-                  var distance = (index - safePage).abs().toDouble();
-                  if (_controller.position.haveDimensions) {
-                    final current =
-                        _controller.page ?? _controller.initialPage.toDouble();
-                    distance = (index - current).abs();
-                  }
-                  final scale = (1.0 - distance * 0.055).clamp(0.92, 1.0);
-                  final opacity = (1.0 - distance * 0.18).clamp(0.78, 1.0);
-                  return Transform.scale(
-                    scale: scale,
-                    alignment: Alignment.center,
-                    child: Opacity(opacity: opacity, child: child),
-                  );
-                },
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 5,
-                    vertical: 6,
-                  ),
-                  child: _FeaturedAnimeSlide(
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+          child: Text(
+            '最高热度',
+            style: AppTextStyle.title3
+                .of(context, emphasized: true)
+                .copyWith(color: colorScheme.onSurface),
+          ),
+        ),
+        if (isWide)
+          SizedBox(
+            height: 184,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              clipBehavior: Clip.none,
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              itemCount: items.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 12),
+              itemBuilder: (context, index) {
+                final subject = items[index];
+                return SizedBox(
+                  width: 268,
+                  child: _AnimekoArtworkCard(
                     subject: subject,
-                    rankIndex: index + 1,
+                    titleOpacity: 1.0,
+                    corner: 24,
                     onTap: () => widget.onSelect(subject),
                   ),
-                ),
+                );
+              },
+            ),
+          )
+        else
+          _buildMobileMultiBrowse(context, items),
+      ],
+    );
+  }
+
+  Widget _buildMobileMultiBrowse(
+    BuildContext context,
+    List<AnimeSubject> items,
+  ) {
+    const horizontalMargin = 16.0;
+    const gap = 10.0;
+    const cardHeight = 212.0;
+    final viewportWidth = widget.availableWidth;
+    final usable = (viewportWidth - horizontalMargin * 2).clamp(160.0, 640.0);
+    final single = items.length <= 1;
+    final heroWidth = single ? usable : usable * 0.78;
+    final peekWidth = single ? 0.0 : usable - heroWidth - gap;
+
+    List<({int index, double left, double width, double expansion})> layoutFor(
+      double page,
+    ) {
+      final lastIndex = items.length - 1;
+      final endShift = items.length >= 2
+          ? (page - (lastIndex - 1)).clamp(0.0, 1.0) * (peekWidth + gap)
+          : 0.0;
+      var cursor = horizontalMargin - page * (peekWidth + gap) + endShift;
+      final rects =
+          <({int index, double left, double width, double expansion})>[];
+      for (var i = 0; i < items.length; i++) {
+        final t = (1.0 - (i - page).abs()).clamp(0.0, 1.0);
+        final w = lerpDouble(peekWidth, heroWidth, t)!;
+        if (cursor + w >= -24 && cursor <= viewportWidth + 24) {
+          rects.add((index: i, left: cursor, width: w, expansion: t));
+        }
+        cursor += w + gap;
+      }
+      return rects;
+    }
+
+    double currentPage() {
+      if (_controller.hasClients && _controller.position.haveDimensions) {
+        return (_controller.page ?? _page.toDouble()).clamp(
+          0.0,
+          (items.length - 1).toDouble(),
+        );
+      }
+      return _page.clamp(0, items.length - 1).toDouble();
+    }
+
+    void handleTapAt(double dx) {
+      final page = currentPage();
+      final slots = layoutFor(page);
+      for (final slot in slots) {
+        if (dx >= slot.left && dx <= slot.left + slot.width) {
+          if (slot.index == page.round()) {
+            widget.onSelect(items[slot.index]);
+          } else {
+            unawaited(
+              _controller.animateToPage(
+                slot.index,
+                duration: const Duration(milliseconds: 320),
+                curve: Curves.easeOutCubic,
+              ),
+            );
+          }
+          return;
+        }
+      }
+    }
+
+    return SizedBox(
+      height: cardHeight + 12,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          AnimatedBuilder(
+            animation: _controller,
+            builder: (context, _) {
+              final slots = layoutFor(currentPage());
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  for (final slot in slots)
+                    Positioned(
+                      left: slot.left,
+                      top: 4,
+                      width: slot.width,
+                      height: cardHeight,
+                      child: _AnimekoArtworkCard(
+                        subject: items[slot.index],
+                        titleOpacity: ((slot.expansion - 0.35) / 0.65).clamp(
+                          0.0,
+                          1.0,
+                        ),
+                        corner: 26,
+                      ),
+                    ),
+                ],
               );
             },
           ),
-        ),
-        if (items.length > 1) ...[
-          const SizedBox(height: 6),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            spacing: 5,
-            children: [
-              for (var i = 0; i < items.length; i++)
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 240),
-                  curve: Curves.easeOutCubic,
-                  width: i == safePage ? 18 : 6,
-                  height: 6,
-                  decoration: ShapeDecoration(
-                    color: i == safePage
-                        ? colorScheme.primary
-                        : colorScheme.onSurfaceVariant.withValues(alpha: 0.28),
-                    shape: AppShape.full,
-                  ),
-                ),
-            ],
+          // Transparent native PageView provides silky 120fps physics & snapping.
+          Positioned.fill(
+            child: PageView.builder(
+              controller: _controller,
+              physics: const BouncingScrollPhysics(),
+              itemCount: items.length,
+              onPageChanged: (index) => setState(() => _page = index),
+              itemBuilder: (_, _) => GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTapUp: (details) => handleTapAt(details.localPosition.dx),
+                child: const SizedBox.expand(),
+              ),
+            ),
           ),
         ],
-      ],
+      ),
     );
   }
 }
 
-class _FeaturedAnimeSlide extends StatelessWidget {
-  const _FeaturedAnimeSlide({
+class _AnimekoArtworkCard extends StatelessWidget {
+  const _AnimekoArtworkCard({
     required this.subject,
-    required this.rankIndex,
-    required this.onTap,
+    required this.titleOpacity,
+    required this.corner,
+    this.onTap,
   });
 
   final AnimeSubject subject;
-  final int rankIndex;
-  final VoidCallback onTap;
+  final double titleOpacity;
+  final double corner;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
-    final shape = SuperellipseBorder(borderRadius: AppRadius.all(24));
+    final shape = SuperellipseBorder(borderRadius: AppRadius.all(corner));
+
+    final artwork = Stack(
+      fit: StackFit.expand,
+      children: [
+        KonekoPosterArt(subject: subject),
+        // Subtle bottom-only gradient scrim matching Animeko's clean hero style
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              stops: const [0.46, 1.0],
+              colors: [
+                Colors.transparent,
+                Colors.black.withValues(alpha: 0.72),
+              ],
+            ),
+          ),
+        ),
+        if (titleOpacity > 0.02)
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 14,
+            child: Opacity(
+              opacity: titleOpacity,
+              child: Text(
+                subject.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTextStyle.headline
+                    .of(context, emphasized: true)
+                    .copyWith(
+                      color: Colors.white,
+                      fontSize: 16.5,
+                      shadows: [
+                        Shadow(
+                          color: Colors.black.withValues(alpha: 0.45),
+                          blurRadius: 8,
+                        ),
+                      ],
+                    ),
+              ),
+            ),
+          ),
+      ],
+    );
 
     return DecoratedBox(
       decoration: ShapeDecoration(
         shape: shape,
         shadows: konekoCardShadows(colorScheme),
       ),
-      child: PressSurface(
-        fill: SurfaceLevel.card.colorOf(colorScheme),
-        shape: shape,
-        clipsChild: true,
-        onPressed: onTap,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Soft blurred cover backdrop
-            ImageFiltered(
-              imageFilter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-              child: Transform.scale(
-                scale: 1.15,
-                child: KonekoPosterArt(subject: subject),
-              ),
+      child: onTap != null
+          ? PressSurface(
+              fill: SurfaceLevel.card.colorOf(colorScheme),
+              shape: shape,
+              clipsChild: true,
+              onPressed: onTap,
+              child: artwork,
+            )
+          : ClipRSuperellipse(
+              borderRadius: AppRadius.all(corner),
+              child: artwork,
             ),
-            // Cinematic dark scrim for crisp readability
-            DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Colors.black.withValues(alpha: 0.42),
-                    Colors.black.withValues(alpha: 0.76),
-                  ],
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(14),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  // Crisp foreground mini-poster
-                  DecoratedBox(
-                    decoration: ShapeDecoration(
-                      shape: SuperellipseBorder(
-                        borderRadius: AppRadius.all(14),
-                      ),
-                      shadows: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.35),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: SizedBox(
-                      width: 96,
-                      height: 136,
-                      child: KonekoPosterArt(
-                        subject: subject,
-                        borderRadius: AppRadius.all(14),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 4,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            KonekoChip(
-                              label: '热门 #$rankIndex',
-                              height: 22,
-                              fontSize: 10.5,
-                              backgroundColor: colorScheme.primary,
-                              foregroundColor: colorScheme.onPrimary,
-                            ),
-                            if (subject.score > 0)
-                              KonekoChip(
-                                label: subject.score.toStringAsFixed(1),
-                                height: 22,
-                                fontSize: 10.5,
-                                leading: const GlyphIcon(
-                                  KonekoGlyphs.star,
-                                  size: 10.5,
-                                  color: Color(0xFFFFC145),
-                                ),
-                                backgroundColor: Colors.black.withValues(
-                                  alpha: 0.45,
-                                ),
-                                foregroundColor: Colors.white,
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          subject.title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTextStyle.headline
-                              .of(context, emphasized: true)
-                              .copyWith(
-                                color: Colors.white,
-                                fontSize: 16,
-                                height: 1.24,
-                              ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          subjectMetaCaption(subject),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTextStyle.caption1
-                              .of(context)
-                              .copyWith(
-                                color: Colors.white.withValues(alpha: 0.78),
-                              ),
-                        ),
-                        if (subject.tags.isNotEmpty) ...[
-                          const SizedBox(height: 8),
-                          Wrap(
-                            spacing: 5,
-                            runSpacing: 4,
-                            children: [
-                              for (final tag in subject.tags.take(3))
-                                KonekoChip(
-                                  label: tag,
-                                  height: 20,
-                                  fontSize: 10,
-                                  backgroundColor: Colors.white.withValues(
-                                    alpha: 0.16,
-                                  ),
-                                  foregroundColor: Colors.white.withValues(
-                                    alpha: 0.92,
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

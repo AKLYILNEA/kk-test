@@ -226,11 +226,6 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
     final mockProbes = hasLiveResolver
         ? const <RuleSourceProbe>[]
         : catalog.probeSources(subject.subjectId);
-    final commentCount =
-        _extraTotal ??
-        commentsAsync.value?.total ??
-        catalog.getComments(subject.subjectId).length;
-    final commentsTabLabel = commentCount > 0 ? '评论 ($commentCount)' : '评论';
 
     return KonekoScaffold(
       title: '番剧详情',
@@ -264,6 +259,9 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
           );
           final episodeCard = _EpisodeMatrixCard(
             episodes: episodes,
+            isLoading: load.isLoading,
+            onRetry: () =>
+                ref.invalidate(loadCatalogSubjectProvider(widget.subjectId)),
             onSelect: (ep) => _playEpisode(subject, ep.episodeNumber),
           );
           final sourcesCard = _RuleSourcesCard(
@@ -319,11 +317,11 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
           );
 
           final sectionSwitcher = KonekoSegmentedBar<_DetailSection>(
-            segments: [
-              const (_DetailSection.play, '播放'),
-              const (_DetailSection.characters, '角色'),
-              const (_DetailSection.relations, '关联'),
-              (_DetailSection.comments, commentsTabLabel),
+            segments: const [
+              (_DetailSection.play, '播放'),
+              (_DetailSection.characters, '角色'),
+              (_DetailSection.relations, '关联'),
+              (_DetailSection.comments, '评论'),
             ],
             value: _section,
             onChanged: (value) => setState(() => _section = value),
@@ -679,10 +677,17 @@ class _HeroCardState extends State<_HeroCard> {
 }
 
 class _EpisodeMatrixCard extends StatefulWidget {
-  const _EpisodeMatrixCard({required this.episodes, required this.onSelect});
+  const _EpisodeMatrixCard({
+    required this.episodes,
+    required this.onSelect,
+    this.isLoading = false,
+    this.onRetry,
+  });
 
   final List<EpisodeItem> episodes;
   final ValueChanged<EpisodeItem> onSelect;
+  final bool isLoading;
+  final VoidCallback? onRetry;
 
   @override
   State<_EpisodeMatrixCard> createState() => _EpisodeMatrixCardState();
@@ -752,7 +757,31 @@ class _EpisodeMatrixCardState extends State<_EpisodeMatrixCard> {
             ),
           ],
           const SizedBox(height: 12),
-          if (episodes.isEmpty) const Text('Bangumi 暂无剧集资料，仍可在播放器内选集。'),
+          if (episodes.isEmpty)
+            widget.isLoading
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Center(child: ActivityIndicator()),
+                  )
+                : Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '暂无剧集资料，可在播放器内选集',
+                          style: AppTextStyle.footnote
+                              .of(context)
+                              .copyWith(color: colorScheme.onSurfaceVariant),
+                        ),
+                      ),
+                      if (widget.onRetry != null)
+                        KonekoChip(
+                          label: '重试',
+                          height: 28,
+                          fontSize: 12,
+                          onPressed: widget.onRetry,
+                        ),
+                    ],
+                  ),
           Wrap(
             spacing: 8,
             runSpacing: 8,

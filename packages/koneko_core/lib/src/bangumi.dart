@@ -13,7 +13,7 @@ Dio networkClient() => Dio(
     sendTimeout: const Duration(seconds: 12),
     headers: {
       'user-agent':
-          'AKLYILNEA/Koneko/0.0.10 (https://github.com/AKLYILNEA/kk-test)',
+          'AKLYILNEA/Koneko/0.0.11 (https://github.com/AKLYILNEA/kk-test)',
     },
   ),
 );
@@ -55,6 +55,8 @@ class BangumiCatalog implements OnlineCatalog {
   final _changes = StreamController<void>.broadcast();
   final _subjects = <int, Map<String, dynamic>>{};
   final _details = <int, Future<void>>{};
+  final _episodeLoads = <int, Future<void>>{};
+  final _episodesLoaded = <int>{};
   final _episodes = <int, List<Map<String, dynamic>>>{};
   final _related = <int, List<int>>{};
   final _relations = <int, Future<List<SubjectRelation>>>{};
@@ -455,44 +457,91 @@ class BangumiCatalog implements OnlineCatalog {
   }
 
   @override
-  Future<void> loadSubject(int id) => _details.putIfAbsent(
-    id,
-    () => _fetchSubject(id).onError((Object error, StackTrace stack) {
-      _details.remove(id);
-      Error.throwWithStackTrace(error, stack);
-    }),
-  );
-
-  Future<void> _fetchSubject(int id) async {
-    final detail = await get('/v0/subjects/$id');
-    final subject = jsonObject(detail);
-    if (jsonInt(subject['id']) != id) throw const FormatException('番剧详情格式无效');
-    _remember(subject);
-    _notify();
+  Future<void> loadSubject(int id, {bool includeExtras = true}) async {
+    await _details.putIfAbsent(
+      id,
+      () => _fetchSubjectCore(id).onError((Object error, StackTrace stack) {
+        _details.remove(id);
+        Error.throwWithStackTrace(error, stack);
+      }),
+    );
+    if (!includeExtras) return;
     await Future.wait([
-      _fetchEpisodes(id).onError((Object _, StackTrace _) {}),
+      _ensureEpisodes(id).onError((Object _, StackTrace _) {}),
       loadRelations(id).onError((Object _, StackTrace _) => const []),
     ]);
     _notify();
   }
 
+  Future<void> _fetchSubjectCore(int id) async {
+    final detail = await get('/v0/subjects/$id');
+    final subject = jsonObject(detail);
+    if (jsonInt(subject['id']) != id) throw const FormatException('番剧详情格式无效');
+    _remember(subject);
+    _notify();
+  }
+
+  Future<void> _ensureEpisodes(int id) {
+    if (_episodesLoaded.contains(id) && (_episodes[id]?.isNotEmpty ?? false)) {
+      return Future<void>.value();
+    }
+    return _episodeLoads.putIfAbsent(
+      id,
+      () => _fetchEpisodes(id).whenComplete(() => _episodeLoads.remove(id)),
+    );
+  }
+
   Future<void> _fetchEpisodes(int id) async {
-    final items = <Map<String, dynamic>>[];
-    for (var offset = 0; offset < 1000; offset += 100) {
-      final response = jsonObject(
-        await get(
-          '/v0/episodes',
-          query: {'subject_id': id, 'type': 0, 'limit': 100, 'offset': offset},
-        ),
-      );
-      final page = jsonList(response['data']);
-      items.addAll(page.map(jsonObject));
-      if (page.length < 100 ||
-          offset + page.length >= jsonInt(response['total'])) {
-        break;
+    var items = <Map<String, dynamic>>[];
+    Object? primaryError;
+    try {
+      for (var offset = 0; offset < 1000; offset += 100) {
+        final response = jsonObject(
+          await get(
+            '/v0/episodes',
+            query: {'subject_id': id, 'type': 0, 'limit': 100, 'offset': offset},
+          ),
+        );
+        final page = jsonList(response['data']);
+        items.addAll(page.map(jsonObject));
+        if (page.length < 100 ||
+            offset + page.length >= jsonInt(response['total'])) {
+          break;
+        }
+      }
+    } on Object catch (error) {
+      primaryError = error;
+    }
+
+    // Fallback to next.bgm.tv/p1/subjects/$id/episodes if v0 failed or returned empty.
+    if (items.isEmpty) {
+      try {
+        final nextItems = <Map<String, dynamic>>[];
+        for (var offset = 0; offset < 1000; offset += 100) {
+          final response = await _client.get<dynamic>(
+            '$_nextBase/p1/subjects/$id/episodes',
+            queryParameters: {'limit': 100, 'offset': offset},
+          );
+          final payload = jsonObject(response.data);
+          final page = jsonList(payload['data']).map(jsonObject).toList();
+          nextItems.addAll(page);
+          if (page.length < 100 ||
+              offset + page.length >= jsonInt(payload['total'])) {
+            break;
+          }
+        }
+        final mainOnly = nextItems.where((ep) => jsonInt(ep['type']) == 0).toList();
+        items = mainOnly.isNotEmpty ? mainOnly : nextItems;
+      } on Object {
+        if (primaryError != null) rethrow;
       }
     }
+
+    if (items.isEmpty && primaryError != null) {
+      throw primaryError;
+    }
     _episodes[id] = items;
+    _episodesLoaded.add(id);
   }
 
   Future<List<T>> _loadSubjectItems<T>(
@@ -798,15 +847,21 @@ class BangumiCatalog implements OnlineCatalog {
   }) {
     final result = <EpisodeItem>[];
     for (final item in _episodes[subjectId] ?? const <Map<String, dynamic>>[]) {
-      final number = jsonInt(item['sort']);
-      if (number <= 0 || number != item['sort']) continue;
+      final rawSort = item['sort'];
+      if (rawSort is num && rawSort % 1 != 0) continue;
+      final number = jsonInt(rawSort) > 0
+          ? jsonInt(rawSort)
+          : jsonInt(item['ep']);
+      if (number <= 0) continue;
       final airdate = jsonString(item['airdate']);
       final air = DateTime.tryParse(airdate);
-      final name = jsonString(item['name_cn']);
+      final nameCn = jsonString(item['name_cn']).isNotEmpty
+          ? jsonString(item['name_cn'])
+          : jsonString(item['nameCN']);
       result.add(
         EpisodeItem(
           episodeNumber: number,
-          title: name.isNotEmpty ? name : jsonString(item['name']),
+          title: nameCn.isNotEmpty ? nameCn : jsonString(item['name']),
           durationSeconds: 0,
           airDate: airdate,
           state: number == currentEp
@@ -818,6 +873,31 @@ class BangumiCatalog implements OnlineCatalog {
               : EpisodeWatchState.aired,
         ),
       );
+    }
+    if (result.isEmpty) {
+      final data = _subjects[subjectId];
+      final total = data == null
+          ? 0
+          : (jsonInt(data['total_episodes']) > 0
+                ? jsonInt(data['total_episodes'])
+                : math.max(jsonInt(data['eps']), jsonInt(data['episodes'])));
+      if (total > 0 && total <= 500) {
+        for (var i = 1; i <= total; i++) {
+          result.add(
+            EpisodeItem(
+              episodeNumber: i,
+              title: '第 $i 话',
+              durationSeconds: 0,
+              airDate: '',
+              state: i == currentEp
+                  ? EpisodeWatchState.current
+                  : i <= watchedCount
+                  ? EpisodeWatchState.watched
+                  : EpisodeWatchState.aired,
+            ),
+          );
+        }
+      }
     }
     return result;
   }

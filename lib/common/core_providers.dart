@@ -110,14 +110,15 @@ final loadTrackedSubjectsProvider = FutureProvider<void>((ref) async {
     ...tracking.collections.map((entry) => entry.subjectId),
     ...tracking.history.map((entry) => entry.subjectId),
   }.where((id) => catalog.getSubjectById(id) == null).take(80).toList();
-  for (var offset = 0; offset < missing.length; offset += 4) {
+  for (var offset = 0; offset < missing.length; offset += 2) {
     await Future.wait(
       missing
           .skip(offset)
-          .take(4)
+          .take(2)
           .map(
-            (id) =>
-                catalog.loadSubject(id).onError((Object _, StackTrace _) {}),
+            (id) => catalog
+                .loadSubject(id, includeExtras: false)
+                .onError((Object _, StackTrace _) {}),
           ),
     );
   }
