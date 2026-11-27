@@ -321,6 +321,10 @@ void main() {
     );
     debugPrint('Detail push work $counts');
     expect(motionFrames, greaterThan(2));
+    expect(episodeReadsDuringMotion, 0, reason: '$counts');
+    expect(episodeRequestsDuringMotion, 0, reason: '$counts');
+    expect(sourceReadsDuringMotion, 0, reason: '$counts');
+    expect(overviewPaints, lessThanOrEqualTo(2), reason: '$counts');
     await tester.pumpAndSettle();
     expect(catalog.episodeRequests, 1);
     expect(tester.takeException(), isNull);
@@ -402,6 +406,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(position.pixels, 0);
 
+    expect(
+      find.descendant(of: detail, matching: find.text('展开全部')),
+      findsOneWidget,
+    );
     final secondRange = find.descendant(
       of: detail,
       matching: find.text('25-25'),

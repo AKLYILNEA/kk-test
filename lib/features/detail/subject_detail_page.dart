@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:collection/collection.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:koneko/common/constants.dart';
@@ -29,10 +30,13 @@ class SubjectDetailPage extends ConsumerStatefulWidget {
 }
 
 class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
-    with RouteSettledMixin<SubjectDetailPage> {
+    with
+        RouteMotionHoldMixin<SubjectDetailPage>,
+        RouteSettledMixin<SubjectDetailPage> {
   String _selectedRuleId = '';
   String _selectedRuleName = '';
   _DetailSection _section = _DetailSection.play;
+  AnimeSubject? _subject;
   bool _sectionsReady = false;
   bool _peopleVisited = false;
   final _scroll = ScrollController(keepScrollOffset: false);
@@ -49,17 +53,26 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(() => _sectionsReady = true);
+    final subject = catalogSubjectProvider(widget.subjectId);
+    _subject = ref.read(subject);
+    ref.listenManual(subject, (_, _) {
+      showFirstContent(() {
+        final latest = ref.read(subject);
+        if (!identical(_subject, latest)) setState(() => _subject = latest);
+      });
     });
   }
 
   @override
   void didSettleRoute() {
-    final subject = ref.read(catalogSubjectProvider(widget.subjectId));
-    if (subject != null && _section == _DetailSection.play) {
-      _ensureProbed(subject);
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        _sectionsReady = true;
+        _subject = ref.read(catalogSubjectProvider(widget.subjectId));
+      });
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   @override
@@ -78,7 +91,13 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
     }
     _probedSubjectId = subject.subjectId;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) unawaited(_probeAllEnabledRules(subject));
+      if (!mounted) return;
+      if (_section != _DetailSection.play ||
+          !(ModalRoute.isCurrentOf(context) ?? true)) {
+        _probedSubjectId = null;
+        return;
+      }
+      unawaited(_probeAllEnabledRules(subject));
     });
   }
 
@@ -188,10 +207,102 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
     }
   }
 
+  Widget _playSliver(
+    AnimeSubject subject, {
+    required int watchedCount,
+    required int currentEp,
+    required bool isWide,
+  }) {
+    final episodes = Consumer(
+      builder: (context, ref, _) {
+        final catalog = ref.watch(catalogRepositoryProvider);
+        final episodeProvider = loadCatalogEpisodesProvider(subject.subjectId);
+        final load = ref.watch(episodeProvider);
+        return _EpisodeMatrixCard(
+          episodes: catalog.getEpisodes(
+            subject.subjectId,
+            watchedCount: watchedCount,
+            currentEp: currentEp,
+          ),
+          isLoading: load.isLoading,
+          onRetry: () => ref.invalidate(episodeProvider),
+          onSelect: (episode) => _playEpisode(subject, episode.episodeNumber),
+        );
+      },
+    );
+    final sources = Consumer(
+      builder: (context, ref, _) {
+        final hasLiveResolver = ref.watch(playbackSourcesProvider) != null;
+        final enabledRules = ref
+            .watch(rulesProvider)
+            .where((rule) => rule.enabled)
+            .toList();
+        final mockProbes = hasLiveResolver
+            ? const <RuleSourceProbe>[]
+            : ref
+                  .watch(catalogRepositoryProvider)
+                  .probeSources(subject.subjectId);
+        _ensureProbed(subject);
+        return ValueListenableBuilder(
+          valueListenable: _liveProbes,
+          builder: (context, probes, _) => _RuleSourcesCard(
+            hasLiveResolver: hasLiveResolver,
+            enabledRules: enabledRules,
+            liveProbes: probes,
+            mockProbes: mockProbes,
+            selectedRuleId: _selectedRuleId,
+            selectedRuleName: _selectedRuleName,
+            onRefresh: () => unawaited(_probeAllEnabledRules(subject)),
+            onManage: () async {
+              await BaseNavigator.push<void>(
+                context,
+                const RulesPage(showBack: true),
+              );
+              if (mounted && hasLiveResolver) {
+                unawaited(_probeAllEnabledRules(subject));
+              }
+            },
+            onVerify: (ruleId, ruleName, verifyUrl) =>
+                unawaited(_verifyRule(subject, ruleId, ruleName, verifyUrl)),
+            onToggleSelect: (ruleId, ruleName) {
+              if (_selectedRuleId == ruleId) {
+                setState(() {
+                  _selectedRuleId = '';
+                  _selectedRuleName = '';
+                });
+                showKonekoBanner(context, '已取消指定播放源，将自动沿用上次线路');
+              } else {
+                setState(() {
+                  _selectedRuleId = ruleId;
+                  _selectedRuleName = ruleName;
+                });
+                showKonekoBanner(context, '已指定播放源：$ruleName（再次点击可取消）');
+              }
+            },
+          ),
+        );
+      },
+    );
+    return isWide
+        ? SliverToBoxAdapter(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              spacing: 16,
+              children: [
+                Expanded(flex: 12, child: episodes),
+                Expanded(flex: 7, child: sources),
+              ],
+            ),
+          )
+        : SliverList.list(
+            children: [episodes, const SizedBox(height: 14), sources],
+          );
+  }
+
   @override
   Widget build(BuildContext context) {
     final id = widget.subjectId;
-    final subject = ref.watch(catalogSubjectProvider(id));
+    final subject = _subject;
     final subjectLoad = loadCatalogSubjectProvider(id);
     if (subject == null) {
       final load = ref.watch(subjectLoad);
@@ -208,7 +319,7 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
         ),
       );
     }
-    ref.listen(subjectLoad, (_, _) {});
+    if (_sectionsReady) ref.listen(subjectLoad, (_, _) {});
     if (_peopleVisited) SubjectPeopleSliver.retain(ref, id);
 
     final entry = ref.watch(
@@ -235,244 +346,161 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
           onPressed: () => _playEpisode(subject, currentEp),
         ),
       ],
-      body: ArrivalHold(
-        ready: _sectionsReady,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final isWide = constraints.maxWidth >= 900;
-            final heroCard = _HeroCard(
-              subject: subject,
-              entry: entry,
-              currentEp: currentEp,
-              hasHistory: hasHistory,
-              onPlay: () => _playEpisode(subject, currentEp),
-              onStatusChanged: (status) {
-                ref
-                    .read(libraryProvider.notifier)
-                    .setStatus(subject.subjectId, status);
-                showKonekoBanner(
-                  context,
-                  '已将《${subject.title}》标记为「${status.label}」',
-                  level: BannerLevel.success,
-                );
-              },
-            );
-            final sectionSwitcher = KonekoSegmentedBar<_DetailSection>(
-              segments: const [
-                (_DetailSection.play, '播放'),
-                (_DetailSection.characters, '角色'),
-                (_DetailSection.relations, '关联'),
-                (_DetailSection.comments, '评论'),
-              ],
-              value: _section,
-              onChanged: (value) => setState(() {
-                _section = value;
-                if (value == _DetailSection.characters) _peopleVisited = true;
-              }),
-            );
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final isWide = constraints.maxWidth >= 900;
+          final heroCard = MemoBuilder(
+            inputs: [
+              subject.subjectId,
+              subject.title,
+              subject.coverUrl,
+              subject.poster,
+              subject.score,
+              subject.rank,
+              subject.year,
+              subject.seasonLabel,
+              subject.totalEpisodes,
+              subject.studio,
+              subject.summary,
+              ...subject.tags,
+              entry?.status,
+              currentEp,
+              hasHistory,
+              _sectionsReady,
+            ],
+            builder: (context) => RepaintBoundary(
+              child: _HeroCard(
+                subject: subject,
+                entry: entry,
+                currentEp: currentEp,
+                hasHistory: hasHistory,
+                showSynopsisControls: _sectionsReady,
+                onPlay: () => _playEpisode(subject, currentEp),
+                onStatusChanged: (status) {
+                  ref
+                      .read(libraryProvider.notifier)
+                      .setStatus(subject.subjectId, status);
+                  showKonekoBanner(
+                    context,
+                    '已将《${subject.title}》标记为「${status.label}」',
+                    level: BannerLevel.success,
+                  );
+                },
+              ),
+            ),
+          );
+          final sectionSwitcher = KonekoSegmentedBar<_DetailSection>(
+            segments: const [
+              (_DetailSection.play, '播放'),
+              (_DetailSection.characters, '角色'),
+              (_DetailSection.relations, '关联'),
+              (_DetailSection.comments, '评论'),
+            ],
+            value: _section,
+            onChanged: (value) => setState(() {
+              _section = value;
+              if (value == _DetailSection.characters) _peopleVisited = true;
+            }),
+          );
 
-            final bottomPad = 28 + MediaQuery.paddingOf(context).bottom;
+          final bottomPad = 28 + MediaQuery.paddingOf(context).bottom;
 
-            return ArrivalCacheExtentBuilder(
-              builder: (context, cacheExtent) => CustomScrollView(
-                controller: _scroll,
-                scrollCacheExtent: cacheExtent,
-                slivers: [
-                  const KonekoScrollStart(),
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-                    sliver: SliverToBoxAdapter(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        spacing: 14,
-                        children: [heroCard, sectionSwitcher],
-                      ),
+          return ArrivalCacheExtentBuilder(
+            builder: (context, cacheExtent) => CustomScrollView(
+              controller: _scroll,
+              scrollCacheExtent: cacheExtent,
+              slivers: [
+                const KonekoScrollStart(),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+                  sliver: SliverToBoxAdapter(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      spacing: 14,
+                      children: [heroCard, sectionSwitcher],
                     ),
                   ),
-                  if (_sectionsReady)
-                    ...switch (_section) {
-                      _DetailSection.play => [
-                        SliverPadding(
-                          padding: EdgeInsets.fromLTRB(16, 14, 16, bottomPad),
-                          sliver: SliverToBoxAdapter(
-                            child: Consumer(
-                              builder: (context, ref, _) {
-                                final catalog = ref.watch(
-                                  catalogRepositoryProvider,
+                ),
+                if (_sectionsReady)
+                  ...switch (_section) {
+                    _DetailSection.play => [
+                      SliverPadding(
+                        padding: EdgeInsets.fromLTRB(16, 14, 16, bottomPad),
+                        sliver: _playSliver(
+                          subject,
+                          watchedCount: entry?.watchedEpisodes ?? 0,
+                          currentEp: currentEp,
+                          isWide: isWide,
+                        ),
+                      ),
+                    ],
+                    _DetailSection.characters => [
+                      SliverPadding(
+                        padding: EdgeInsets.fromLTRB(16, 14, 16, bottomPad),
+                        sliver: SubjectPeopleSliver(subjectId: id),
+                      ),
+                    ],
+                    _DetailSection.relations => [
+                      SliverPadding(
+                        padding: EdgeInsets.fromLTRB(16, 14, 16, bottomPad),
+                        sliver: SubjectRelationsSliver(
+                          subjectId: subject.subjectId,
+                          onOpenAnime: (id) => BaseNavigator.push<void>(
+                            context,
+                            SubjectDetailPage(subjectId: id),
+                          ),
+                        ),
+                      ),
+                    ],
+                    _DetailSection.comments => [
+                      SliverPadding(
+                        padding: EdgeInsets.fromLTRB(16, 14, 16, bottomPad),
+                        sliver: Consumer(
+                          builder: (context, ref, _) {
+                            final commentsAsync = ref.watch(
+                              subjectCommentsProvider(id),
+                            );
+                            return _CommentsSectionSliver(
+                              commentsAsync: commentsAsync,
+                              overrideItems: _extraComments,
+                              overrideTotal: _extraTotal,
+                              overrideHasMore: _extraComments != null
+                                  ? _extraHasMore
+                                  : null,
+                              loadingMore: _loadingMoreComments,
+                              onRefresh: () {
+                                setState(() {
+                                  _extraComments = null;
+                                  _extraTotal = null;
+                                  _extraHasMore = false;
+                                });
+                                ref.invalidate(
+                                  subjectCommentsProvider(widget.subjectId),
                                 );
-                                final episodeProvider =
-                                    loadCatalogEpisodesProvider(id);
-                                final episodeLoad = ref.watch(episodeProvider);
-                                final hasLiveResolver =
-                                    ref.watch(playbackSourcesProvider) != null;
-                                final enabledRules = ref
-                                    .watch(rulesProvider)
-                                    .where((rule) => rule.enabled)
-                                    .toList();
-                                final mockProbes = hasLiveResolver
-                                    ? const <RuleSourceProbe>[]
-                                    : catalog.probeSources(id);
-                                _ensureProbed(subject);
-                                final episodeCard = _EpisodeMatrixCard(
-                                  episodes: catalog.getEpisodes(
-                                    id,
-                                    watchedCount: entry?.watchedEpisodes ?? 0,
-                                    currentEp: currentEp,
-                                  ),
-                                  isLoading: episodeLoad.isLoading,
-                                  onRetry: () =>
-                                      ref.invalidate(episodeProvider),
-                                  onSelect: (ep) =>
-                                      _playEpisode(subject, ep.episodeNumber),
-                                );
-                                final sourcesCard = ValueListenableBuilder(
-                                  valueListenable: _liveProbes,
-                                  builder: (context, probes, _) =>
-                                      _RuleSourcesCard(
-                                        hasLiveResolver: hasLiveResolver,
-                                        enabledRules: enabledRules,
-                                        liveProbes: probes,
-                                        mockProbes: mockProbes,
-                                        selectedRuleId: _selectedRuleId,
-                                        selectedRuleName: _selectedRuleName,
-                                        onRefresh: () => unawaited(
-                                          _probeAllEnabledRules(subject),
-                                        ),
-                                        onManage: () async {
-                                          await BaseNavigator.push<void>(
-                                            context,
-                                            const RulesPage(showBack: true),
-                                          );
-                                          if (mounted && hasLiveResolver) {
-                                            unawaited(
-                                              _probeAllEnabledRules(subject),
-                                            );
-                                          }
-                                        },
-                                        onVerify:
-                                            (ruleId, ruleName, verifyUrl) =>
-                                                unawaited(
-                                                  _verifyRule(
-                                                    subject,
-                                                    ruleId,
-                                                    ruleName,
-                                                    verifyUrl,
-                                                  ),
-                                                ),
-                                        onToggleSelect: (ruleId, ruleName) {
-                                          if (_selectedRuleId == ruleId) {
-                                            setState(() {
-                                              _selectedRuleId = '';
-                                              _selectedRuleName = '';
-                                            });
-                                            showKonekoBanner(
-                                              context,
-                                              '已取消指定播放源，将自动沿用上次线路',
-                                            );
-                                          } else {
-                                            setState(() {
-                                              _selectedRuleId = ruleId;
-                                              _selectedRuleName = ruleName;
-                                            });
-                                            showKonekoBanner(
-                                              context,
-                                              '已指定播放源：$ruleName（再次点击可取消）',
-                                            );
-                                          }
-                                        },
-                                      ),
-                                );
-                                return isWide
-                                    ? Row(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        spacing: 16,
-                                        children: [
-                                          Expanded(
-                                            flex: 12,
-                                            child: episodeCard,
-                                          ),
-                                          Expanded(flex: 7, child: sourcesCard),
-                                        ],
-                                      )
-                                    : Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.stretch,
-                                        spacing: 14,
-                                        children: [episodeCard, sourcesCard],
-                                      );
                               },
-                            ),
-                          ),
+                              onLoadMore: (count) => _loadMoreComments(count),
+                            );
+                          },
                         ),
-                      ],
-                      _DetailSection.characters => [
-                        SliverPadding(
-                          padding: EdgeInsets.fromLTRB(16, 14, 16, bottomPad),
-                          sliver: SubjectPeopleSliver(subjectId: id),
-                        ),
-                      ],
-                      _DetailSection.relations => [
-                        SliverPadding(
-                          padding: EdgeInsets.fromLTRB(16, 14, 16, bottomPad),
-                          sliver: SubjectRelationsSliver(
-                            subjectId: subject.subjectId,
-                            onOpenAnime: (id) => BaseNavigator.push<void>(
-                              context,
-                              SubjectDetailPage(subjectId: id),
-                            ),
-                          ),
-                        ),
-                      ],
-                      _DetailSection.comments => [
-                        SliverPadding(
-                          padding: EdgeInsets.fromLTRB(16, 14, 16, bottomPad),
-                          sliver: Consumer(
-                            builder: (context, ref, _) {
-                              final commentsAsync = ref.watch(
-                                subjectCommentsProvider(id),
-                              );
-                              return _CommentsSectionSliver(
-                                commentsAsync: commentsAsync,
-                                overrideItems: _extraComments,
-                                overrideTotal: _extraTotal,
-                                overrideHasMore: _extraComments != null
-                                    ? _extraHasMore
-                                    : null,
-                                loadingMore: _loadingMoreComments,
-                                onRefresh: () {
-                                  setState(() {
-                                    _extraComments = null;
-                                    _extraTotal = null;
-                                    _extraHasMore = false;
-                                  });
-                                  ref.invalidate(
-                                    subjectCommentsProvider(widget.subjectId),
-                                  );
-                                },
-                                onLoadMore: (count) => _loadMoreComments(count),
-                              );
-                            },
-                          ),
-                        ),
-                      ],
-                    },
-                ],
-              ),
-            );
-          },
-        ),
+                      ),
+                    ],
+                  },
+              ],
+            ),
+          );
+        },
       ),
     );
   }
 }
 
-class _HeroCard extends StatefulWidget {
+class _HeroCard extends StatelessWidget {
   const _HeroCard({
     required this.subject,
     required this.entry,
     required this.currentEp,
     required this.hasHistory,
+    required this.showSynopsisControls,
     required this.onPlay,
     required this.onStatusChanged,
   });
@@ -481,24 +509,14 @@ class _HeroCard extends StatefulWidget {
   final CollectionEntry? entry;
   final int currentEp;
   final bool hasHistory;
+  final bool showSynopsisControls;
   final VoidCallback onPlay;
   final ValueChanged<CollectionStatus> onStatusChanged;
 
   @override
-  State<_HeroCard> createState() => _HeroCardState();
-}
-
-class _HeroCardState extends State<_HeroCard> {
-  bool _summaryExpanded = false;
-
-  @override
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
-    final subject = widget.subject;
     final summary = subject.summary.trim();
-    final summaryStyle = AppTextStyle.subheadline
-        .of(context)
-        .copyWith(color: colorScheme.onSurfaceVariant, height: 1.55);
 
     return KonekoCard(
       corner: 30,
@@ -613,7 +631,7 @@ class _HeroCardState extends State<_HeroCard> {
             fill: colorScheme.primary,
             shape: AppShape.full,
             clipsChild: true,
-            onPressed: widget.onPlay,
+            onPressed: onPlay,
             child: SizedBox(
               height: 46,
               child: Row(
@@ -626,9 +644,9 @@ class _HeroCardState extends State<_HeroCard> {
                     color: colorScheme.onPrimary,
                   ),
                   Text(
-                    widget.hasHistory
-                        ? '继续播放 · 第 ${widget.currentEp} 话'
-                        : '立即播放 · 第 ${widget.currentEp} 话',
+                    hasHistory
+                        ? '继续播放 · 第 ${currentEp} 话'
+                        : '立即播放 · 第 ${currentEp} 话',
                     style: AppTextStyle.callout
                         .of(context, emphasized: true)
                         .copyWith(color: colorScheme.onPrimary),
@@ -652,82 +670,132 @@ class _HeroCardState extends State<_HeroCard> {
                     label: status.label,
                     height: 34,
                     fontSize: 12.5,
-                    selected: widget.entry?.status == status,
+                    selected: entry?.status == status,
                     leading: GlyphIcon(
                       konekoStatusGlyph(status),
-                      fill: widget.entry?.status == status ? 1 : 0,
+                      fill: entry?.status == status ? 1 : 0,
                       size: 13.5,
-                      color: widget.entry?.status == status
+                      color: entry?.status == status
                           ? colorScheme.onPrimary
                           : konekoStatusColor(status),
                     ),
-                    onPressed: () => widget.onStatusChanged(status),
+                    onPressed: () => onStatusChanged(status),
                   ),
                 ),
             ],
           ),
           if (summary.isNotEmpty) ...[
             const SizedBox(height: 14),
-            KonekoBlock(
-              corner: 18,
-              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final painter = TextPainter(
-                    text: TextSpan(text: summary, style: summaryStyle),
-                    maxLines: 3,
-                    textDirection: Directionality.of(context),
-                    textScaler: MediaQuery.textScalerOf(context),
-                  )..layout(maxWidth: constraints.maxWidth);
-                  final overflows = painter.didExceedMaxLines;
-                  painter.dispose();
-
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      AnimatedSize(
-                        duration: const Duration(milliseconds: 220),
-                        curve: Curves.easeOutCubic,
-                        alignment: Alignment.topCenter,
-                        child: Text(
-                          summary,
-                          maxLines: _summaryExpanded ? null : 3,
-                          overflow: _summaryExpanded
-                              ? TextOverflow.visible
-                              : TextOverflow.ellipsis,
-                          style: summaryStyle,
-                        ),
-                      ),
-                      if (overflows) ...[
-                        const SizedBox(height: 6),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: PressSurface(
-                            fill: Colors.transparent,
-                            shape: AppShape.full,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 3,
-                            ),
-                            onPressed: () => setState(
-                              () => _summaryExpanded = !_summaryExpanded,
-                            ),
-                            child: Text(
-                              _summaryExpanded ? '收起' : '展开全部',
-                              style: AppTextStyle.caption1
-                                  .of(context, emphasized: true)
-                                  .copyWith(color: colorScheme.primary),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  );
-                },
-              ),
-            ),
+            _Synopsis(summary: summary, showControl: showSynopsisControls),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _Synopsis extends StatefulWidget {
+  const _Synopsis({required this.summary, required this.showControl});
+
+  final String summary;
+  final bool showControl;
+
+  @override
+  State<_Synopsis> createState() => _SynopsisState();
+}
+
+class _SynopsisState extends State<_Synopsis> {
+  final _paragraph = GlobalKey();
+  Object? _measured;
+  bool _expanded = false;
+  bool _overflows = false;
+
+  void _measureOverflow(Object inputs) {
+    if (_expanded || _measured == inputs) return;
+    _measured = inputs;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _measured != inputs || _expanded) return;
+      final paragraph = _paragraph.currentContext?.findRenderObject();
+      if (paragraph is! RenderParagraph || !paragraph.hasSize) {
+        _measured = null;
+        return;
+      }
+      final overflows = paragraph.didExceedMaxLines;
+      if (_overflows == overflows) return;
+      if (widget.showControl) {
+        setState(() => _overflows = overflows);
+      } else {
+        _overflows = overflows;
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colorScheme;
+    final style = AppTextStyle.subheadline
+        .of(context)
+        .copyWith(color: colors.onSurfaceVariant, height: 1.55);
+    final scaledText = MediaQuery.textScalerOf(context);
+    final direction = Directionality.of(context);
+    return KonekoBlock(
+      corner: 18,
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          _measureOverflow((
+            widget.summary,
+            constraints.maxWidth,
+            scaledText,
+            direction,
+            style,
+          ));
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              AnimatedSize(
+                duration: context.motionDuration(
+                  const Duration(milliseconds: 220),
+                ),
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                child: Text(
+                  widget.summary,
+                  key: _paragraph,
+                  maxLines: _expanded ? null : 3,
+                  overflow: _expanded
+                      ? TextOverflow.visible
+                      : TextOverflow.ellipsis,
+                  style: style,
+                ),
+              ),
+              if (widget.showControl && (_expanded || _overflows)) ...[
+                const SizedBox(height: 6),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: PressSurface(
+                    fill: Colors.transparent,
+                    shape: AppShape.full,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    onPressed: () => setState(() {
+                      _expanded = !_expanded;
+                      _measured = null;
+                    }),
+                    child: Text(
+                      _expanded ? '收起' : '展开全部',
+                      style: AppTextStyle.caption1
+                          .of(context, emphasized: true)
+                          .copyWith(color: colors.primary),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          );
+        },
       ),
     );
   }

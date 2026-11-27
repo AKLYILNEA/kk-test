@@ -364,13 +364,12 @@ mixin CardRouteMixin<T> on ModalRoute<T> {
     _updateMotionSnapshot();
     // The snapshot has no host over it, so one within takes the page's panes
     // for it, and they come out as glass rather than a flat tint.
-    return SnapshotWidget(
-      controller: _motionSnapshot,
-      mode: SnapshotMode.permissive,
-      autoresize: true,
-      child: LiquidGlassHost(
-        enabled: LiquidGlassScope.of(context),
-        child: child,
+    return RepaintBoundary(
+      child: SnapshotWidget(
+        controller: _motionSnapshot,
+        mode: SnapshotMode.permissive,
+        autoresize: true,
+        child: LiquidGlassHost(enabled: _glass, child: child),
       ),
     );
   }
