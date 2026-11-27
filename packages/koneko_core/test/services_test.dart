@@ -24,66 +24,84 @@ void main() {
   test(
     'Bangumi feed, calendar, search and detail share real IDs and local cache',
     () async {
-      final adapter = _FixtureAdapter();
-      final catalog = BangumiCatalog(
-        preferences,
-        client: Dio()..httpClientAdapter = adapter,
-      );
-      await catalog.refresh();
-      expect(catalog.getTrending().single.subjectId, 414461);
-      expect(
-        catalog.getByWeekday(5).single.coverUrl,
-        'https://example.com/cover.jpg',
-      );
-
-      await catalog.searchOnline('芙莉莲');
-      expect(catalog.search('芙莉莲').single.title, '葬送的芙莉莲');
-      await catalog.loadSubject(414461);
-      expect(
-        catalog.getEpisodes(414461, currentEp: 1).single.state,
-        EpisodeWatchState.current,
-      );
-      expect(catalog.getSubjectById(414461)?.summary, '详情');
-      final characters = await catalog.loadCharacters(414461);
-      expect(characters.single.relation, '主角');
-      expect(characters.single.actors.single.name, '声优');
-      final credits = await catalog.loadCredits(414461);
-      expect(credits.single.credits, ['导演', '分镜 · 1,2']);
-      final relations = await catalog.loadRelations(414461);
-      expect(relations.map((item) => item.relation), ['续集', '原作']);
-      expect(relations.first.isAnime, isTrue);
-      expect(relations.last.isAnime, isFalse);
-      expect(catalog.getSubjectById(414461)?.relatedIds, [414462]);
-
-      final comments = await catalog.loadComments(414461);
-      expect(comments.total, 1);
-      expect(comments.items.single.userName, '测试观众');
-      expect(comments.items.single.content, '非常好看！');
-      expect(comments.items.single.rate, 9);
-
-      final filtered = await catalog.searchFiltered(
-        const SearchFilter(
-          keyword: '芙莉莲',
-          sort: 'score',
-          tags: ['奇幻'],
-          year: 2023,
-          minScore: 8.0,
-        ),
-      );
-      expect(filtered.single.subjectId, 414461);
-
-      final pastSeason = await catalog.loadSeasonCalendar(
-        const AnimeSeason(year: 2023, quarter: 4),
-      );
-      expect(pastSeason[5]?.single.subjectId, 414461);
-
-      await Future<void>.delayed(Duration.zero);
-      expect(
-        BangumiCatalog(
+      var step = 'init';
+      await Future<void>(() async {
+        final adapter = _FixtureAdapter();
+        final catalog = BangumiCatalog(
           preferences,
-          client: Dio(),
-        ).getSubjectById(414461)?.subjectId,
-        414461,
+          client: Dio()..httpClientAdapter = adapter,
+        );
+        step = 'refresh';
+        await catalog.refresh();
+        expect(catalog.getTrending().single.subjectId, 414461);
+        expect(
+          catalog.getByWeekday(5).single.coverUrl,
+          'https://example.com/cover.jpg',
+        );
+
+        step = 'searchOnline';
+        await catalog.searchOnline('芙莉莲');
+        expect(catalog.search('芙莉莲').single.title, '葬送的芙莉莲');
+        step = 'loadSubject';
+        await catalog.loadSubject(414461);
+        step = 'afterLoadSubject';
+        expect(
+          catalog.getEpisodes(414461, currentEp: 1).single.state,
+          EpisodeWatchState.current,
+        );
+        expect(catalog.getSubjectById(414461)?.summary, '详情');
+        step = 'loadCharacters';
+        final characters = await catalog.loadCharacters(414461);
+        expect(characters.single.relation, '主角');
+        expect(characters.single.actors.single.name, '声优');
+        step = 'loadCredits';
+        final credits = await catalog.loadCredits(414461);
+        expect(credits.single.credits, ['导演', '分镜 · 1,2']);
+        step = 'loadRelations';
+        final relations = await catalog.loadRelations(414461);
+        expect(relations.map((item) => item.relation), ['续集', '原作']);
+        expect(relations.first.isAnime, isTrue);
+        expect(relations.last.isAnime, isFalse);
+        expect(catalog.getSubjectById(414461)?.relatedIds, [414462]);
+
+        step = 'loadComments';
+        final comments = await catalog.loadComments(414461);
+        expect(comments.total, 1);
+        expect(comments.items.single.userName, '测试观众');
+        expect(comments.items.single.content, '非常好看！');
+        expect(comments.items.single.rate, 9);
+
+        step = 'searchFiltered';
+        final filtered = await catalog.searchFiltered(
+          const SearchFilter(
+            keyword: '芙莉莲',
+            sort: 'score',
+            tags: ['奇幻'],
+            year: 2023,
+            minScore: 8.0,
+          ),
+        );
+        expect(filtered.single.subjectId, 414461);
+
+        step = 'loadSeasonCalendar';
+        final pastSeason = await catalog.loadSeasonCalendar(
+          const AnimeSeason(year: 2023, quarter: 4),
+        );
+        expect(pastSeason[5]?.single.subjectId, 414461);
+
+        step = 'saveCache';
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          BangumiCatalog(
+            preferences,
+            client: Dio(),
+          ).getSubjectById(414461)?.subjectId,
+          414461,
+        );
+        step = 'done';
+      }).timeout(
+        const Duration(seconds: 8),
+        onTimeout: () => fail('DIAG_BANGUMI_STEP=$step'),
       );
     },
   );
