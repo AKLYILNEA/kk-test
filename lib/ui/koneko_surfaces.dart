@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
@@ -890,13 +891,18 @@ class _KonekoAutoScrollChipBarState extends State<KonekoAutoScrollChipBar> {
     if (idx < 0 || idx >= _keys.length) return;
     final ctx = _keys[idx].currentContext;
     if (ctx == null) return;
-    Scrollable.ensureVisible(
-      ctx,
-      alignment: 0.5,
-      duration: animated
-          ? context.motionDuration(const Duration(milliseconds: 260))
-          : Duration.zero,
-      curve: Curves.easeOutCubic,
+    final scrollable = Scrollable.maybeOf(ctx, axis: Axis.horizontal);
+    final target = ctx.findRenderObject();
+    if (scrollable == null || target == null) return;
+    unawaited(
+      scrollable.position.ensureVisible(
+        target,
+        alignment: 0.5,
+        duration: animated
+            ? context.motionDuration(const Duration(milliseconds: 260))
+            : Duration.zero,
+        curve: Curves.easeOutCubic,
+      ),
     );
   }
 
@@ -974,7 +980,9 @@ class UnifiedAnimeCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
     final shape = SuperellipseBorder(borderRadius: AppRadius.all(corner));
-    final textScale = MediaQuery.textScalerOf(context).scale(1.0).clamp(1.0, 1.35);
+    final textScale = MediaQuery.textScalerOf(
+      context,
+    ).scale(1.0).clamp(1.0, 1.35);
 
     return DecoratedBox(
       decoration: ShapeDecoration(

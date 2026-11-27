@@ -339,11 +339,12 @@ void main() {
         .descendant(of: detail, matching: find.byType(Scrollable))
         .first;
     final position = tester.state<ScrollableState>(scrollable).position;
-    final segment = find.descendant(of: detail, matching: find.text('评论'));
-    expect(tester.getBottomLeft(segment).dy, greaterThan(460));
-    expect(position.pixels, 0);
-    tester.renderObject(segment).showOnScreen();
-    await tester.pump(const Duration(milliseconds: 16));
+    final secondRange = find.descendant(
+      of: detail,
+      matching: find.text('25-25'),
+    );
+    expect(secondRange, findsOneWidget);
+    expect(tester.getBottomLeft(secondRange).dy, greaterThan(460));
     expect(position.pixels, 0);
 
     catalog.detail.complete();
