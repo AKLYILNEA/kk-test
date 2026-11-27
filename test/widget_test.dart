@@ -742,6 +742,11 @@ void main() {
               brightness: Brightness.light,
               customFontFamily: null,
             ),
+            builder: (context, child) => ViewScope(
+              size: const Size(420, 880),
+              isMobile: true,
+              child: child!,
+            ),
             home: Builder(
               builder: (context) => Center(
                 child: Column(
