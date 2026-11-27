@@ -336,6 +336,18 @@ void main() {
     expect(overviewPaints, lessThanOrEqualTo(2), reason: '$counts');
     await tester.pumpAndSettle();
     expect(catalog.episodeRequests, 1);
+    final source = find.text('樱花源 · XPath');
+    final scrollable = find
+        .descendant(of: detail, matching: find.byType(Scrollable))
+        .first;
+    await tester.scrollUntilVisible(source, 160, scrollable: scrollable);
+    await tester.pumpAndSettle();
+    final episodeReads = catalog.episodeReads;
+    await tester.tap(source);
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+    expect(catalog.episodeReads, episodeReads);
+    expect(find.text('已指定'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

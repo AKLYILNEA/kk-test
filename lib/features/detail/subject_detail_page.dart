@@ -33,14 +33,14 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
     with
         RouteMotionHoldMixin<SubjectDetailPage>,
         RouteSettledMixin<SubjectDetailPage> {
-  String _selectedRuleId = '';
-  String _selectedRuleName = '';
+  final _selectedRule = ValueNotifier<(String, String)>(('', ''));
   _DetailSection _section = _DetailSection.play;
   AnimeSubject? _subject;
   bool _sectionsReady = false;
   bool _peopleVisited = false;
   final _scroll = ScrollController(keepScrollOffset: false);
   final _liveProbes = ValueNotifier<Map<String, RuleProbeResult>>(const {});
+  late final _sourceChanges = Listenable.merge([_selectedRule, _liveProbes]);
   int _probeGeneration = 0;
   int? _probedSubjectId;
 
@@ -79,6 +79,7 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
   void dispose() {
     _probeGeneration++;
     _liveProbes.dispose();
+    _selectedRule.dispose();
     _scroll.dispose();
     super.dispose();
   }
@@ -168,13 +169,14 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
   }
 
   void _playEpisode(AnimeSubject subject, int episodeNumber) {
+    final (ruleId, ruleName) = _selectedRule.value;
     BaseNavigator.push<void>(
       context,
       PlayerPage(
         subjectId: subject.subjectId,
         initialEpisode: episodeNumber,
-        initialRuleId: _selectedRuleId,
-        initialRuleName: _selectedRuleName,
+        initialRuleId: ruleId,
+        initialRuleName: ruleName,
       ),
     );
   }
@@ -243,43 +245,40 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
                   .watch(catalogRepositoryProvider)
                   .probeSources(subject.subjectId);
         _ensureProbed(subject);
-        return ValueListenableBuilder(
-          valueListenable: _liveProbes,
-          builder: (context, probes, _) => _RuleSourcesCard(
-            hasLiveResolver: hasLiveResolver,
-            enabledRules: enabledRules,
-            liveProbes: probes,
-            mockProbes: mockProbes,
-            selectedRuleId: _selectedRuleId,
-            selectedRuleName: _selectedRuleName,
-            onRefresh: () => unawaited(_probeAllEnabledRules(subject)),
-            onManage: () async {
-              await BaseNavigator.push<void>(
-                context,
-                const RulesPage(showBack: true),
-              );
-              if (mounted && hasLiveResolver) {
-                unawaited(_probeAllEnabledRules(subject));
-              }
-            },
-            onVerify: (ruleId, ruleName, verifyUrl) =>
-                unawaited(_verifyRule(subject, ruleId, ruleName, verifyUrl)),
-            onToggleSelect: (ruleId, ruleName) {
-              if (_selectedRuleId == ruleId) {
-                setState(() {
-                  _selectedRuleId = '';
-                  _selectedRuleName = '';
-                });
-                showKonekoBanner(context, '已取消指定播放源，将自动沿用上次线路');
-              } else {
-                setState(() {
-                  _selectedRuleId = ruleId;
-                  _selectedRuleName = ruleName;
-                });
-                showKonekoBanner(context, '已指定播放源：$ruleName（再次点击可取消）');
-              }
-            },
-          ),
+        return ListenableBuilder(
+          listenable: _sourceChanges,
+          builder: (context, _) {
+            final (selectedId, selectedName) = _selectedRule.value;
+            return _RuleSourcesCard(
+              hasLiveResolver: hasLiveResolver,
+              enabledRules: enabledRules,
+              liveProbes: _liveProbes.value,
+              mockProbes: mockProbes,
+              selectedRuleId: selectedId,
+              selectedRuleName: selectedName,
+              onRefresh: () => unawaited(_probeAllEnabledRules(subject)),
+              onManage: () async {
+                await BaseNavigator.push<void>(
+                  context,
+                  const RulesPage(showBack: true),
+                );
+                if (mounted && hasLiveResolver) {
+                  unawaited(_probeAllEnabledRules(subject));
+                }
+              },
+              onVerify: (ruleId, ruleName, verifyUrl) =>
+                  unawaited(_verifyRule(subject, ruleId, ruleName, verifyUrl)),
+              onToggleSelect: (ruleId, ruleName) {
+                if (selectedId == ruleId) {
+                  _selectedRule.value = ('', '');
+                  showKonekoBanner(context, '已取消指定播放源，将自动沿用上次线路');
+                } else {
+                  _selectedRule.value = (ruleId, ruleName);
+                  showKonekoBanner(context, '已指定播放源：$ruleName（再次点击可取消）');
+                }
+              },
+            );
+          },
         );
       },
     );
