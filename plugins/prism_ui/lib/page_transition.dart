@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
+import 'package:prism_ui/deferred_push.dart';
 import 'package:prism_ui/drag_back.dart';
 import 'package:prism_ui/liquid_glass.dart';
 import 'package:prism_ui/motion.dart';
@@ -225,28 +226,42 @@ mixin CardRouteMixin<T> on ModalRoute<T> {
   Animation<double>? _sheetCover;
   var _glass = false;
 
-  // Only a page going out of view is drawn from its snapshot. One coming into
-  // view stays live, as a frozen picture of it would show what it held when
-  // last covered, such as a press still fading out, until it settles.
+  // Impeller redraws a moving page (and re-captures its LiquidGlass panes) in
+  // full on every frame unless snapshotted. Snapshot both covered pages
+  // throughout push/pop/drag-back (refreshing on didPopNext/gesture start) and
+  // incoming non-zoom CardPageRoutes once DeferredPushRouteMixin releases.
   void _updateMotionSnapshot() {
     final animation = this.animation!;
     final secondary = secondaryAnimation!;
     final dragged = navigator?.userGestureInProgress ?? false;
-    // Under a moving sheet the page holds still behind the scrim, while glass
-    // would sample a picture of it.
     final underMovingSheet =
         !_glass && (_sheetCover?.status.isAnimating ?? false);
+    final coveredMoving =
+        secondary.isAnimating ||
+        (!secondary.isDismissed && !secondary.isCompleted);
+    final pushReady = switch (this) {
+      final DeferredPushRouteMixin<T> deferred => deferred.isDeferredPushReady,
+      _ => true,
+    };
+    final incomingPushSnapshot =
+        !recedesCovered &&
+        animation.status == AnimationStatus.forward &&
+        pushReady;
     _motionSnapshot.allowSnapshotting =
         underMovingSheet ||
         (_coveredByZoom.value
             ? animation.isCompleted && secondary.isAnimating
-            : (secondary.status == AnimationStatus.forward && !dragged) ||
+            : coveredMoving ||
+                  incomingPushSnapshot ||
                   (!recedesCovered &&
                       ((animation.status.isAnimating &&
                               (animation.status == AnimationStatus.reverse ||
                                   dragged)) ||
                           _isDragBackActive)));
   }
+
+  @protected
+  void syncMotionSnapshot() => _updateMotionSnapshot();
 
   void retakeSnapshot() {
     if (!_motionSnapshot.allowSnapshotting) {
@@ -265,7 +280,12 @@ mixin CardRouteMixin<T> on ModalRoute<T> {
 
   void _handleUserGesture() {
     updateBarItems();
-    _updateMotionSnapshot();
+    if ((navigator?.userGestureInProgress ?? false) &&
+        !(secondaryAnimation?.isDismissed ?? true)) {
+      retakeSnapshot();
+    } else {
+      _updateMotionSnapshot();
+    }
   }
 
   @override

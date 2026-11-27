@@ -14,6 +14,11 @@ mixin DeferredPushRouteMixin<T> on TransitionRoute<T> {
   var _takesHolds = false;
   List<Completer<void>>? _arrivalHolds;
 
+  bool get isDeferredPushReady => !_takesHolds && _arrivalHolds == null;
+
+  @protected
+  void onDeferredPushReady() {}
+
   @override
   AnimationController createAnimationController() {
     final vsync = _vsync = _TickerCapture(navigator!);
@@ -47,6 +52,7 @@ mixin DeferredPushRouteMixin<T> on TransitionRoute<T> {
         }
       }
       _arrivalHolds = null;
+      onDeferredPushReady();
       ticker.muted = !TickerMode.getValuesNotifier(context).value.enabled;
     });
     return pushed;

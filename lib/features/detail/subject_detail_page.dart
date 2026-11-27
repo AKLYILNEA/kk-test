@@ -41,9 +41,6 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
   bool _sectionsReady = false;
   bool _peopleVisited = false;
   final _scroll = ScrollController(keepScrollOffset: false);
-  final _pushSnapshot = SnapshotController();
-  Animation<double>? _pushAnimation;
-  bool _pushSnapshotReleased = false;
   final _liveProbes = ValueNotifier<Map<String, RuleProbeResult>>(const {});
   late final _sourceChanges = Listenable.merge([_selectedRule, _liveProbes]);
   Map<String, RuleProbeResult>? _pendingProbes;
@@ -71,33 +68,7 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
   }
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final route = routeOf(context);
-    final animation = route is CardPageRoute<Object?> ? route.animation : null;
-    if (!identical(animation, _pushAnimation)) {
-      _pushAnimation?.removeStatusListener(_syncPushSnapshot);
-      _pushAnimation = animation?..addStatusListener(_syncPushSnapshot);
-    }
-    _syncPushSnapshot();
-  }
-
-  void _syncPushSnapshot([AnimationStatus? _]) {
-    _pushSnapshot.allowSnapshotting =
-        !_pushSnapshotReleased &&
-        !_sectionsReady &&
-        _pushAnimation?.status == AnimationStatus.forward;
-  }
-
-  void _releasePushSnapshot() {
-    if (_pushSnapshotReleased) return;
-    _pushSnapshotReleased = true;
-    _pushSnapshot.allowSnapshotting = false;
-  }
-
-  @override
   void didSettleRoute() {
-    _releasePushSnapshot();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       setState(() {
@@ -110,8 +81,6 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
 
   @override
   void dispose() {
-    _pushAnimation?.removeStatusListener(_syncPushSnapshot);
-    _pushSnapshot.dispose();
     _probeGeneration++;
     _probeFlushTimer?.cancel();
     _liveProbes.dispose();
@@ -370,10 +339,21 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
   @override
   Widget build(BuildContext context) {
     final id = widget.subjectId;
-    final subject = _subject;
     final subjectLoad = loadCatalogSubjectProvider(id);
+    final detailLoad = _sectionsReady
+        ? ref.watch(subjectLoad)
+        : const AsyncLoading<void>();
+    final detailPending = !_sectionsReady || detailLoad.isLoading;
+    // Read the latest catalog subject synchronously once settled (and when
+    // detailLoad completes) so `summary` and `detailPending` always flip on
+    // the exact same frame—preventing the synopsis block from collapsing to
+    // 0px for one frame before expanding back down.
+    final subject = _sectionsReady
+        ? (ref.read(catalogRepositoryProvider).getSubjectById(id) ?? _subject)
+        : _subject;
+    if (subject != null) _subject = subject;
     if (subject == null) {
-      final load = ref.watch(subjectLoad);
+      final load = _sectionsReady ? detailLoad : ref.watch(subjectLoad);
       return KonekoScaffold(
         title: '番剧详情',
         showBack: true,
@@ -398,10 +378,6 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
               ),
       );
     }
-    final detailLoad = _sectionsReady
-        ? ref.watch(subjectLoad)
-        : const AsyncLoading<void>();
-    final detailPending = !_sectionsReady || detailLoad.isLoading;
     if (_peopleVisited) SubjectPeopleSliver.retain(ref, id);
 
     final entry = ref.watch(
@@ -487,22 +463,15 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
 
           final bottomPad = 28 + MediaQuery.paddingOf(context).bottom;
 
-          return Listener(
-            onPointerDown: (_) => _releasePushSnapshot(),
-            child: SnapshotWidget(
-              key: const ValueKey('detail-push-snapshot'),
-              controller: _pushSnapshot,
-              mode: SnapshotMode.permissive,
-              autoresize: true,
-              child: TickerMode(
-                enabled: routeSettled,
-                child: KonekoSkeletonScope(
-                  animate: routeSettled,
-                  child: ArrivalCacheExtentBuilder(
-                    builder: (context, cacheExtent) => CustomScrollView(
-                      controller: _scroll,
-                      scrollCacheExtent: cacheExtent,
-                      slivers: [
+          return TickerMode(
+            enabled: routeSettled,
+            child: KonekoSkeletonScope(
+              animate: routeSettled,
+              child: ArrivalCacheExtentBuilder(
+                builder: (context, cacheExtent) => CustomScrollView(
+                  controller: _scroll,
+                  scrollCacheExtent: cacheExtent,
+                  slivers: [
                 const KonekoScrollStart(),
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
@@ -577,9 +546,7 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
                     ),
                   ],
                 },
-                  ],
-                    ),
-                  ),
+                ],
                 ),
               ),
             ),

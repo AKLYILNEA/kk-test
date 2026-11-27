@@ -157,30 +157,34 @@ class _HomePageState extends ConsumerState<HomePage>
                 const KonekoScrollStart(),
                 if (featured.isNotEmpty)
                   SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 2, bottom: 10),
-                      child: _AnimekoHeroCarousel(
-                        subjects: featured,
-                        availableWidth: width,
-                        onSelect: _openDetail,
+                    child: RepaintBoundary(
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 2, bottom: 10),
+                        child: _AnimekoHeroCarousel(
+                          subjects: featured,
+                          availableWidth: width,
+                          onSelect: _openDetail,
+                        ),
                       ),
                     ),
                   ),
                 SliverToBoxAdapter(
-                  child: KonekoAutoScrollChipBar(
-                    height: 46,
-                    chipHeight: 34,
-                    fontSize: 13,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 6,
+                  child: RepaintBoundary(
+                    child: KonekoAutoScrollChipBar(
+                      height: 46,
+                      chipHeight: 34,
+                      fontSize: 13,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 6,
+                      ),
+                      labels: _tags,
+                      selectedIndex: _tags
+                          .indexOf(_selectedTag)
+                          .clamp(0, _tags.length - 1)
+                          .toInt(),
+                      onSelected: (index) => _selectTag(_tags[index]),
                     ),
-                    labels: _tags,
-                    selectedIndex: _tags
-                        .indexOf(_selectedTag)
-                        .clamp(0, _tags.length - 1)
-                        .toInt(),
-                    onSelected: (index) => _selectTag(_tags[index]),
                   ),
                 ),
                 if (subjects.isEmpty)
@@ -209,11 +213,13 @@ class _HomePageState extends ConsumerState<HomePage>
                       ),
                       delegate: SliverChildBuilderDelegate((context, index) {
                         final subject = subjects[index];
-                        return UnifiedAnimeCard(
-                          subject: subject,
-                          isTracking: trackingIds.contains(subject.subjectId),
-                          showTopRank: _selectedTag == '全部',
-                          onTap: () => _openDetail(subject),
+                        return RepaintBoundary(
+                          child: UnifiedAnimeCard(
+                            subject: subject,
+                            isTracking: trackingIds.contains(subject.subjectId),
+                            showTopRank: _selectedTag == '全部',
+                            onTap: () => _openDetail(subject),
+                          ),
                         );
                       }, childCount: subjects.length),
                     ),
@@ -276,14 +282,32 @@ class _AnimekoHeroCarouselState extends State<_AnimekoHeroCarousel>
   Curve _snapCurve = Curves.easeOutCubic;
   bool _userDragging = false;
   bool _visible = false;
+  Animation<double>? _secondaryAnimation;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    final secondary = route?.secondaryAnimation;
+    if (!identical(secondary, _secondaryAnimation)) {
+      _secondaryAnimation?.removeStatusListener(_handleSecondaryStatus);
+      _secondaryAnimation = secondary
+        ?..addStatusListener(_handleSecondaryStatus);
+    }
+    _syncVisibility();
+  }
+
+  void _handleSecondaryStatus(AnimationStatus _) => _syncVisibility();
+
+  void _syncVisibility() {
+    if (!mounted) return;
+    final routeCovered =
+        _secondaryAnimation != null && !_secondaryAnimation!.isDismissed;
     final visible =
         TickerMode.valuesOf(context).enabled &&
         PageActivityScope.isActiveOf(context) &&
-        (ModalRoute.isCurrentOf(context) ?? true);
+        (ModalRoute.isCurrentOf(context) ?? true) &&
+        !routeCovered;
     if (_visible == visible) return;
     _visible = visible;
     if (!visible) _snapController.stop();
@@ -357,6 +381,7 @@ class _AnimekoHeroCarouselState extends State<_AnimekoHeroCarousel>
 
   @override
   void dispose() {
+    _secondaryAnimation?.removeStatusListener(_handleSecondaryStatus);
     _autoPlayTimer?.cancel();
     _wideController.dispose();
     _snapController.dispose();

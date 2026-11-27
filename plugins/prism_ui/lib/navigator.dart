@@ -350,6 +350,12 @@ class CardPageRoute<T> extends PageRoute<T>
   set offstage(bool value) {}
 
   @override
+  void onDeferredPushReady() {
+    super.onDeferredPushReady();
+    syncMotionSnapshot();
+  }
+
+  @override
   Widget buildPage(
     BuildContext context,
     Animation<double> animation,

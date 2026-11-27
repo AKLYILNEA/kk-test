@@ -23,7 +23,7 @@ import 'package:koneko_contract/koneko_contract.dart';
 import 'package:prism_ui/icons/icons.dart';
 import 'package:prism_ui/prism_ui.dart';
 
-enum _PanelTab { episodes, sources, comments }
+enum _PanelTab { play, comments }
 
 enum _DrawerTab { episodes, sources, danmaku }
 
@@ -94,7 +94,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   double _brightness = 1;
   double? _scrub;
   bool _changingBrightness = false;
-  _PanelTab _panelTab = _PanelTab.episodes;
+  _PanelTab _panelTab = _PanelTab.play;
   _DrawerTab _drawer = _DrawerTab.episodes;
   int _epPageIndex = 0;
   String? _error;
@@ -1220,7 +1220,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
         _drawerOpen = true;
       });
     } else {
-      setState(() => _panelTab = _PanelTab.sources);
+      if (_panelTab != _PanelTab.play) {
+        setState(() => _panelTab = _PanelTab.play);
+      }
+      unawaited(_openSourcesSheet(ref.read(rulesProvider)));
     }
   }
 
@@ -1228,7 +1231,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   Widget build(BuildContext context) {
     final id = widget.subjectId;
     ref.listen(loadCatalogSubjectProvider(id), (_, _) {});
-    if (routeSettled && _panelTab == _PanelTab.episodes) {
+    if (routeSettled && _panelTab == _PanelTab.play) {
       ref.watch(
         loadCatalogEpisodesProvider(id).select((result) => result.isLoading),
       );
@@ -1672,20 +1675,12 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     required double bottomPadding,
   }) {
     final colorScheme = context.colorScheme;
-    final commentsCount = _panelTab == _PanelTab.comments
-        ? ref.watch(
-                subjectCommentsProvider(
-                  widget.subjectId,
-                ).select((value) => value.value?.total),
-              ) ??
-              0
-        : catalog.getComments(widget.subjectId).length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 10),
           child: Row(
             spacing: 10,
             children: [
@@ -1701,7 +1696,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                           .of(context, emphasized: true)
                           .copyWith(color: colorScheme.onSurface),
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 3),
                     Text(
                       offline
                           ? '正在播放离线缓存 · 第 $_episode 话'
@@ -1717,7 +1712,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
               ),
               KonekoChip(
                 label: collection?.status.label ?? '追番',
-                height: 30,
+                height: 32,
                 fontSize: 12,
                 backgroundColor: collection != null
                     ? colorScheme.primary.withValues(alpha: 0.14)
@@ -1737,7 +1732,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
               ),
               if (!offline)
                 KonekoCircleButton(
-                  size: 32,
+                  size: 34,
                   iconSize: 15,
                   glyph: KonekoGlyphs.importFile,
                   tooltip: '离线缓存当前话',
@@ -1747,15 +1742,11 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           ),
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          padding: const EdgeInsets.fromLTRB(16, 2, 16, 12),
           child: KonekoSegmentedBar<_PanelTab>(
-            segments: [
-              const (_PanelTab.episodes, '选集'),
-              const (_PanelTab.sources, '换源与弹幕'),
-              (
-                _PanelTab.comments,
-                commentsCount > 0 ? '评论 ($commentsCount)' : '评论',
-              ),
+            segments: const [
+              (_PanelTab.play, '选集'),
+              (_PanelTab.comments, '评论'),
             ],
             value: _panelTab,
             onChanged: (tab) => setState(() => _panelTab = tab),
@@ -1763,15 +1754,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
         ),
         Expanded(
           child: switch (_panelTab) {
-            _PanelTab.episodes => _buildEpisodesPanel(
+            _PanelTab.play => _buildPlayPanel(
               context: context,
               catalog: catalog,
               collection: collection,
-              offline: offline,
-              bottomPadding: bottomPadding,
-            ),
-            _PanelTab.sources => _buildSourcesAndDanmakuPanel(
-              context: context,
               rules: rules,
               offline: offline,
               bottomPadding: bottomPadding,
@@ -1787,15 +1773,206 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     );
   }
 
-  Widget _buildEpisodesPanel({
+  List<RulePluginMeta> _prioritizedRules(List<RulePluginMeta> enabledRules) {
+    final sorted = List<RulePluginMeta>.of(enabledRules);
+    int rankOf(RulePluginMeta rule) {
+      if (rule.id == _ruleId) return 0;
+      return switch (_probes[rule.id]?.state) {
+        RuleProbeState.found => 1,
+        RuleProbeState.searching => 2,
+        RuleProbeState.captchaRequired => 3,
+        RuleProbeState.noResult => 4,
+        RuleProbeState.error => 5,
+        null => 2,
+      };
+    }
+
+    sorted.sort((a, b) {
+      final r = rankOf(a).compareTo(rankOf(b));
+      if (r != 0) return r;
+      final la = _probes[a.id]?.latencyMs ?? 99999;
+      final lb = _probes[b.id]?.latencyMs ?? 99999;
+      return la.compareTo(lb);
+    });
+    return sorted;
+  }
+
+  Future<void> _openSourcesSheet(List<RulePluginMeta> rules) async {
+    await showKonekoSheet<void>(
+      context: context,
+      title: '切换播放源',
+      subtitle: _ruleName.isEmpty ? '选择可用线路或自定义搜索' : '当前：$_ruleName',
+      detents: const [0.76, 0.94],
+      actions: [
+        IconButtonData(
+          glyph: KonekoGlyphs.refresh,
+          tooltip: '重新检索',
+          onPressed: () => unawaited(
+            _probeAllEnabledRules(
+              customKeyword: _sourceKeywordController.text.trim().isEmpty
+                  ? null
+                  : _sourceKeywordController.text.trim(),
+            ),
+          ),
+        ),
+      ],
+      bodyBuilder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            final enabledRules = _prioritizedRules(
+              rules.where((r) => r.enabled).toList(),
+            );
+            final lines = _choices
+                .where((item) => item.number == _episode)
+                .toList();
+            return ArrivalCacheExtentBuilder(
+              builder: (context, cacheExtent) => CustomScrollView(
+                scrollCacheExtent: cacheExtent,
+                slivers: [
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                    sliver: SliverToBoxAdapter(
+                      child: Row(
+                        spacing: 8,
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _sourceKeywordController,
+                              autocorrect: false,
+                              decoration: InputDecoration(
+                                hintText:
+                                    '自定义搜索词（默认：${_subject?.title ?? ''}）',
+                              ),
+                              onSubmitted: (v) {
+                                unawaited(
+                                  _probeAllEnabledRules(
+                                    customKeyword: v.trim().isEmpty
+                                        ? null
+                                        : v.trim(),
+                                  ),
+                                );
+                                setSheetState(() {});
+                              },
+                            ),
+                          ),
+                          KonekoChip(
+                            label: '检索',
+                            height: 38,
+                            fontSize: 13,
+                            backgroundColor: sheetContext.colorScheme.primary,
+                            foregroundColor: sheetContext.colorScheme.onPrimary,
+                            onPressed: () {
+                              final kw = _sourceKeywordController.text.trim();
+                              unawaited(
+                                _probeAllEnabledRules(
+                                  customKeyword: kw.isEmpty ? null : kw,
+                                ),
+                              );
+                              setSheetState(() {});
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (lines.length > 1)
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                      sliver: SliverToBoxAdapter(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          spacing: 8,
+                          children: [
+                            Text(
+                              '当前源线路',
+                              style: AppTextStyle.caption1
+                                  .of(sheetContext, emphasized: true)
+                                  .copyWith(
+                                    color: sheetContext
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                  ),
+                            ),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                for (final line in lines)
+                                  KonekoChip(
+                                    label: line.line,
+                                    height: 32,
+                                    fontSize: 12.5,
+                                    selected:
+                                        line.line == _source?.line &&
+                                        line.page == _source?.page,
+                                    onPressed: () {
+                                      Navigator.of(sheetContext).pop();
+                                      unawaited(
+                                        _openEpisode(
+                                          _episode,
+                                          ruleId: line.ruleId,
+                                          choice: line,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  if (enabledRules.isEmpty)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Center(
+                          child: TextButton(
+                            onPressed: () async {
+                              Navigator.of(sheetContext).pop();
+                              await BaseNavigator.push<void>(
+                                context,
+                                const RulesPage(showBack: true),
+                              );
+                              if (mounted) await _start();
+                            },
+                            child: const Text('添加播放规则'),
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                      sliver: SliverList.separated(
+                        itemCount: enabledRules.length,
+                        separatorBuilder: (_, _) => const SizedBox(height: 10),
+                        itemBuilder: (context, index) =>
+                            _buildRuleProbeCard(context, enabledRules[index]),
+                      ),
+                    ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildPlayPanel({
     required BuildContext context,
     required CatalogRepository catalog,
     required CollectionEntry? collection,
+    required List<RulePluginMeta> rules,
     required bool offline,
     required double bottomPadding,
   }) {
     final colorScheme = context.colorScheme;
     final lines = _choices.where((item) => item.number == _episode).toList();
+    final enabledRules = _prioritizedRules(
+      rules.where((r) => r.enabled).toList(),
+    );
 
     final sourceEpNums = <int>{
       for (final item in _choices) item.number,
@@ -1819,43 +1996,12 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
         .toList();
 
     return ListView(
-      padding: EdgeInsets.fromLTRB(16, 6, 16, bottomPadding),
+      padding: EdgeInsets.fromLTRB(16, 2, 16, bottomPadding + 12),
       children: [
-        if (!offline && lines.length > 1) ...[
-          Text(
-            '播放线路',
-            style: AppTextStyle.caption1
-                .of(context, emphasized: true)
-                .copyWith(color: colorScheme.onSurfaceVariant),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final line in lines)
-                KonekoChip(
-                  label: line.line,
-                  height: 30,
-                  fontSize: 12,
-                  elevated: true,
-                  selected:
-                      line.line == _source?.line && line.page == _source?.page,
-                  backgroundColor:
-                      line.line == _source?.line && line.page == _source?.page
-                      ? colorScheme.primary
-                      : SurfaceLevel.card.colorOf(colorScheme),
-                  onPressed: () => unawaited(
-                    _openEpisode(_episode, ruleId: line.ruleId, choice: line),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 14),
-        ],
+        // 1. Episodes card (spacious primary section)
         KonekoCard(
-          corner: 24,
-          padding: const EdgeInsets.all(14),
+          corner: 26,
+          padding: const EdgeInsets.all(18),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -1863,22 +2009,58 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                 children: [
                   Expanded(
                     child: Text(
-                      '剧集列表',
+                      '选集',
                       style: AppTextStyle.headline
                           .of(context, emphasized: true)
                           .copyWith(color: colorScheme.onSurface),
                     ),
                   ),
                   Text(
-                    epNumbers.isEmpty ? '加载中' : '共 ${epNumbers.length} 话',
-                    style: AppTextStyle.caption1
+                    epNumbers.isEmpty ? '匹配中' : '共 ${epNumbers.length} 话',
+                    style: AppTextStyle.footnote
                         .of(context)
                         .copyWith(color: colorScheme.onSurfaceVariant),
                   ),
                 ],
               ),
+              if (!offline && lines.length > 1) ...[
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: 32,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: lines.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 8),
+                    itemBuilder: (_, index) {
+                      final line = lines[index];
+                      final selected =
+                          line.line == _source?.line &&
+                          line.page == _source?.page;
+                      return KonekoChip(
+                        label: line.line,
+                        height: 30,
+                        fontSize: 12,
+                        selected: selected,
+                        backgroundColor: selected
+                            ? colorScheme.primary
+                            : SurfaceLevel.block.colorOf(colorScheme),
+                        foregroundColor: selected
+                            ? colorScheme.onPrimary
+                            : colorScheme.onSurface,
+                        onPressed: () => unawaited(
+                          _openEpisode(
+                            _episode,
+                            ruleId: line.ruleId,
+                            choice: line,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
               if (totalPages > 1) ...[
-                const SizedBox(height: 10),
+                const SizedBox(height: 12),
                 KonekoAutoScrollChipBar(
                   height: 32,
                   chipHeight: 28,
@@ -1894,10 +2076,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                   onSelected: (idx) => setState(() => _epPageIndex = idx),
                 ),
               ],
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
               if (visibleEps.isEmpty)
                 Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  padding: const EdgeInsets.symmetric(vertical: 18),
                   child: Center(
                     child: Text(
                       offline ? '正在播放离线缓存的第 $_episode 话' : '匹配规则后将自动显示可选剧集',
@@ -1909,8 +2091,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                 )
               else
                 Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
+                  spacing: 10,
+                  runSpacing: 10,
                   children: [
                     for (final number in visibleEps)
                       _EpisodeChipButton(
@@ -1934,35 +2116,144 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
             ],
           ),
         ),
-      ],
-    );
-  }
-
-  Widget _buildSourcesAndDanmakuPanel({
-    required BuildContext context,
-    required List<RulePluginMeta> rules,
-    required bool offline,
-    required double bottomPadding,
-  }) {
-    final colorScheme = context.colorScheme;
-    final enabledRules = rules.where((r) => r.enabled).toList();
-    final lines = _choices.where((item) => item.number == _episode).toList();
-
-    return ListView(
-      padding: EdgeInsets.fromLTRB(16, 6, 16, bottomPadding),
-      children: [
-        // Danmaku status & manual matcher card
+        if (!offline) ...[
+          const SizedBox(height: 16),
+          // 2. Clean, airy Playback Sources card
+          KonekoCard(
+            corner: 26,
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  spacing: 10,
+                  children: [
+                    Container(
+                      width: 34,
+                      height: 34,
+                      decoration: ShapeDecoration(
+                        color: colorScheme.primary.withValues(alpha: 0.12),
+                        shape: SuperellipseBorder(
+                          borderRadius: AppRadius.all(11),
+                        ),
+                      ),
+                      child: Center(
+                        child: GlyphIcon(
+                          KonekoGlyphs.puzzle,
+                          size: 16,
+                          color: colorScheme.primary,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '播放源',
+                            style: AppTextStyle.headline
+                                .of(context, emphasized: true)
+                                .copyWith(color: colorScheme.onSurface),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            _ruleName.isEmpty
+                                ? '自动匹配最快线路'
+                                : '当前：$_ruleName${_source != null ? ' · ${_source!.line}' : ''}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTextStyle.caption1
+                                .of(context)
+                                .copyWith(color: colorScheme.onSurfaceVariant),
+                          ),
+                        ],
+                      ),
+                    ),
+                    KonekoChip(
+                      label: '搜索 / 全部',
+                      height: 30,
+                      fontSize: 12,
+                      backgroundColor: SurfaceLevel.block.colorOf(colorScheme),
+                      foregroundColor: colorScheme.onSurface,
+                      onPressed: () => unawaited(_openSourcesSheet(rules)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                if (enabledRules.isEmpty)
+                  TextButton(
+                    onPressed: () async {
+                      await BaseNavigator.push<void>(
+                        context,
+                        const RulesPage(showBack: true),
+                      );
+                      if (mounted) await _start();
+                    },
+                    child: const Text('添加播放规则'),
+                  )
+                else ...[
+                  Column(
+                    spacing: 10,
+                    children: [
+                      for (final rule in enabledRules.take(4))
+                        _buildCompactSourceRow(context, rule),
+                    ],
+                  ),
+                  if (enabledRules.length > 4) ...[
+                    const SizedBox(height: 10),
+                    PressSurface(
+                      fill: SurfaceLevel.block.colorOf(colorScheme),
+                      shape: SuperellipseBorder(
+                        borderRadius: AppRadius.all(14),
+                      ),
+                      clipsChild: true,
+                      onPressed: () => unawaited(_openSourcesSheet(rules)),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        child: Center(
+                          child: Text(
+                            '查看全部 ${enabledRules.length} 个播放源与自定义搜索',
+                            style: AppTextStyle.footnote
+                                .of(context, emphasized: true)
+                                .copyWith(color: colorScheme.primary),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: 16),
+        // 3. Calm, symmetrical Danmaku card
         KonekoCard(
-          corner: 24,
-          padding: const EdgeInsets.all(14),
+          corner: 26,
+          padding: const EdgeInsets.all(18),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            spacing: 10,
             children: [
               Row(
+                spacing: 10,
                 children: [
-                  const GlyphIcon(KonekoGlyphs.danmaku, size: 18),
-                  const SizedBox(width: 8),
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: ShapeDecoration(
+                      color: colorScheme.primary.withValues(alpha: 0.12),
+                      shape: SuperellipseBorder(
+                        borderRadius: AppRadius.all(11),
+                      ),
+                    ),
+                    child: Center(
+                      child: GlyphIcon(
+                        KonekoGlyphs.danmaku,
+                        size: 16,
+                        color: colorScheme.primary,
+                      ),
+                    ),
+                  ),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1975,6 +2266,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                               .of(context, emphasized: true)
                               .copyWith(color: colorScheme.onSurface),
                         ),
+                        const SizedBox(height: 2),
                         Text(
                           _danmakuLoading
                               ? '正在拉取弹幕...'
@@ -2002,159 +2294,170 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                   ),
                 ],
               ),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
+              const SizedBox(height: 14),
+              Row(
+                spacing: 10,
                 children: [
-                  KonekoChip(
-                    label: '弹幕设置',
-                    height: 30,
-                    fontSize: 12,
-                    backgroundColor: SurfaceLevel.block.colorOf(colorScheme),
-                    foregroundColor: colorScheme.onSurface,
-                    leading: GlyphIcon(
-                      KonekoGlyphs.tune,
-                      size: 13,
-                      color: colorScheme.onSurfaceVariant,
+                  Expanded(
+                    child: _buildDanmakuActionTile(
+                      context: context,
+                      glyph: KonekoGlyphs.tune,
+                      label: '弹幕设置',
+                      onPressed: () =>
+                          unawaited(openKonekoDanmakuSettingsPage(context)),
                     ),
-                    onPressed: () =>
-                        unawaited(openKonekoDanmakuSettingsPage(context)),
                   ),
-                  KonekoChip(
-                    label: '重新拉取',
-                    height: 30,
-                    fontSize: 12,
-                    backgroundColor: SurfaceLevel.block.colorOf(colorScheme),
-                    foregroundColor: colorScheme.onSurface,
-                    leading: GlyphIcon(
-                      KonekoGlyphs.refresh,
-                      size: 13,
-                      color: colorScheme.onSurfaceVariant,
+                  Expanded(
+                    child: _buildDanmakuActionTile(
+                      context: context,
+                      glyph: Glyphs.search,
+                      label: '手动匹配',
+                      onPressed: _openDanmakuSearchSheet,
                     ),
-                    onPressed: _danmakuLoading ? null : () => _loadDanmaku(),
                   ),
-                  KonekoChip(
-                    label: '手动匹配',
-                    height: 30,
-                    fontSize: 12,
-                    backgroundColor: SurfaceLevel.block.colorOf(colorScheme),
-                    foregroundColor: colorScheme.onSurface,
-                    onPressed: _openDanmakuSearchSheet,
+                  Expanded(
+                    child: _buildDanmakuActionTile(
+                      context: context,
+                      glyph: KonekoGlyphs.refresh,
+                      label: '重新拉取',
+                      onPressed: _danmakuLoading ? null : () => _loadDanmaku(),
+                    ),
                   ),
                 ],
               ),
             ],
           ),
         ),
-        const SizedBox(height: 12),
-        if (!offline)
-          KonekoCard(
-            corner: 24,
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        '播放源',
-                        style: AppTextStyle.headline
-                            .of(context, emphasized: true)
-                            .copyWith(color: colorScheme.onSurface),
-                      ),
-                    ),
-                    KonekoChip(
-                      label: '重新检索',
-                      height: 28,
-                      fontSize: 12,
-                      onPressed: () => unawaited(
-                        _probeAllEnabledRules(
-                          customKeyword:
-                              _sourceKeywordController.text.trim().isEmpty
-                              ? null
-                              : _sourceKeywordController.text.trim(),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  spacing: 8,
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _sourceKeywordController,
-                        autocorrect: false,
-                        decoration: InputDecoration(
-                          hintText: '自定义搜索词（默认：${_subject?.title ?? ''}）',
-                        ),
-                        onSubmitted: (v) => unawaited(
-                          _probeAllEnabledRules(
-                            customKeyword: v.trim().isEmpty ? null : v.trim(),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                if (enabledRules.isEmpty)
-                  TextButton(
-                    onPressed: () async {
-                      await BaseNavigator.push<void>(
-                        context,
-                        const RulesPage(showBack: true),
-                      );
-                      if (mounted) await _start();
-                    },
-                    child: const Text('添加播放规则'),
-                  )
-                else
-                  Column(
-                    spacing: 8,
-                    children: [
-                      for (final rule in enabledRules)
-                        _buildRuleProbeCard(context, rule),
-                    ],
-                  ),
-                if (lines.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    '播放线路',
-                    style: AppTextStyle.caption1
-                        .of(context, emphasized: true)
-                        .copyWith(color: colorScheme.onSurfaceVariant),
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final line in lines)
-                        KonekoChip(
-                          label: line.line,
-                          height: 30,
-                          fontSize: 12,
-                          selected:
-                              line.line == _source?.line &&
-                              line.page == _source?.page,
-                          onPressed: () => unawaited(
-                            _openEpisode(
-                              _episode,
-                              ruleId: line.ruleId,
-                              choice: line,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ],
-              ],
+      ],
+    );
+  }
+
+  Widget _buildDanmakuActionTile({
+    required BuildContext context,
+    required Glyph glyph,
+    required String label,
+    required VoidCallback? onPressed,
+  }) {
+    final colorScheme = context.colorScheme;
+    final fg = onPressed == null
+        ? colorScheme.onSurfaceVariant.withValues(alpha: 0.45)
+        : colorScheme.onSurface;
+    return PressSurface(
+      fill: SurfaceLevel.block.colorOf(colorScheme),
+      shape: SuperellipseBorder(borderRadius: AppRadius.all(14)),
+      clipsChild: true,
+      onPressed: onPressed,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 8),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          spacing: 5,
+          children: [
+            GlyphIcon(
+              glyph,
+              size: 13.5,
+              color: onPressed == null
+                  ? colorScheme.onSurfaceVariant.withValues(alpha: 0.45)
+                  : colorScheme.onSurfaceVariant,
+            ),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTextStyle.footnote
+                    .of(context, emphasized: true)
+                    .copyWith(color: fg),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompactSourceRow(BuildContext context, RulePluginMeta rule) {
+    final colorScheme = context.colorScheme;
+    final probe = _probes[rule.id];
+    final state = probe?.state ?? RuleProbeState.searching;
+    final isCurrent = _ruleId == rule.id;
+
+    final (badgeText, badgeBg, badgeFg) = switch (state) {
+      RuleProbeState.searching => (
+        '检测中',
+        SurfaceLevel.card.colorOf(colorScheme),
+        colorScheme.onSurfaceVariant,
+      ),
+      RuleProbeState.found => (
+        probe!.latencyMs > 0
+            ? '${probe.latencyMs}ms'
+            : '${probe.hits.length} 条',
+        colorScheme.successContainer,
+        colorScheme.onSuccessContainer,
+      ),
+      RuleProbeState.noResult => (
+        '无结果',
+        SurfaceLevel.card.colorOf(colorScheme),
+        colorScheme.onSurfaceVariant,
+      ),
+      RuleProbeState.captchaRequired => (
+        '需验证',
+        colorScheme.warningContainer,
+        colorScheme.onWarningContainer,
+      ),
+      RuleProbeState.error => (
+        '不可用',
+        colorScheme.errorContainer,
+        colorScheme.onErrorContainer,
+      ),
+    };
+
+    return KonekoBlock(
+      corner: 16,
+      selected: isCurrent,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      onPressed: () {
+        if (state == RuleProbeState.captchaRequired &&
+            probe?.verifyUrl != null) {
+          unawaited(_verifyRule(rule.id, rule.name, probe!.verifyUrl!));
+        } else if (state == RuleProbeState.found &&
+            probe != null &&
+            probe.hits.isNotEmpty) {
+          unawaited(_openHit(rule.id, rule.name, probe.hits.first));
+        } else {
+          unawaited(_openEpisode(_episode, ruleId: rule.id));
+        }
+      },
+      child: Row(
+        spacing: 8,
+        children: [
+          Expanded(
+            child: Text(
+              rule.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTextStyle.subheadline
+                  .of(context, emphasized: true)
+                  .copyWith(color: colorScheme.onSurface),
             ),
           ),
-      ],
+          if (isCurrent)
+            KonekoChip(
+              label: '当前',
+              height: 22,
+              fontSize: 10.5,
+              backgroundColor: colorScheme.primary,
+              foregroundColor: colorScheme.onPrimary,
+            ),
+          KonekoChip(
+            label: badgeText,
+            height: 22,
+            fontSize: 10.5,
+            backgroundColor: badgeBg,
+            foregroundColor: badgeFg,
+          ),
+        ],
+      ),
     );
   }
 

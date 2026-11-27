@@ -11,6 +11,7 @@ import 'package:koneko/common/providers.dart';
 import 'package:koneko/features/about/about_page.dart';
 import 'package:koneko/features/detail/subject_detail_page.dart';
 import 'package:koneko/features/discover/discover_page.dart';
+import 'package:koneko/features/player/player_page.dart';
 import 'package:koneko/features/theme/theme_page.dart';
 import 'package:koneko/features/theme/theme_preview.dart';
 import 'package:koneko/main.dart';
@@ -606,6 +607,10 @@ void main() {
       final beforeTabY = tester.getTopLeft(tabBar).dy;
 
       catalog.completeAll();
+      // Even on the very first frame after completion, synopsis must never
+      // collapse to an empty 0px placeholder before re-expanding.
+      await tester.pump();
+      expect(find.byKey(const ValueKey('hero-synopsis-empty')), findsNothing);
       await tester.pumpAndSettle();
 
       expect(find.byKey(const ValueKey('hero-rating-skeleton')), findsNothing);
@@ -619,21 +624,51 @@ void main() {
       expect(find.byType(KonekoStarRating), findsOneWidget);
       expect(find.text('Bangumi 排名'), findsOneWidget);
       expect(find.text('#215'), findsOneWidget);
-      expect(
-        tester
-            .widget<SnapshotWidget>(
-              find.byKey(const ValueKey('detail-push-snapshot')),
-            )
-            .controller
-            .allowSnapshotting,
-        isFalse,
-      );
 
       final afterTabY = tester.getTopLeft(tabBar).dy;
       expect((afterTabY - beforeTabY).abs(), lessThan(20));
+
+      // Pop back to HomePage cleanly using CardRouteMixin's pop snapshot
+      await tester.tap(_barAction('返回'));
+      await tester.pumpAndSettle();
+      expect(find.byType(SubjectDetailPage), findsNothing);
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('player page merges episodes, sources and danmaku into 2 tabs', (
+    tester,
+  ) async {
+    _setViewport(tester, const Size(420, 880));
+    await tester.pumpWidget(_testApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('星海旅人：北境编年史').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('播放 · 第').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('换源与弹幕'), findsNothing);
+    expect(find.text('选集'), findsWidgets);
+    expect(find.text('评论'), findsOneWidget);
+    expect(find.text('播放源'), findsOneWidget);
+    final playerScroll = find
+        .descendant(
+          of: find.byType(PlayerPage),
+          matching: find.byType(Scrollable),
+        )
+        .last;
+    await tester.scrollUntilVisible(
+      find.text('手动匹配'),
+      140,
+      scrollable: playerScroll,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('弹幕'), findsOneWidget);
+    expect(find.text('弹幕设置'), findsOneWidget);
+    expect(find.text('手动匹配'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'schedule and library tabs render entrance skeletons before settling live',
