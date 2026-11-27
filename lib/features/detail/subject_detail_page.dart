@@ -41,6 +41,9 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
   bool _sectionsReady = false;
   bool _peopleVisited = false;
   final _scroll = ScrollController(keepScrollOffset: false);
+  final _pushSnapshot = SnapshotController();
+  Animation<double>? _pushAnimation;
+  bool _pushSnapshotReleased = false;
   final _liveProbes = ValueNotifier<Map<String, RuleProbeResult>>(const {});
   late final _sourceChanges = Listenable.merge([_selectedRule, _liveProbes]);
   Map<String, RuleProbeResult>? _pendingProbes;
@@ -68,7 +71,33 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = routeOf(context);
+    final animation = route is CardPageRoute<Object?> ? route.animation : null;
+    if (!identical(animation, _pushAnimation)) {
+      _pushAnimation?.removeStatusListener(_syncPushSnapshot);
+      _pushAnimation = animation?..addStatusListener(_syncPushSnapshot);
+    }
+    _syncPushSnapshot();
+  }
+
+  void _syncPushSnapshot([AnimationStatus? _]) {
+    _pushSnapshot.allowSnapshotting =
+        !_pushSnapshotReleased &&
+        !_sectionsReady &&
+        _pushAnimation?.status == AnimationStatus.forward;
+  }
+
+  void _releasePushSnapshot() {
+    if (_pushSnapshotReleased) return;
+    _pushSnapshotReleased = true;
+    _pushSnapshot.allowSnapshotting = false;
+  }
+
+  @override
   void didSettleRoute() {
+    _releasePushSnapshot();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       setState(() {
@@ -81,6 +110,8 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
 
   @override
   void dispose() {
+    _pushAnimation?.removeStatusListener(_syncPushSnapshot);
+    _pushSnapshot.dispose();
     _probeGeneration++;
     _probeFlushTimer?.cancel();
     _liveProbes.dispose();
@@ -456,15 +487,22 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
 
           final bottomPad = 28 + MediaQuery.paddingOf(context).bottom;
 
-          return TickerMode(
-            enabled: routeSettled,
-            child: KonekoSkeletonScope(
-              animate: routeSettled,
-              child: ArrivalCacheExtentBuilder(
-                builder: (context, cacheExtent) => CustomScrollView(
-                  controller: _scroll,
-                  scrollCacheExtent: cacheExtent,
-                  slivers: [
+          return Listener(
+            onPointerDown: (_) => _releasePushSnapshot(),
+            child: SnapshotWidget(
+              key: const ValueKey('detail-push-snapshot'),
+              controller: _pushSnapshot,
+              mode: SnapshotMode.permissive,
+              autoresize: true,
+              child: TickerMode(
+                enabled: routeSettled,
+                child: KonekoSkeletonScope(
+                  animate: routeSettled,
+                  child: ArrivalCacheExtentBuilder(
+                    builder: (context, cacheExtent) => CustomScrollView(
+                      controller: _scroll,
+                      scrollCacheExtent: cacheExtent,
+                      slivers: [
                 const KonekoScrollStart(),
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
@@ -539,7 +577,9 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
                     ),
                   ],
                 },
-              ],
+                  ],
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -573,13 +613,18 @@ class _HeroCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
     final summary = subject.summary.trim();
-    final hasRating = subject.score > 0 || subject.rank > 0;
-    final showRatingSkeleton = !hasRating && detailPending;
+    // Kazumi-style unified top Hero skeleton: when entering a subject whose
+    // full Bangumi detail (summary) hasn't arrived yet, hold the rating, meta
+    // row, and synopsis as placeholders together and reveal in one smooth fade.
+    final deferHeroMeta = detailPending && summary.isEmpty;
+    final hasRating = !deferHeroMeta && (subject.score > 0 || subject.rank > 0);
+    final showRatingSkeleton = deferHeroMeta || (!hasRating && detailPending);
     final hasMeta =
-        subject.year > 0 ||
-        subject.studio.trim().isNotEmpty ||
-        subject.totalEpisodes > 0;
-    final showMetaSkeleton = !hasMeta && detailPending;
+        !deferHeroMeta &&
+        (subject.year > 0 ||
+            subject.studio.trim().isNotEmpty ||
+            subject.totalEpisodes > 0);
+    final showMetaSkeleton = deferHeroMeta || (!hasMeta && detailPending);
     final showSummarySkeleton = summary.isEmpty && detailPending;
 
     return KonekoCard(
@@ -654,14 +699,7 @@ class _HeroCard extends StatelessWidget {
                                         ],
                                       ),
                                     if (subject.rank > 0)
-                                      KonekoChip(
-                                        label: 'Bangumi Rank #${subject.rank}',
-                                        height: 22,
-                                        fontSize: 11,
-                                        backgroundColor: colorScheme.primary
-                                            .withValues(alpha: 0.12),
-                                        foregroundColor: colorScheme.primary,
-                                      ),
+                                      _BangumiRankLine(rank: subject.rank),
                                   ],
                                 )
                               : const KonekoSkeletonPulse(
@@ -677,9 +715,9 @@ class _HeroCard extends StatelessWidget {
                                         corner: 7,
                                       ),
                                       KonekoSkeletonBox(
-                                        width: 102,
-                                        height: 22,
-                                        corner: 11,
+                                        width: 108,
+                                        height: 16,
+                                        corner: 6,
                                       ),
                                     ],
                                   ),
@@ -807,6 +845,48 @@ class _HeroCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _BangumiRankLine extends StatelessWidget {
+  const _BangumiRankLine({required this.rank});
+
+  final int rank;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = context.colorScheme;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Container(
+          width: 3,
+          height: 12,
+          decoration: BoxDecoration(
+            color: colorScheme.primary,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          'Bangumi 排名',
+          style: AppTextStyle.caption1
+              .of(context)
+              .copyWith(color: colorScheme.onSurfaceVariant),
+        ),
+        const SizedBox(width: 5),
+        Text(
+          '#$rank',
+          style: AppTextStyle.subheadline
+              .of(context, emphasized: true)
+              .copyWith(
+                color: colorScheme.primary,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+        ),
+      ],
     );
   }
 }
@@ -1845,9 +1925,9 @@ class _SubjectDetailSkeletonView extends StatelessWidget {
                                               corner: 7,
                                             ),
                                             KonekoSkeletonBox(
-                                              width: 102,
-                                              height: 22,
-                                              corner: 11,
+                                              width: 108,
+                                              height: 16,
+                                              corner: 6,
                                             ),
                                           ],
                                         ),

@@ -15,7 +15,7 @@ Dio networkClient() => Dio(
     sendTimeout: const Duration(seconds: 12),
     headers: {
       'user-agent':
-          'AKLYILNEA/Koneko/0.0.18 (https://github.com/AKLYILNEA/kk-test)',
+          'AKLYILNEA/Koneko/0.0.19 (https://github.com/AKLYILNEA/kk-test)',
     },
   ),
 );
@@ -1070,38 +1070,66 @@ class BangumiCatalog implements OnlineCatalog {
     int offset = 0,
     int limit = 20,
   }) async {
-    final response = await _client.get<dynamic>(
-      '$_nextBase/p1/subjects/$subjectId/comments',
-      queryParameters: {'limit': limit, 'offset': offset},
-    );
-    final payload = jsonObject(response.data);
-    final total = jsonInt(payload['total']);
-    final parsed = <SubjectComment>[];
-    for (final raw in jsonList(payload['data'])) {
-      final item = jsonObject(raw);
-      final content = jsonString(item['comment']).trim();
-      if (content.isEmpty) continue;
-      final user = jsonObject(item['user']);
-      final avatar = jsonObject(user['avatar']);
-      final avatarUrl = const ['medium', 'large', 'small']
-          .map((k) => jsonString(avatar[k]))
-          .firstWhere((u) => u.startsWith('http'), orElse: () => '');
-      final nickname = jsonString(user['nickname']).trim();
-      final username = jsonString(user['username']).trim();
-      final updatedSec = jsonInt(item['updatedAt']);
-      parsed.add(
-        SubjectComment(
-          userName: nickname.isNotEmpty
-              ? nickname
-              : (username.isNotEmpty ? username : 'Bangumi 用户'),
-          content: content,
-          rate: jsonInt(item['rate']),
-          updatedAt: updatedSec > 0
-              ? DateTime.fromMillisecondsSinceEpoch(updatedSec * 1000)
-              : DateTime.now(),
-          avatarUrl: avatarUrl.isEmpty ? null : avatarUrl,
+    var total = 0;
+    var parsed = <SubjectComment>[];
+    Object? primaryError;
+
+    // Primary: next.bgm.tv JSON API.
+    try {
+      final response = await _client.get<dynamic>(
+        '$_nextBase/p1/subjects/$subjectId/comments',
+        queryParameters: {'limit': limit, 'offset': offset},
+      );
+      final payload = jsonObject(response.data);
+      total = jsonInt(payload['total']);
+      for (final raw in jsonList(payload['data'])) {
+        final item = jsonObject(raw);
+        final content = jsonString(item['comment']).trim();
+        if (content.isEmpty) continue;
+        final user = jsonObject(item['user']);
+        final avatar = jsonObject(user['avatar']);
+        final avatarUrl = const ['medium', 'large', 'small']
+            .map((k) => _normalizeImageUrl(jsonString(avatar[k])))
+            .firstWhere((u) => u.startsWith('http'), orElse: () => '');
+        final nickname = jsonString(user['nickname']).trim();
+        final username = jsonString(user['username']).trim();
+        final updatedSec = jsonInt(item['updatedAt']);
+        parsed.add(
+          SubjectComment(
+            userName: nickname.isNotEmpty
+                ? nickname
+                : (username.isNotEmpty ? username : 'Bangumi 用户'),
+            content: content,
+            rate: jsonInt(item['rate']),
+            updatedAt: updatedSec > 0
+                ? DateTime.fromMillisecondsSinceEpoch(updatedSec * 1000)
+                : DateTime.now(),
+            avatarUrl: avatarUrl.isEmpty ? null : avatarUrl,
+          ),
+        );
+      }
+    } on Object catch (error) {
+      primaryError = error;
+    }
+
+    // Automatic fallback: bgm.tv HTML comments page when next.bgm.tv returns 502/timeout.
+    var usedHtmlFallback = false;
+    if (parsed.isEmpty && primaryError != null) {
+      final page = (offset ~/ 20) + 1;
+      final htmlResponse = await _client.get<String>(
+        'https://bgm.tv/subject/$subjectId/comments',
+        queryParameters: {'page': page},
+        options: Options(
+          responseType: ResponseType.plain,
+          headers: const {
+            'accept':
+                'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          },
         ),
       );
+      final html = htmlResponse.data ?? '';
+      parsed = _parseHtmlComments(html);
+      usedHtmlFallback = true;
     }
 
     final existing = offset == 0
@@ -1109,13 +1137,104 @@ class BangumiCatalog implements OnlineCatalog {
         : List<SubjectComment>.from(_comments[subjectId] ?? const []);
     existing.addAll(parsed);
     _comments[subjectId] = existing;
-    _commentTotals[subjectId] = math.max(total, existing.length);
+    if (total > 0) {
+      _commentTotals[subjectId] = math.max(total, existing.length);
+    } else if (!usedHtmlFallback) {
+      _commentTotals[subjectId] = existing.length;
+    }
 
-    final hasMore = offset + parsed.length < total && parsed.isNotEmpty;
+    final hasMore = usedHtmlFallback
+        ? parsed.length >= 15
+        : offset + parsed.length < total && parsed.isNotEmpty;
     return SubjectCommentsPage(
       items: List.unmodifiable(existing),
       total: _commentTotals[subjectId] ?? existing.length,
       hasMore: hasMore,
     );
+  }
+
+  static final _commentItemPattern = RegExp(
+    r'<div class="item clearit"[^>]*>(.*?)<div class="likes_grid"',
+    dotAll: true,
+  );
+  static final _commentAvatarPattern = RegExp(
+    r"background-image:url\('([^']+)'\)",
+  );
+  static final _commentUserPattern = RegExp(
+    r'<a href="/user/[^"]+" class="l">([^<]+)</a>',
+  );
+  static final _commentStarPattern = RegExp(r'class="starlight stars(\d+)"');
+  static final _commentTimePattern = RegExp(
+    r'<small class="grey">@\s*([^<]+)</small>',
+  );
+  static final _commentBodyPattern = RegExp(
+    r'<p class="comment">(.*?)</p>',
+    dotAll: true,
+  );
+
+  static List<SubjectComment> _parseHtmlComments(String html) {
+    final boxStart = html.indexOf('id="comment_box"');
+    final slice = boxStart >= 0 ? html.substring(boxStart) : html;
+    final now = DateTime.now();
+    final results = <SubjectComment>[];
+    for (final match in _commentItemPattern.allMatches(slice)) {
+      final block = match.group(1) ?? '';
+      final rawBody = _commentBodyPattern.firstMatch(block)?.group(1) ?? '';
+      final content = _decodeHtmlText(rawBody).trim();
+      if (content.isEmpty) continue;
+      final userRaw = _commentUserPattern.firstMatch(block)?.group(1) ?? '';
+      final userName = _decodeHtmlText(userRaw).trim();
+      final avatarRaw = _commentAvatarPattern.firstMatch(block)?.group(1) ?? '';
+      final avatarUrl = _normalizeImageUrl(avatarRaw);
+      final rate =
+          int.tryParse(_commentStarPattern.firstMatch(block)?.group(1) ?? '') ??
+          0;
+      final timeRaw = _commentTimePattern.firstMatch(block)?.group(1)?.trim();
+      results.add(
+        SubjectComment(
+          userName: userName.isNotEmpty ? userName : 'Bangumi 用户',
+          content: content,
+          rate: rate,
+          updatedAt: _parseBangumiCommentTime(timeRaw, now),
+          avatarUrl: avatarUrl.startsWith('http') ? avatarUrl : null,
+        ),
+      );
+    }
+    return results;
+  }
+
+  static DateTime _parseBangumiCommentTime(String? raw, DateTime now) {
+    if (raw == null || raw.isEmpty) return now;
+    final absolute = DateTime.tryParse(raw.replaceAll(' ', 'T'));
+    if (absolute != null) return absolute;
+    var delta = Duration.zero;
+    for (final m in RegExp(r'(\d+)\s*([dhms])').allMatches(raw)) {
+      final value = int.tryParse(m.group(1) ?? '') ?? 0;
+      switch (m.group(2)) {
+        case 'd':
+          delta += Duration(days: value);
+        case 'h':
+          delta += Duration(hours: value);
+        case 'm':
+          delta += Duration(minutes: value);
+        case 's':
+          delta += Duration(seconds: value);
+      }
+    }
+    return delta > Duration.zero ? now.subtract(delta) : now;
+  }
+
+  static String _decodeHtmlText(String raw) {
+    final withBreaks = raw
+        .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n')
+        .replaceAll(RegExp(r'<[^>]+>'), '');
+    return withBreaks
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'")
+        .replaceAll('&#039;', "'")
+        .replaceAll('&amp;', '&');
   }
 }

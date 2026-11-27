@@ -617,6 +617,17 @@ void main() {
       expect(find.byKey(const ValueKey('episodes-skeleton')), findsNothing);
       expect(find.text('共 12 话'), findsWidgets);
       expect(find.byType(KonekoStarRating), findsOneWidget);
+      expect(find.text('Bangumi 排名'), findsOneWidget);
+      expect(find.text('#215'), findsOneWidget);
+      expect(
+        tester
+            .widget<SnapshotWidget>(
+              find.byKey(const ValueKey('detail-push-snapshot')),
+            )
+            .controller
+            .allowSnapshotting,
+        isFalse,
+      );
 
       final afterTabY = tester.getTopLeft(tabBar).dy;
       expect((afterTabY - beforeTabY).abs(), lessThan(20));

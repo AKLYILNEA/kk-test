@@ -273,49 +273,61 @@ class _StarRatingPainter extends CustomPainter {
   final Color activeColor;
   final Color inactiveColor;
 
-  Path _starPath(Offset center, double outerR) {
-    final innerR = outerR * 0.44;
-    final path = Path();
-    for (var i = 0; i < 10; i++) {
-      final angle = -math.pi / 2 + i * math.pi / 5;
-      final r = i.isEven ? outerR : innerR;
-      final pt = Offset(
-        center.dx + math.cos(angle) * r,
-        center.dy + math.sin(angle) * r,
-      );
-      if (i == 0) {
-        path.moveTo(pt.dx, pt.dy);
-      } else {
-        path.lineTo(pt.dx, pt.dy);
-      }
-    }
-    path.close();
-    return path;
+  static final Map<(double, double), List<Path>> _pathCache = {};
+  static final Paint _paint = Paint()..isAntiAlias = true;
+
+  static List<Path> _pathsFor(double starSize, double spacing) {
+    return _pathCache.putIfAbsent((starSize, spacing), () {
+      if (_pathCache.length >= 16) _pathCache.clear();
+      final outerR = starSize * 0.48;
+      final innerR = outerR * 0.44;
+      final cy = starSize / 2;
+      return List<Path>.unmodifiable([
+        for (var i = 0; i < 5; i++)
+          () {
+            final cx = i * (starSize + spacing) + starSize / 2;
+            final path = Path();
+            for (var v = 0; v < 10; v++) {
+              final angle = -math.pi / 2 + v * math.pi / 5;
+              final r = v.isEven ? outerR : innerR;
+              final pt = Offset(
+                cx + math.cos(angle) * r,
+                cy + math.sin(angle) * r,
+              );
+              if (v == 0) {
+                path.moveTo(pt.dx, pt.dy);
+              } else {
+                path.lineTo(pt.dx, pt.dy);
+              }
+            }
+            path.close();
+            return path;
+          }(),
+      ]);
+    });
   }
 
   @override
   void paint(Canvas canvas, Size size) {
-    final outerR = starSize * 0.48;
-    final cy = size.height / 2;
-    final inactivePaint = Paint()..color = inactiveColor;
-    final activePaint = Paint()..color = activeColor;
-
+    final paths = _pathsFor(starSize, spacing);
+    _paint.color = inactiveColor;
     for (var i = 0; i < 5; i++) {
-      final left = i * (starSize + spacing);
-      final center = Offset(left + starSize / 2, cy);
-      final path = _starPath(center, outerR);
-      canvas.drawPath(path, inactivePaint);
+      canvas.drawPath(paths[i], _paint);
+    }
 
+    _paint.color = activeColor;
+    for (var i = 0; i < 5; i++) {
       final starFill = (fillStars - i).clamp(0.0, 1.0);
       if (starFill <= 0) continue;
       if (starFill >= 1.0) {
-        canvas.drawPath(path, activePaint);
+        canvas.drawPath(paths[i], _paint);
       } else {
+        final left = i * (starSize + spacing);
         canvas.save();
         canvas.clipRect(
           Rect.fromLTWH(left, 0, starSize * starFill, size.height),
         );
-        canvas.drawPath(path, activePaint);
+        canvas.drawPath(paths[i], _paint);
         canvas.restore();
       }
     }

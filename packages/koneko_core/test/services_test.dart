@@ -99,6 +99,25 @@ void main() {
   );
 
   test(
+    'BangumiCatalog.loadComments falls back to bgm.tv HTML when next.bgm.tv returns 502',
+    () async {
+      final catalog = BangumiCatalog(
+        preferences,
+        client: Dio()..httpClientAdapter = _CommentsFallbackAdapter(),
+      );
+      final page = await catalog.loadComments(400602);
+      expect(page.items, hasLength(1));
+      expect(page.items.single.userName, '折木柯南');
+      expect(page.items.single.rate, 10);
+      expect(
+        page.items.single.avatarUrl,
+        'https://lain.bgm.tv/pic/user/l/1085559.jpg',
+      );
+      expect(page.items.single.content, '几乎挑不出毛病的神作！');
+    },
+  );
+
+  test(
     'Kazumi XPath and API rules import, match a real HTTP fixture and survive reload',
     () async {
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
@@ -384,6 +403,44 @@ const _item = {
     {'name': '奇幻'},
   ],
 };
+
+class _CommentsFallbackAdapter implements HttpClientAdapter {
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    if (options.uri.host == 'next.bgm.tv') {
+      return ResponseBody.fromString('error code: 502', 502);
+    }
+    if (options.uri.host == 'bgm.tv' &&
+        options.uri.path == '/subject/400602/comments') {
+      const html = '''
+<div id="comment_box" class="comment-box">
+<div class="item clearit" data-item-user="sherlockyzz">
+<a href="/user/sherlockyzz" class="avatar"><span style="background-image:url('//lain.bgm.tv/pic/user/l/1085559.jpg')"></span></a>
+<a href="/user/sherlockyzz" class="l">折木柯南</a>
+<span class="starstop-s"><span class="starlight stars10"></span></span>
+<small class="grey">@ 24m ago</small>
+<p class="comment">几乎挑不出毛病的神作！</p><div class="likes_grid" id="likes_grid_1"></div>
+</div>
+</div>
+''';
+      return ResponseBody.fromString(
+        html,
+        200,
+        headers: {
+          Headers.contentTypeHeader: ['text/html; charset=utf-8'],
+        },
+      );
+    }
+    return ResponseBody.fromString('not found', 404);
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
 
 class _FixtureAdapter implements HttpClientAdapter {
   @override
