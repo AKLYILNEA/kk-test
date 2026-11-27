@@ -848,6 +848,83 @@ class _KonekoBarActionButtonState extends State<KonekoBarActionButton> {
   }
 }
 
+/// Unified playback-source selection frame shared across SubjectDetailPage,
+/// PlayerPage inline sources list, and PlayerPage sources modal sheet.
+/// Keeps the original crisp card/block fill (never tinting it into the
+/// background) and indicates selection cleanly with a 1.5px primary outline.
+class KonekoSourceSurface extends StatelessWidget {
+  const KonekoSourceSurface({
+    super.key,
+    required this.selected,
+    required this.elevated,
+    required this.child,
+    this.onPressed,
+    this.padding,
+    this.corner,
+  });
+
+  final bool selected;
+  final bool elevated;
+  final Widget child;
+  final VoidCallback? onPressed;
+  final EdgeInsetsGeometry? padding;
+  final double? corner;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = context.colorScheme;
+    final side = selected
+        ? BorderSide(
+            color: colorScheme.primary.withValues(alpha: 0.72),
+            width: 1.5,
+          )
+        : null;
+    if (elevated) {
+      return KonekoCard(
+        corner: corner ?? 22,
+        padding: padding ?? const EdgeInsets.all(14),
+        borderSide: side,
+        onPressed: onPressed,
+        child: child,
+      );
+    }
+    return KonekoBlock(
+      corner: corner ?? 16,
+      color: SurfaceLevel.block.colorOf(colorScheme),
+      borderSide: side,
+      padding: padding ?? const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      onPressed: onPressed,
+      child: child,
+    );
+  }
+}
+
+/// Clean Apple/FlClash solid-primary check circle paired with
+/// [KonekoSourceSurface] for unmistakable cross-page source selection.
+class KonekoSourceCheckBadge extends StatelessWidget {
+  const KonekoSourceCheckBadge({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = context.colorScheme;
+    return Container(
+      width: 18,
+      height: 18,
+      decoration: ShapeDecoration(
+        color: colorScheme.primary,
+        shape: AppShape.full,
+      ),
+      child: Center(
+        child: GlyphIcon(
+          Glyphs.check,
+          size: 11,
+          color: colorScheme.onPrimary,
+        ),
+      ),
+    );
+  }
+}
+
 /// Floating circular bar action button matching FlClash's top bar buttons.
 class KonekoCircleButton extends StatelessWidget {
   const KonekoCircleButton({

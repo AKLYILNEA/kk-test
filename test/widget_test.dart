@@ -850,6 +850,48 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'tablet landscape playback covers sidebar and supports true fullscreen',
+    (tester) async {
+      _setViewport(tester, const Size(1100, 800));
+      await tester.pumpWidget(_testApp());
+      await tester.pumpAndSettle();
+
+      // Landscape tablet shell shows NavigationSidebar on the left.
+      expect(find.byType(NavigationSidebar), findsOneWidget);
+
+      await tester.tap(find.text('星海旅人：北境编年史').first);
+      await tester.pumpAndSettle();
+      expect(find.byType(SubjectDetailPage), findsOneWidget);
+      // Unified source selection surface is present on the detail page.
+      expect(find.byType(KonekoSourceSurface), findsWidgets);
+
+      // Entering PlayerPage pushes on the root navigator so NavigationSidebar
+      // is completely covered and the player owns the entire 1100x800 viewport.
+      await tester.tap(find.textContaining('播放 · 第').first);
+      await tester.pumpAndSettle();
+      expect(find.byType(PlayerPage), findsOneWidget);
+      expect(find.byType(NavigationSidebar), findsNothing);
+      expect(tester.getSize(find.byType(PlayerPage)), const Size(1100, 800));
+
+      // Entering fullscreen expands video across the full window with no sidebar.
+      await tester.tap(find.byTooltip('全屏播放'));
+      await tester.pumpAndSettle();
+      expect(find.byType(NavigationSidebar), findsNothing);
+      expect(find.byTooltip('退出全屏').first, findsOneWidget);
+
+      // Exiting fullscreen and popping PlayerPage restores detail + sidebar.
+      await tester.tap(find.byTooltip('退出全屏').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('返回').first);
+      await tester.pumpAndSettle();
+      expect(find.byType(PlayerPage), findsNothing);
+      expect(find.byType(SubjectDetailPage), findsOneWidget);
+      expect(find.byType(NavigationSidebar), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
 
 Finder _barAction(String tooltip) => find.byWidgetPredicate(

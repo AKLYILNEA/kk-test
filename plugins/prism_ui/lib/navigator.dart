@@ -23,9 +23,18 @@ class BaseNavigator {
 
   /// The mobile layout drops a home page's navigator, pages and all, so a
   /// desktop page left open reopens in the mobile form while its opener stays.
-  static Future<T?> push<T>(BuildContext context, Widget child) {
-    final navigator = Navigator.of(context);
-    if (context.isMobileView) {
+  ///
+  /// Pass [rootNavigator] = `true` for full-window destinations (such as the
+  /// video player) that should cover the desktop/tablet sidebar and survive
+  /// breakpoint transitions without being recreated.
+  static Future<T?> push<T>(
+    BuildContext context,
+    Widget child, {
+    bool rootNavigator = false,
+  }) {
+    final root = Navigator.of(context, rootNavigator: true);
+    final navigator = rootNavigator ? root : Navigator.of(context);
+    if (context.isMobileView || identical(navigator, root)) {
       return navigator.push<T>(_routeOf(context, child));
     }
     final completer = Completer<T?>();

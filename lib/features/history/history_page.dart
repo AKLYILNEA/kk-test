@@ -182,6 +182,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
                           initialRuleId: item.lastRuleId,
                           initialRuleName: item.lastRuleName,
                         ),
+                        rootNavigator: true,
                       ),
                       onPlayNext: () => BaseNavigator.push<void>(
                         context,
@@ -191,6 +192,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
                           initialRuleId: item.lastRuleId,
                           initialRuleName: item.lastRuleName,
                         ),
+                        rootNavigator: true,
                       ),
                     );
                   },

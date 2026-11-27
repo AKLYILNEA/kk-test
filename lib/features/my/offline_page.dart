@@ -80,6 +80,7 @@ class OfflinePage extends ConsumerWidget {
                           initialRuleName: entry.ruleName,
                           offline: entry,
                         ),
+                        rootNavigator: true,
                       ),
                     ),
                   IconButton(

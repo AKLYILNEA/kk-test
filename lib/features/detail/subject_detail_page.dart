@@ -212,6 +212,7 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
         initialRuleId: ruleId,
         initialRuleName: ruleName,
       ),
+      rootNavigator: true,
     );
   }
 
@@ -1528,8 +1529,9 @@ class _RuleSourcesCard extends StatelessWidget {
       RuleProbeState.error => probe?.message ?? '不可用',
     };
 
-    return KonekoBlock(
+    return KonekoSourceSurface(
       selected: selected,
+      elevated: false,
       onPressed: () {
         if (state == RuleProbeState.captchaRequired &&
             probe?.verifyUrl != null) {
@@ -1539,8 +1541,9 @@ class _RuleSourcesCard extends StatelessWidget {
         }
       },
       child: Row(
-        spacing: 8,
+        spacing: 10,
         children: [
+          if (selected) const KonekoSourceCheckBadge(),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1555,7 +1558,11 @@ class _RuleSourcesCard extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: AppTextStyle.subheadline
                             .of(context, emphasized: true)
-                            .copyWith(color: colorScheme.onSurface),
+                            .copyWith(
+                              color: selected
+                                  ? colorScheme.primary
+                                  : colorScheme.onSurface,
+                            ),
                       ),
                     ),
                     if (selected)
@@ -1563,8 +1570,10 @@ class _RuleSourcesCard extends StatelessWidget {
                         label: '已指定',
                         height: 20,
                         fontSize: 10,
-                        backgroundColor: colorScheme.primary,
-                        foregroundColor: colorScheme.onPrimary,
+                        backgroundColor: colorScheme.primary.withValues(
+                          alpha: 0.12,
+                        ),
+                        foregroundColor: colorScheme.primary,
                       ),
                   ],
                 ),
@@ -1626,12 +1635,14 @@ class _RuleSourcesCard extends StatelessWidget {
   Widget _buildMockProbeTile(BuildContext context, RuleSourceProbe probe) {
     final colorScheme = context.colorScheme;
     final selected = probe.ruleId == selectedRuleId;
-    return KonekoBlock(
+    return KonekoSourceSurface(
       selected: selected,
+      elevated: false,
       onPressed: () => onToggleSelect(probe.ruleId, probe.ruleName),
       child: Row(
-        spacing: 8,
+        spacing: 10,
         children: [
+          if (selected) const KonekoSourceCheckBadge(),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1646,7 +1657,11 @@ class _RuleSourcesCard extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: AppTextStyle.subheadline
                             .of(context, emphasized: true)
-                            .copyWith(color: colorScheme.onSurface),
+                            .copyWith(
+                              color: selected
+                                  ? colorScheme.primary
+                                  : colorScheme.onSurface,
+                            ),
                       ),
                     ),
                     if (selected)
@@ -1654,8 +1669,10 @@ class _RuleSourcesCard extends StatelessWidget {
                         label: '已指定',
                         height: 20,
                         fontSize: 10,
-                        backgroundColor: colorScheme.primary,
-                        foregroundColor: colorScheme.onPrimary,
+                        backgroundColor: colorScheme.primary.withValues(
+                          alpha: 0.12,
+                        ),
+                        foregroundColor: colorScheme.primary,
                       ),
                   ],
                 ),
