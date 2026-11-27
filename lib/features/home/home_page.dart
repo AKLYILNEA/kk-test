@@ -252,13 +252,33 @@ class _AnimekoHeroCarousel extends StatefulWidget {
   State<_AnimekoHeroCarousel> createState() => _AnimekoHeroCarouselState();
 }
 
-class _AnimekoHeroCarouselState extends State<_AnimekoHeroCarousel> {
-  final PageController _controller = PageController();
-  int _page = 0;
+class _AnimekoHeroCarouselState extends State<_AnimekoHeroCarousel>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _snapController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 300),
+  )..addListener(_onSnapTick);
+  double _page = 0.0;
+  double _snapFrom = 0.0;
+  double _snapTo = 0.0;
+
+  void _onSnapTick() {
+    final t = Curves.easeOutCubic.transform(_snapController.value);
+    setState(() {
+      _page = lerpDouble(_snapFrom, _snapTo, t)!;
+    });
+  }
+
+  void _animateToPage(int target) {
+    final clamped = target.clamp(0, widget.subjects.length - 1).toDouble();
+    _snapFrom = _page;
+    _snapTo = clamped;
+    _snapController.forward(from: 0);
+  }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _snapController.dispose();
     super.dispose();
   }
 
@@ -323,105 +343,93 @@ class _AnimekoHeroCarouselState extends State<_AnimekoHeroCarousel> {
     final single = items.length <= 1;
     final heroWidth = single ? usable : usable * 0.78;
     final peekWidth = single ? 0.0 : usable - heroWidth - gap;
+    final maxPage = (items.length - 1).toDouble();
+    final page = _page.clamp(0.0, maxPage);
 
-    List<({int index, double left, double width, double expansion})> layoutFor(
-      double page,
-    ) {
-      final lastIndex = items.length - 1;
-      final endShift = items.length >= 2
-          ? (page - (lastIndex - 1)).clamp(0.0, 1.0) * (peekWidth + gap)
-          : 0.0;
-      var cursor = horizontalMargin - page * (peekWidth + gap) + endShift;
-      final rects =
-          <({int index, double left, double width, double expansion})>[];
-      for (var i = 0; i < items.length; i++) {
-        final t = (1.0 - (i - page).abs()).clamp(0.0, 1.0);
-        final w = lerpDouble(peekWidth, heroWidth, t)!;
-        if (cursor + w >= -24 && cursor <= viewportWidth + 24) {
-          rects.add((index: i, left: cursor, width: w, expansion: t));
-        }
-        cursor += w + gap;
+    final lastIndex = items.length - 1;
+    final endShift = items.length >= 2
+        ? (page - (lastIndex - 1)).clamp(0.0, 1.0) * (peekWidth + gap)
+        : 0.0;
+    var cursor = horizontalMargin - page * (peekWidth + gap) + endShift;
+    final slots =
+        <({int index, double left, double width, double expansion})>[];
+    for (var i = 0; i < items.length; i++) {
+      final t = (1.0 - (i - page).abs()).clamp(0.0, 1.0);
+      final w = lerpDouble(peekWidth, heroWidth, t)!;
+      if (cursor + w >= -24 && cursor <= viewportWidth + 24) {
+        slots.add((index: i, left: cursor, width: w, expansion: t));
       }
-      return rects;
+      cursor += w + gap;
     }
 
-    double currentPage() {
-      if (_controller.hasClients && _controller.position.haveDimensions) {
-        return (_controller.page ?? _page.toDouble()).clamp(
-          0.0,
-          (items.length - 1).toDouble(),
-        );
-      }
-      return _page.clamp(0, items.length - 1).toDouble();
-    }
+    final dragSpan = heroWidth.clamp(160.0, 360.0);
 
-    void handleTapAt(double dx) {
-      final page = currentPage();
-      final slots = layoutFor(page);
-      for (final slot in slots) {
-        if (dx >= slot.left && dx <= slot.left + slot.width) {
-          if (slot.index == page.round()) {
-            widget.onSelect(items[slot.index]);
-          } else {
-            unawaited(
-              _controller.animateToPage(
-                slot.index,
-                duration: const Duration(milliseconds: 320),
-                curve: Curves.easeOutCubic,
-              ),
-            );
-          }
-          return;
-        }
-      }
-    }
-
-    return SizedBox(
-      height: cardHeight + 12,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          AnimatedBuilder(
-            animation: _controller,
-            builder: (context, _) {
-              final slots = layoutFor(currentPage());
-              return Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  for (final slot in slots)
-                    Positioned(
-                      left: slot.left,
-                      top: 4,
-                      width: slot.width,
-                      height: cardHeight,
-                      child: _AnimekoArtworkCard(
-                        subject: items[slot.index],
-                        titleOpacity: ((slot.expansion - 0.35) / 0.65).clamp(
-                          0.0,
-                          1.0,
-                        ),
-                        corner: 26,
-                      ),
-                    ),
-                ],
-              );
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onHorizontalDragStart: single
+          ? null
+          : (_) {
+              if (_snapController.isAnimating) {
+                _snapController.stop();
+              }
             },
-          ),
-          // Transparent native PageView provides silky 120fps physics & snapping.
-          Positioned.fill(
-            child: PageView.builder(
-              controller: _controller,
-              physics: const BouncingScrollPhysics(),
-              itemCount: items.length,
-              onPageChanged: (index) => setState(() => _page = index),
-              itemBuilder: (_, _) => GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onTapUp: (details) => handleTapAt(details.localPosition.dx),
-                child: const SizedBox.expand(),
+      onHorizontalDragUpdate: single
+          ? null
+          : (details) {
+              setState(() {
+                var next = _page - details.delta.dx / dragSpan;
+                if (next < 0) {
+                  next = next * 0.35;
+                } else if (next > maxPage) {
+                  next = maxPage + (next - maxPage) * 0.35;
+                }
+                _page = next.clamp(-0.2, maxPage + 0.2);
+              });
+            },
+      onHorizontalDragEnd: single
+          ? null
+          : (details) {
+              final vx = details.primaryVelocity ?? 0;
+              int target;
+              if (vx < -240) {
+                target = _page.ceil();
+              } else if (vx > 240) {
+                target = _page.floor();
+              } else {
+                target = _page.round();
+              }
+              _animateToPage(target);
+            },
+      onHorizontalDragCancel: single ? null : () => _animateToPage(_page.round()),
+      child: SizedBox(
+        height: cardHeight + 12,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            for (final slot in slots)
+              Positioned(
+                left: slot.left,
+                top: 4,
+                width: slot.width,
+                height: cardHeight,
+                child: _AnimekoArtworkCard(
+                  subject: items[slot.index],
+                  titleOpacity: ((slot.expansion - 0.35) / 0.65).clamp(
+                    0.0,
+                    1.0,
+                  ),
+                  corner: 26,
+                  onTap: () {
+                    if (slot.index == page.round()) {
+                      widget.onSelect(items[slot.index]);
+                    } else {
+                      _animateToPage(slot.index);
+                    }
+                  },
+                ),
               ),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
