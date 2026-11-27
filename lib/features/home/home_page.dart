@@ -108,7 +108,9 @@ class _HomePageState extends ConsumerState<HomePage>
     final library = ref.watch(libraryProvider);
 
     final allTrending = catalog.getTrending();
-    final subjects = catalog.getTrending(tag: _selectedTag);
+    final subjects = _selectedTag == '全部'
+        ? allTrending
+        : catalog.getTrending(tag: _selectedTag);
     final trackingIds = {
       for (final e in library)
         if (e.status == CollectionStatus.watching) e.subjectId,
@@ -284,6 +286,7 @@ class _AnimekoHeroCarouselState extends State<_AnimekoHeroCarousel>
         (ModalRoute.isCurrentOf(context) ?? true);
     if (_visible == visible) return;
     _visible = visible;
+    if (!visible) _snapController.stop();
     _restartAutoPlay();
   }
 

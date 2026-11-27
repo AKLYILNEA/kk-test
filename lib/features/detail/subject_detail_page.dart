@@ -779,90 +779,91 @@ class _EpisodeMatrixCardState extends State<_EpisodeMatrixCard> {
     final start = safePage * _pageSize;
     final visible = episodes.skip(start).take(_pageSize).toList();
 
-    return Listener(
-      onPointerDown: (_) => _revealLiveCard(),
-      child: SnapshotWidget(
-        key: const ValueKey('episode-arrival-snapshot'),
-        controller: _arrivalSnapshot,
-        mode: SnapshotMode.permissive,
-        autoresize: true,
-        child: KonekoCard(
-          corner: 30,
-          padding: const EdgeInsets.all(18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return KonekoCard(
+      corner: 30,
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '选集',
-                      style: AppTextStyle.headline
-                          .of(context, emphasized: true)
-                          .copyWith(color: colorScheme.onSurface),
-                    ),
-                  ),
-                  Text(
-                    '共 ${episodes.length} 话',
-                    style: AppTextStyle.footnote
-                        .of(context)
-                        .copyWith(color: colorScheme.onSurfaceVariant),
-                  ),
-                ],
-              ),
-              if (totalPages > 1) ...[
-                const SizedBox(height: 10),
-                KonekoAutoScrollChipBar(
-                  height: 32,
-                  chipHeight: 28,
-                  fontSize: 11.5,
-                  elevated: false,
-                  padding: EdgeInsets.zero,
-                  unselectedColor: SurfaceLevel.block.colorOf(colorScheme),
-                  labels: [
-                    for (var idx = 0; idx < totalPages; idx++)
-                      '${idx * _pageSize + 1}-${((idx + 1) * _pageSize).clamp(1, episodes.length)}',
-                  ],
-                  selectedIndex: safePage,
-                  onSelected: (idx) => setState(() => _pageIndex = idx),
+              Expanded(
+                child: Text(
+                  '选集',
+                  style: AppTextStyle.headline
+                      .of(context, emphasized: true)
+                      .copyWith(color: colorScheme.onSurface),
                 ),
+              ),
+              Text(
+                '共 ${episodes.length} 话',
+                style: AppTextStyle.footnote
+                    .of(context)
+                    .copyWith(color: colorScheme.onSurfaceVariant),
+              ),
+            ],
+          ),
+          if (totalPages > 1) ...[
+            const SizedBox(height: 10),
+            KonekoAutoScrollChipBar(
+              height: 32,
+              chipHeight: 28,
+              fontSize: 11.5,
+              elevated: false,
+              padding: EdgeInsets.zero,
+              unselectedColor: SurfaceLevel.block.colorOf(colorScheme),
+              labels: [
+                for (var idx = 0; idx < totalPages; idx++)
+                  '${idx * _pageSize + 1}-${((idx + 1) * _pageSize).clamp(1, episodes.length)}',
               ],
-              const SizedBox(height: 12),
-              if (episodes.isEmpty)
-                widget.isLoading
-                    ? const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 16),
-                        child: Center(child: ActivityIndicator()),
-                      )
-                    : Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              '暂无剧集资料，可在播放器内选集',
-                              style: AppTextStyle.footnote
-                                  .of(context)
-                                  .copyWith(
-                                    color: colorScheme.onSurfaceVariant,
-                                  ),
-                            ),
-                          ),
-                          if (widget.onRetry != null)
-                            KonekoChip(
-                              label: '重试',
-                              height: 28,
-                              fontSize: 12,
-                              onPressed: widget.onRetry,
-                            ),
-                        ],
+              selectedIndex: safePage,
+              onSelected: (idx) {
+                _revealLiveCard();
+                setState(() => _pageIndex = idx);
+              },
+            ),
+          ],
+          const SizedBox(height: 12),
+          if (episodes.isEmpty)
+            widget.isLoading
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Center(child: ActivityIndicator()),
+                  )
+                : Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '暂无剧集资料，可在播放器内选集',
+                          style: AppTextStyle.footnote
+                              .of(context)
+                              .copyWith(color: colorScheme.onSurfaceVariant),
+                        ),
                       ),
-              Wrap(
+                      if (widget.onRetry != null)
+                        KonekoChip(
+                          label: '重试',
+                          height: 28,
+                          fontSize: 12,
+                          onPressed: widget.onRetry,
+                        ),
+                    ],
+                  ),
+          Listener(
+            onPointerDown: (_) => _revealLiveCard(),
+            child: SnapshotWidget(
+              key: const ValueKey('episode-arrival-snapshot'),
+              controller: _arrivalSnapshot,
+              mode: SnapshotMode.permissive,
+              autoresize: true,
+              child: Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 children: [for (final ep in visible) _episodeCell(context, ep)],
               ),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
