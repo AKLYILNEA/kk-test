@@ -8,13 +8,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:koneko/common/constants.dart';
 import 'package:koneko/common/providers.dart';
+import 'package:koneko/features/about/about_page.dart';
 import 'package:koneko/features/detail/subject_detail_page.dart';
 import 'package:koneko/features/discover/discover_page.dart';
+import 'package:koneko/features/theme/theme_page.dart';
+import 'package:koneko/features/theme/theme_preview.dart';
 import 'package:koneko/main.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:koneko_contract/koneko_contract.dart';
 import 'package:koneko_mock/koneko_mock.dart';
+import 'package:prism_ui/barrier.dart';
 import 'package:prism_ui/prism_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -512,6 +516,52 @@ void main() {
       expect(find.textContaining('个播放源'), findsNothing);
       expect(find.text('继续播放'), findsWidgets);
       expect(find.text('下一话'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'sheets and dialogs use render-layer barriers and settle cleanly',
+    (tester) async {
+      _setViewport(tester, const Size(390, 820));
+      await tester.pumpWidget(_testApp());
+      await tester.pumpAndSettle();
+
+      // Open schedule bottom sheet -> verify AnimatedBarrierPaint & lazy year list
+      final dock = find.byType(NavigationDock);
+      await tester.tap(find.descendant(of: dock, matching: find.text('时间表')));
+      await tester.pumpAndSettle();
+      await tester.tap(_barAction('放送设置与季度切换'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 120));
+      expect(find.byType(AnimatedBarrierPaint), findsOneWidget);
+      await tester.pumpAndSettle();
+      expect(find.text('放送时间表设置'), findsOneWidget);
+      await tester.tap(_barAction('关闭'));
+      await tester.pumpAndSettle();
+
+      // Push ThemePage -> verify lazy ArrivalCacheExtentBuilder & live preview
+      await tester.tap(find.descendant(of: dock, matching: find.text('我的')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('外观主题'));
+      await tester.pumpAndSettle();
+      expect(find.byType(ThemePage), findsOneWidget);
+      expect(find.byType(ThemeLivePreview), findsOneWidget);
+      await tester.tap(_barAction('返回'));
+      await tester.pumpAndSettle();
+
+      // Push AboutPage -> verify scroll drives ValueNotifier without errors
+      await tester.tap(find.text('关于'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AboutPage), findsOneWidget);
+      final aboutScroll = find
+          .descendant(
+            of: find.byType(AboutPage),
+            matching: find.byType(Scrollable),
+          )
+          .first;
+      await tester.drag(aboutScroll, const Offset(0, -180));
+      await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     },
   );

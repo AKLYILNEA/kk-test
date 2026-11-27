@@ -28,8 +28,6 @@ class ThemePage extends ConsumerStatefulWidget {
 }
 
 class _ThemePageState extends ConsumerState<ThemePage> {
-  double? _draftScale;
-
   void _openCustomColorSheet(Color initial, ValueChanged<int> onConfirmed) {
     showSheet<void>(
       context: context,
@@ -39,307 +37,418 @@ class _ThemePageState extends ConsumerState<ThemePage> {
     );
   }
 
+  Widget _buildSection(BuildContext context, int index) => switch (index) {
+    0 => const ThemeLivePreview(),
+    1 => const _ThemeModeSection(),
+    2 => _ThemeColorSection(onOpenCustomColor: _openCustomColorSheet),
+    3 => const _TabAnimationSection(),
+    4 => const _LiquidGlassSection(),
+    5 => const _FontAndDanmakuSection(),
+    _ => const _TextScaleSection(),
+  };
+
   @override
   Widget build(BuildContext context) {
-    final colorScheme = context.colorScheme;
-    final settings = ref.watch(themeSettingsProvider);
+    return KonekoScaffold(
+      title: '外观主题',
+      showBack: widget.showBack,
+      body: ArrivalCacheExtentBuilder(
+        builder: (context, cacheExtent) => CustomScrollView(
+          scrollCacheExtent: cacheExtent,
+          slivers: [
+            const KonekoScrollStart(),
+            SliverPadding(
+              padding: EdgeInsets.only(
+                top: 4,
+                bottom:
+                    32 +
+                    MediaQuery.paddingOf(context).bottom +
+                    widget.bottomPadding,
+              ),
+              sliver: SliverList.builder(
+                itemCount: 7,
+                itemBuilder: (context, index) => Padding(
+                  padding: EdgeInsets.only(bottom: index == 6 ? 0 : 16),
+                  child: _buildSection(context, index),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ThemeModeSection extends ConsumerWidget {
+  const _ThemeModeSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final (themeMode, primaryColor, colorStyle, liquidGlass) = ref.watch(
+      themeSettingsProvider.select(
+        (s) => (
+          s.themeMode,
+          s.primaryColor,
+          s.colorStyle,
+          s.liquidGlass != LiquidGlassMode.none,
+        ),
+      ),
+    );
     final notifier = ref.read(themeSettingsProvider.notifier);
-
-    final lightScheme = buildKonekoColorScheme(
-      brightness: Brightness.light,
-      primaryColor: settings.primaryColor,
-      colorStyle: settings.colorStyle,
-    );
-    final darkScheme = buildKonekoColorScheme(
-      brightness: Brightness.dark,
-      primaryColor: settings.primaryColor,
-      colorStyle: settings.colorStyle,
-    );
-    final liquidGlass = settings.liquidGlass != LiquidGlassMode.none;
-
     final lightMini = MiniScreen(
-      colorScheme: lightScheme,
+      colorScheme: buildKonekoColorScheme(
+        brightness: Brightness.light,
+        primaryColor: primaryColor,
+        colorStyle: colorStyle,
+      ),
       floatingBar: true,
       liquidGlass: liquidGlass,
     );
     final darkMini = MiniScreen(
-      colorScheme: darkScheme,
+      colorScheme: buildKonekoColorScheme(
+        brightness: Brightness.dark,
+        primaryColor: primaryColor,
+        colorStyle: colorStyle,
+      ),
       floatingBar: true,
       liquidGlass: liquidGlass,
     );
 
+    return PreviewChoiceGroup<ThemeMode>(
+      info: const Info(label: '主题模式', glyph: KonekoGlyphs.sun),
+      value: themeMode,
+      choices: [
+        PreviewChoice(
+          value: ThemeMode.system,
+          label: '跟随系统',
+          pictogram: MiniScreenThumb(
+            screen: MiniSplitScreen(light: lightMini, dark: darkMini),
+          ),
+        ),
+        PreviewChoice(
+          value: ThemeMode.light,
+          label: '浅色',
+          pictogram: MiniScreenThumb(screen: lightMini),
+        ),
+        PreviewChoice(
+          value: ThemeMode.dark,
+          label: '深色',
+          pictogram: MiniScreenThumb(screen: darkMini),
+        ),
+      ],
+      onChanged: (mode) => notifier.update((s) => s.copyWith(themeMode: mode)),
+    );
+  }
+}
+
+class _ThemeColorSection extends ConsumerWidget {
+  const _ThemeColorSection({required this.onOpenCustomColor});
+
+  final void Function(Color initial, ValueChanged<int> onConfirmed)
+  onOpenCustomColor;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final (primaryColor, primaryColors, colorStyle) = ref.watch(
+      themeSettingsProvider.select(
+        (s) => (s.primaryColor, s.primaryColors, s.colorStyle),
+      ),
+    );
+    final notifier = ref.read(themeSettingsProvider.notifier);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InfoHeader(
+          info: const Info(label: '主题色', glyph: KonekoGlyphs.palette),
+          actions: [
+            KonekoCircleButton(
+              size: 32,
+              iconSize: 15,
+              glyph: KonekoGlyphs.reset,
+              tooltip: '重置配色',
+              onPressed: () => notifier.update(
+                (s) => s.copyWith(
+                  primaryColor: kDefaultPrimaryColor,
+                  primaryColors: kDefaultPrimaryColors,
+                  colorStyle: ColorStyle.soft,
+                ),
+              ),
+            ),
+          ],
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            spacing: 10,
+            children: [
+              _ColorSwatches(
+                colors: [null, ...primaryColors],
+                selected: primaryColor,
+                onSelect: (c) =>
+                    notifier.update((s) => s.copyWith(primaryColor: c)),
+                onAdd: () {
+                  final init = Color(primaryColor ?? kDefaultPrimaryColor);
+                  onOpenCustomColor(init, (picked) {
+                    notifier.update(
+                      (s) => s.copyWith(
+                        primaryColors: s.primaryColors.contains(picked)
+                            ? s.primaryColors
+                            : [...s.primaryColors, picked],
+                        primaryColor: picked,
+                      ),
+                    );
+                  });
+                },
+              ),
+              KonekoSegmentedBar<ColorStyle>(
+                segments: const [
+                  (ColorStyle.soft, '柔和'),
+                  (ColorStyle.vivid, '鲜艳'),
+                  (ColorStyle.tinted, '轻快'),
+                  (ColorStyle.monochrome, '中性'),
+                ],
+                value: colorStyle,
+                onChanged: (style) =>
+                    notifier.update((s) => s.copyWith(colorStyle: style)),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TabAnimationSection extends ConsumerWidget {
+  const _TabAnimationSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colorScheme = context.colorScheme;
+    final (tabAnimation, liquidGlass) = ref.watch(
+      themeSettingsProvider.select(
+        (s) => (s.tabAnimation, s.liquidGlass != LiquidGlassMode.none),
+      ),
+    );
+    final notifier = ref.read(themeSettingsProvider.notifier);
+
+    return PreviewChoiceGroup<TabAnimationMode>(
+      info: const Info(label: '切换动画', glyph: KonekoGlyphs.motion),
+      value: tabAnimation,
+      choices: [
+        PreviewChoice(
+          value: TabAnimationMode.slide,
+          label: '滑动',
+          pictogram: MiniScreenThumb(
+            screen: MiniScreen(
+              colorScheme: colorScheme,
+              floatingBar: true,
+              liquidGlass: liquidGlass,
+              selected: 1,
+              previous: 0,
+              progress: 0.55,
+              tabAnimation: TabAnimationMode.slide,
+            ),
+          ),
+        ),
+        PreviewChoice(
+          value: TabAnimationMode.fade,
+          label: '淡入',
+          pictogram: MiniScreenThumb(
+            screen: MiniScreen(
+              colorScheme: colorScheme,
+              floatingBar: true,
+              liquidGlass: liquidGlass,
+              selected: 1,
+              previous: 0,
+              progress: 0.55,
+              tabAnimation: TabAnimationMode.fade,
+            ),
+          ),
+        ),
+      ],
+      onChanged: (v) => notifier.update((s) => s.copyWith(tabAnimation: v)),
+    );
+  }
+}
+
+class _LiquidGlassSection extends ConsumerWidget {
+  const _LiquidGlassSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colorScheme = context.colorScheme;
+    final liquidGlass = ref.watch(
+      themeSettingsProvider.select((s) => s.liquidGlass),
+    );
+    final notifier = ref.read(themeSettingsProvider.notifier);
+
+    return PreviewChoiceGroup<LiquidGlassMode>(
+      info: const Info(label: '液态玻璃', glyph: KonekoGlyphs.glass),
+      value: liquidGlass,
+      choices: [
+        PreviewChoice(
+          value: LiquidGlassMode.none,
+          label: '关闭',
+          pictogram: MiniScreenThumb(
+            screen: MiniScreen(
+              colorScheme: colorScheme,
+              floatingBar: true,
+              liquidGlass: false,
+            ),
+          ),
+        ),
+        PreviewChoice(
+          value: LiquidGlassMode.standard,
+          label: '标准',
+          pictogram: MiniScreenThumb(
+            screen: MiniScreen(
+              colorScheme: colorScheme,
+              floatingBar: true,
+              liquidGlass: true,
+            ),
+          ),
+        ),
+        PreviewChoice(
+          value: LiquidGlassMode.ultra,
+          label: '极致',
+          pictogram: MiniScreenThumb(
+            screen: MiniScreen(
+              colorScheme: colorScheme,
+              floatingBar: true,
+              liquidGlass: true,
+            ),
+          ),
+        ),
+      ],
+      onChanged: (v) => notifier.update((s) => s.copyWith(liquidGlass: v)),
+    );
+  }
+}
+
+class _FontAndDanmakuSection extends StatelessWidget {
+  const _FontAndDanmakuSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = context.colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const InfoHeader(
+          info: Info(label: '字体与弹幕', glyph: KonekoGlyphs.font),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: ValueListenableBuilder<String?>(
+            valueListenable: FontManager.fontFamilyNotifier,
+            builder: (context, family, _) {
+              final name = FontManager.selectedName ?? '系统默认';
+              return KonekoGroup(
+                items: [
+                  DecorationListItem(
+                    leading: Text(
+                      'Aa',
+                      style: AppTextStyle.headline
+                          .of(context, emphasized: true)
+                          .copyWith(
+                            fontFamily: family,
+                            color: colorScheme.primary,
+                          ),
+                    ),
+                    title: const Text('字体'),
+                    subtitle: Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontFamily: family),
+                    ),
+                    trailing: const GlyphIcon(Glyphs.chevronForward),
+                    onPressed: () => BaseNavigator.push<void>(
+                      context,
+                      const FontFamilyPage(),
+                    ),
+                  ),
+                  DecorationListItem(
+                    leading: GlyphIcon(
+                      KonekoGlyphs.danmaku,
+                      color: colorScheme.primary,
+                    ),
+                    title: const Text('弹幕设置'),
+                    subtitle: const Text('区域、字号与来源'),
+                    trailing: const GlyphIcon(Glyphs.chevronForward),
+                    onPressed: () => openKonekoDanmakuSettingsPage(context),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TextScaleSection extends ConsumerStatefulWidget {
+  const _TextScaleSection();
+
+  @override
+  ConsumerState<_TextScaleSection> createState() => _TextScaleSectionState();
+}
+
+class _TextScaleSectionState extends ConsumerState<_TextScaleSection> {
+  final ValueNotifier<double?> _draftScale = ValueNotifier(null);
+
+  @override
+  void dispose() {
+    _draftScale.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = context.colorScheme;
+    final (customEnabled, savedScale) = ref.watch(
+      themeSettingsProvider.select(
+        (s) => (s.customTextScaleEnabled, s.textScale),
+      ),
+    );
+    final notifier = ref.read(themeSettingsProvider.notifier);
     final sysScale = systemTextScaleOf(
       context,
     ).clamp(kMinTextScale, kMaxTextScale).toDouble();
-    final effectiveScale =
-        _draftScale ??
-        (settings.customTextScaleEnabled ? settings.textScale : sysScale);
-    final scalePct = '${(effectiveScale * 100).round()}%';
 
-    return KonekoScaffold(
-      title: '外观主题',
-      showBack: widget.showBack,
-      body: Builder(
-        builder: (context) => ListView(
-          padding: EdgeInsets.only(
-            top: context.contentTopPadding,
-            bottom:
-                32 +
-                MediaQuery.paddingOf(context).bottom +
-                widget.bottomPadding,
-          ),
-          children: [
-            const ThemeLivePreview(),
-            const SizedBox(height: 16),
-
-            // Theme Mode
-            PreviewChoiceGroup<ThemeMode>(
-              info: const Info(label: '主题模式', glyph: KonekoGlyphs.sun),
-              value: settings.themeMode,
-              choices: [
-                PreviewChoice(
-                  value: ThemeMode.system,
-                  label: '跟随系统',
-                  pictogram: MiniScreenThumb(
-                    screen: MiniSplitScreen(light: lightMini, dark: darkMini),
-                  ),
-                ),
-                PreviewChoice(
-                  value: ThemeMode.light,
-                  label: '浅色',
-                  pictogram: MiniScreenThumb(screen: lightMini),
-                ),
-                PreviewChoice(
-                  value: ThemeMode.dark,
-                  label: '深色',
-                  pictogram: MiniScreenThumb(screen: darkMini),
-                ),
-              ],
-              onChanged: (mode) =>
-                  notifier.update((s) => s.copyWith(themeMode: mode)),
-            ),
-            const SizedBox(height: 16),
-
-            // Theme Color Swatches + Custom Palette + ColorStyle
-            InfoHeader(
-              info: const Info(label: '主题色', glyph: KonekoGlyphs.palette),
-              actions: [
-                KonekoCircleButton(
-                  size: 32,
-                  iconSize: 15,
-                  glyph: KonekoGlyphs.reset,
-                  tooltip: '重置配色',
-                  onPressed: () => notifier.update(
-                    (s) => s.copyWith(
-                      primaryColor: kDefaultPrimaryColor,
-                      primaryColors: kDefaultPrimaryColors,
-                      colorStyle: ColorStyle.soft,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                spacing: 10,
-                children: [
-                  _ColorSwatches(
-                    colors: [null, ...settings.primaryColors],
-                    selected: settings.primaryColor,
-                    onSelect: (c) =>
-                        notifier.update((s) => s.copyWith(primaryColor: c)),
-                    onAdd: () {
-                      final init = Color(
-                        settings.primaryColor ?? kDefaultPrimaryColor,
-                      );
-                      _openCustomColorSheet(init, (picked) {
-                        notifier.update(
-                          (s) => s.copyWith(
-                            primaryColors: s.primaryColors.contains(picked)
-                                ? s.primaryColors
-                                : [...s.primaryColors, picked],
-                            primaryColor: picked,
-                          ),
-                        );
-                      });
-                    },
-                  ),
-                  KonekoSegmentedBar<ColorStyle>(
-                    segments: const [
-                      (ColorStyle.soft, '柔和'),
-                      (ColorStyle.vivid, '鲜艳'),
-                      (ColorStyle.tinted, '轻快'),
-                      (ColorStyle.monochrome, '中性'),
-                    ],
-                    value: settings.colorStyle,
-                    onChanged: (style) =>
-                        notifier.update((s) => s.copyWith(colorStyle: style)),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Tab Animation
-            PreviewChoiceGroup<TabAnimationMode>(
-              info: const Info(label: '切换动画', glyph: KonekoGlyphs.motion),
-              value: settings.tabAnimation,
-              choices: [
-                PreviewChoice(
-                  value: TabAnimationMode.slide,
-                  label: '滑动',
-                  pictogram: MiniScreenThumb(
-                    screen: MiniScreen(
-                      colorScheme: colorScheme,
-                      floatingBar: true,
-                      liquidGlass: liquidGlass,
-                      selected: 1,
-                      previous: 0,
-                      progress: 0.55,
-                      tabAnimation: TabAnimationMode.slide,
-                    ),
-                  ),
-                ),
-                PreviewChoice(
-                  value: TabAnimationMode.fade,
-                  label: '淡入',
-                  pictogram: MiniScreenThumb(
-                    screen: MiniScreen(
-                      colorScheme: colorScheme,
-                      floatingBar: true,
-                      liquidGlass: liquidGlass,
-                      selected: 1,
-                      previous: 0,
-                      progress: 0.55,
-                      tabAnimation: TabAnimationMode.fade,
-                    ),
-                  ),
-                ),
-              ],
-              onChanged: (v) =>
-                  notifier.update((s) => s.copyWith(tabAnimation: v)),
-            ),
-            const SizedBox(height: 16),
-
-            // Liquid Glass Quality
-            PreviewChoiceGroup<LiquidGlassMode>(
-              info: const Info(label: '液态玻璃', glyph: KonekoGlyphs.glass),
-              value: settings.liquidGlass,
-              choices: [
-                PreviewChoice(
-                  value: LiquidGlassMode.none,
-                  label: '关闭',
-                  pictogram: MiniScreenThumb(
-                    screen: MiniScreen(
-                      colorScheme: colorScheme,
-                      floatingBar: true,
-                      liquidGlass: false,
-                    ),
-                  ),
-                ),
-                PreviewChoice(
-                  value: LiquidGlassMode.standard,
-                  label: '标准',
-                  pictogram: MiniScreenThumb(
-                    screen: MiniScreen(
-                      colorScheme: colorScheme,
-                      floatingBar: true,
-                      liquidGlass: true,
-                    ),
-                  ),
-                ),
-                PreviewChoice(
-                  value: LiquidGlassMode.ultra,
-                  label: '极致',
-                  pictogram: MiniScreenThumb(
-                    screen: MiniScreen(
-                      colorScheme: colorScheme,
-                      floatingBar: true,
-                      liquidGlass: true,
-                    ),
-                  ),
-                ),
-              ],
-              onChanged: (v) =>
-                  notifier.update((s) => s.copyWith(liquidGlass: v)),
-            ),
-            const SizedBox(height: 16),
-
-            // Font & Danmaku Settings
-            const InfoHeader(
-              info: Info(label: '字体与弹幕', glyph: KonekoGlyphs.font),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: ValueListenableBuilder<String?>(
-                valueListenable: FontManager.fontFamilyNotifier,
-                builder: (context, family, _) {
-                  final name = FontManager.selectedName ?? '系统默认';
-                  return KonekoGroup(
-                    items: [
-                      DecorationListItem(
-                        leading: Text(
-                          'Aa',
-                          style: AppTextStyle.headline
-                              .of(context, emphasized: true)
-                              .copyWith(
-                                fontFamily: family,
-                                color: colorScheme.primary,
-                              ),
-                        ),
-                        title: const Text('字体'),
-                        subtitle: Text(
-                          name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontFamily: family),
-                        ),
-                        trailing: const GlyphIcon(Glyphs.chevronForward),
-                        onPressed: () => BaseNavigator.push<void>(
-                          context,
-                          const FontFamilyPage(),
-                        ),
-                      ),
-                      DecorationListItem(
-                        leading: GlyphIcon(
-                          KonekoGlyphs.danmaku,
-                          color: colorScheme.primary,
-                        ),
-                        title: const Text('弹幕设置'),
-                        subtitle: const Text('区域、字号与来源'),
-                        trailing: const GlyphIcon(Glyphs.chevronForward),
-                        onPressed: () =>
-                            openKonekoDanmakuSettingsPage(context),
-                      ),
-                    ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const InfoHeader(
+          info: Info(label: '字号缩放', glyph: KonekoGlyphs.textSize),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: Column(
+            spacing: 10,
+            children: [
+              KonekoSegmentedBar<bool>(
+                segments: const [(false, '跟随系统'), (true, '自定义')],
+                value: customEnabled,
+                onChanged: (enable) {
+                  _draftScale.value = null;
+                  notifier.update(
+                    (s) => s.copyWith(customTextScaleEnabled: enable),
                   );
                 },
               ),
-            ),
-            const SizedBox(height: 16),
-
-            // Text Scale
-            const InfoHeader(
-              info: Info(label: '字号缩放', glyph: KonekoGlyphs.textSize),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Column(
-                spacing: 10,
-                children: [
-                  KonekoSegmentedBar<bool>(
-                    segments: const [(false, '跟随系统'), (true, '自定义')],
-                    value: settings.customTextScaleEnabled,
-                    onChanged: (enable) {
-                      setState(() => _draftScale = null);
-                      notifier.update(
-                        (s) => s.copyWith(customTextScaleEnabled: enable),
-                      );
-                    },
-                  ),
-                  KonekoCard(
+              ValueListenableBuilder<double?>(
+                valueListenable: _draftScale,
+                builder: (context, draft, _) {
+                  final effectiveScale =
+                      draft ?? (customEnabled ? savedScale : sysScale);
+                  final scalePct = '${(effectiveScale * 100).round()}%';
+                  return KonekoCard(
                     corner: 22,
                     padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
                     child: Column(
@@ -395,11 +504,11 @@ class _ThemePageState extends ConsumerState<ThemePage> {
                                 max: kMaxTextScale,
                                 value: effectiveScale,
                                 label: scalePct,
-                                onChanged: settings.customTextScaleEnabled
-                                    ? (v) => setState(() => _draftScale = v)
+                                onChanged: customEnabled
+                                    ? (v) => _draftScale.value = v
                                     : null,
                                 onChangeEnd: (v) {
-                                  setState(() => _draftScale = null);
+                                  _draftScale.value = null;
                                   notifier.update(
                                     (s) => s.copyWith(textScale: v),
                                   );
@@ -418,13 +527,13 @@ class _ThemePageState extends ConsumerState<ThemePage> {
                         ),
                       ],
                     ),
-                  ),
-                ],
+                  );
+                },
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
+      ],
     );
   }
 }

@@ -258,274 +258,314 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage>
 
             final allTags = <String>{..._quickTags, ...draft.tags};
 
-            return ListView(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
-              children: [
-                // Sort
-                const ListHeader(title: '排序方式'),
-                KonekoCard(
-                  corner: 22,
-                  padding: const EdgeInsets.all(14),
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
+            return ArrivalCacheExtentBuilder(
+              builder: (context, cacheExtent) => ListView.builder(
+                scrollCacheExtent: cacheExtent,
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+                itemCount: 5,
+                itemBuilder: (context, index) => switch (index) {
+                  0 => Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      for (final (value, label) in _sortOptions)
-                        KonekoChip(
-                          label: label,
-                          height: 34,
-                          fontSize: 13,
-                          selected: draft.sort == value,
-                          backgroundColor: draft.sort == value
-                              ? colorScheme.primary
-                              : SurfaceLevel.block.colorOf(colorScheme),
-                          onPressed: () {
-                            draft = draft.copyWith(sort: value);
-                            setSheetState(() {});
-                          },
+                      const ListHeader(title: '排序方式'),
+                      KonekoCard(
+                        corner: 22,
+                        padding: const EdgeInsets.all(14),
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            for (final (value, label) in _sortOptions)
+                              KonekoChip(
+                                label: label,
+                                height: 34,
+                                fontSize: 13,
+                                selected: draft.sort == value,
+                                backgroundColor: draft.sort == value
+                                    ? colorScheme.primary
+                                    : SurfaceLevel.block.colorOf(colorScheme),
+                                onPressed: () {
+                                  draft = draft.copyWith(sort: value);
+                                  setSheetState(() {});
+                                },
+                              ),
+                          ],
                         ),
+                      ),
                     ],
                   ),
-                ),
-
-                // Tags
-                ListHeader(
-                  title: '题材标签',
-                  caption: draft.tags.isEmpty
-                      ? '可多选'
-                      : '已选：${draft.tags.join('、')}',
-                ),
-                KonekoCard(
-                  corner: 22,
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
+                  1 => Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
-                    spacing: 12,
                     children: [
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          for (final tag in allTags)
-                            KonekoChip(
-                              label: tag,
-                              height: 32,
-                              fontSize: 12.5,
-                              selected: draft.tags.contains(tag),
-                              backgroundColor: draft.tags.contains(tag)
-                                  ? colorScheme.primary
-                                  : SurfaceLevel.block.colorOf(colorScheme),
-                              onPressed: () {
-                                final nextTags = draft.tags.contains(tag)
-                                    ? draft.tags.where((t) => t != tag).toList()
-                                    : [...draft.tags, tag];
-                                draft = draft.copyWith(tags: nextTags);
+                      ListHeader(
+                        title: '题材标签',
+                        caption: draft.tags.isEmpty
+                            ? '可多选'
+                            : '已选：${draft.tags.join('、')}',
+                      ),
+                      KonekoCard(
+                        corner: 22,
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          spacing: 12,
+                          children: [
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                for (final tag in allTags)
+                                  KonekoChip(
+                                    label: tag,
+                                    height: 32,
+                                    fontSize: 12.5,
+                                    selected: draft.tags.contains(tag),
+                                    backgroundColor: draft.tags.contains(tag)
+                                        ? colorScheme.primary
+                                        : SurfaceLevel.block.colorOf(
+                                            colorScheme,
+                                          ),
+                                    onPressed: () {
+                                      final nextTags = draft.tags.contains(tag)
+                                          ? draft.tags
+                                                .where((t) => t != tag)
+                                                .toList()
+                                          : [...draft.tags, tag];
+                                      draft = draft.copyWith(tags: nextTags);
+                                      setSheetState(() {});
+                                    },
+                                  ),
+                              ],
+                            ),
+                            Row(
+                              spacing: 8,
+                              children: [
+                                Expanded(
+                                  child: TextField(
+                                    controller: customTag,
+                                    autocorrect: false,
+                                    decoration: const InputDecoration(
+                                      hintText: '输入自定义标签（如：京阿尼、剧场版）',
+                                    ),
+                                    onSubmitted: (_) => addCustomTag(),
+                                  ),
+                                ),
+                                KonekoChip(
+                                  label: '添加',
+                                  height: 36,
+                                  fontSize: 13,
+                                  backgroundColor: colorScheme.primary
+                                      .withValues(alpha: 0.14),
+                                  foregroundColor: colorScheme.primary,
+                                  onPressed: addCustomTag,
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  2 => Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const ListHeader(title: '放送季度与年份'),
+                      KonekoCard(
+                        corner: 22,
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          spacing: 10,
+                          children: [
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                KonekoChip(
+                                  label: '不限时间',
+                                  height: 32,
+                                  fontSize: 12.5,
+                                  selected:
+                                      draft.season == null &&
+                                      draft.year == null,
+                                  backgroundColor:
+                                      draft.season == null && draft.year == null
+                                      ? colorScheme.primary
+                                      : SurfaceLevel.block.colorOf(colorScheme),
+                                  onPressed: () {
+                                    draft = draft.copyWith(
+                                      season: null,
+                                      year: null,
+                                    );
+                                    setSheetState(() {});
+                                  },
+                                ),
+                                for (final s in recentSeasons)
+                                  KonekoChip(
+                                    label: s.shortLabel,
+                                    height: 32,
+                                    fontSize: 12.5,
+                                    selected: draft.season == s,
+                                    backgroundColor: draft.season == s
+                                        ? colorScheme.primary
+                                        : SurfaceLevel.block.colorOf(
+                                            colorScheme,
+                                          ),
+                                    onPressed: () {
+                                      draft = draft.copyWith(
+                                        season: draft.season == s ? null : s,
+                                        year: null,
+                                      );
+                                      setSheetState(() {});
+                                    },
+                                  ),
+                              ],
+                            ),
+                            Text(
+                              '按年份',
+                              style: AppTextStyle.caption1
+                                  .of(sheetContext, emphasized: true)
+                                  .copyWith(
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                            ),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                for (final year in recentYears)
+                                  KonekoChip(
+                                    label: '$year',
+                                    height: 30,
+                                    fontSize: 12,
+                                    selected: draft.year == year,
+                                    backgroundColor: draft.year == year
+                                        ? colorScheme.primary
+                                        : SurfaceLevel.block.colorOf(
+                                            colorScheme,
+                                          ),
+                                    onPressed: () {
+                                      draft = draft.copyWith(
+                                        year: draft.year == year ? null : year,
+                                        season: null,
+                                      );
+                                      setSheetState(() {});
+                                    },
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  3 => Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const ListHeader(title: '星期与最低评分'),
+                      KonekoCard(
+                        corner: 22,
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          spacing: 12,
+                          children: [
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                for (var day = 1; day <= 7; day++)
+                                  KonekoChip(
+                                    label: '周${'一二三四五六日'[day - 1]}',
+                                    height: 30,
+                                    fontSize: 12,
+                                    selected: draft.weekdays.contains(day),
+                                    backgroundColor:
+                                        draft.weekdays.contains(day)
+                                        ? colorScheme.primary
+                                        : SurfaceLevel.block.colorOf(
+                                            colorScheme,
+                                          ),
+                                    onPressed: () {
+                                      final next = draft.weekdays.toSet();
+                                      if (!next.add(day)) next.remove(day);
+                                      draft = draft.copyWith(
+                                        weekdays: next.toList()..sort(),
+                                      );
+                                      setSheetState(() {});
+                                    },
+                                  ),
+                              ],
+                            ),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                for (final (score, label) in _scoreThresholds)
+                                  KonekoChip(
+                                    label: score == null
+                                        ? '评分不限'
+                                        : '评分 $label',
+                                    height: 30,
+                                    fontSize: 12,
+                                    selected: draft.minScore == score,
+                                    backgroundColor: draft.minScore == score
+                                        ? colorScheme.primary
+                                        : SurfaceLevel.block.colorOf(
+                                            colorScheme,
+                                          ),
+                                    onPressed: () {
+                                      draft = draft.copyWith(minScore: score);
+                                      setSheetState(() {});
+                                    },
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  _ => Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const ListHeader(title: '收藏状态过滤'),
+                      KonekoGroup(
+                        items: [
+                          DecorationListItem(
+                            title: const Text('隐藏看过的番剧'),
+                            trailing: Switch(
+                              value: draftHideWatched,
+                              onChanged: (value) {
+                                draftHideWatched = value;
                                 setSheetState(() {});
                               },
                             ),
-                        ],
-                      ),
-                      Row(
-                        spacing: 8,
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: customTag,
-                              autocorrect: false,
-                              decoration: const InputDecoration(
-                                hintText: '输入自定义标签（如：京阿尼、剧场版）',
-                              ),
-                              onSubmitted: (_) => addCustomTag(),
-                            ),
-                          ),
-                          KonekoChip(
-                            label: '添加',
-                            height: 36,
-                            fontSize: 13,
-                            backgroundColor: colorScheme.primary.withValues(
-                              alpha: 0.14,
-                            ),
-                            foregroundColor: colorScheme.primary,
-                            onPressed: addCustomTag,
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-
-                // Broadcast Season / Year
-                const ListHeader(title: '放送季度与年份'),
-                KonekoCard(
-                  corner: 22,
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    spacing: 10,
-                    children: [
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          KonekoChip(
-                            label: '不限时间',
-                            height: 32,
-                            fontSize: 12.5,
-                            selected:
-                                draft.season == null && draft.year == null,
-                            backgroundColor:
-                                draft.season == null && draft.year == null
-                                ? colorScheme.primary
-                                : SurfaceLevel.block.colorOf(colorScheme),
                             onPressed: () {
-                              draft = draft.copyWith(season: null, year: null);
+                              draftHideWatched = !draftHideWatched;
                               setSheetState(() {});
                             },
                           ),
-                          for (final s in recentSeasons)
-                            KonekoChip(
-                              label: s.shortLabel,
-                              height: 32,
-                              fontSize: 12.5,
-                              selected: draft.season == s,
-                              backgroundColor: draft.season == s
-                                  ? colorScheme.primary
-                                  : SurfaceLevel.block.colorOf(colorScheme),
-                              onPressed: () {
-                                draft = draft.copyWith(
-                                  season: draft.season == s ? null : s,
-                                  year: null,
-                                );
+                          DecorationListItem(
+                            title: const Text('隐藏抛弃的番剧'),
+                            trailing: Switch(
+                              value: draftHideDropped,
+                              onChanged: (value) {
+                                draftHideDropped = value;
                                 setSheetState(() {});
                               },
                             ),
-                        ],
-                      ),
-                      Text(
-                        '按年份',
-                        style: AppTextStyle.caption1
-                            .of(sheetContext, emphasized: true)
-                            .copyWith(color: colorScheme.onSurfaceVariant),
-                      ),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          for (final year in recentYears)
-                            KonekoChip(
-                              label: '$year',
-                              height: 30,
-                              fontSize: 12,
-                              selected: draft.year == year,
-                              backgroundColor: draft.year == year
-                                  ? colorScheme.primary
-                                  : SurfaceLevel.block.colorOf(colorScheme),
-                              onPressed: () {
-                                draft = draft.copyWith(
-                                  year: draft.year == year ? null : year,
-                                  season: null,
-                                );
-                                setSheetState(() {});
-                              },
-                            ),
+                            onPressed: () {
+                              draftHideDropped = !draftHideDropped;
+                              setSheetState(() {});
+                            },
+                          ),
                         ],
                       ),
                     ],
                   ),
-                ),
-
-                // Weekdays & Min Score
-                const ListHeader(title: '星期与最低评分'),
-                KonekoCard(
-                  corner: 22,
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    spacing: 12,
-                    children: [
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          for (var day = 1; day <= 7; day++)
-                            KonekoChip(
-                              label: '周${'一二三四五六日'[day - 1]}',
-                              height: 30,
-                              fontSize: 12,
-                              selected: draft.weekdays.contains(day),
-                              backgroundColor: draft.weekdays.contains(day)
-                                  ? colorScheme.primary
-                                  : SurfaceLevel.block.colorOf(colorScheme),
-                              onPressed: () {
-                                final next = draft.weekdays.toSet();
-                                if (!next.add(day)) next.remove(day);
-                                draft = draft.copyWith(
-                                  weekdays: next.toList()..sort(),
-                                );
-                                setSheetState(() {});
-                              },
-                            ),
-                        ],
-                      ),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          for (final (score, label) in _scoreThresholds)
-                            KonekoChip(
-                              label: score == null ? '评分不限' : '评分 $label',
-                              height: 30,
-                              fontSize: 12,
-                              selected: draft.minScore == score,
-                              backgroundColor: draft.minScore == score
-                                  ? colorScheme.primary
-                                  : SurfaceLevel.block.colorOf(colorScheme),
-                              onPressed: () {
-                                draft = draft.copyWith(minScore: score);
-                                setSheetState(() {});
-                              },
-                            ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-
-                // Collection visibility
-                const ListHeader(title: '收藏状态过滤'),
-                KonekoGroup(
-                  items: [
-                    DecorationListItem(
-                      title: const Text('隐藏看过的番剧'),
-                      trailing: Switch(
-                        value: draftHideWatched,
-                        onChanged: (value) {
-                          draftHideWatched = value;
-                          setSheetState(() {});
-                        },
-                      ),
-                      onPressed: () {
-                        draftHideWatched = !draftHideWatched;
-                        setSheetState(() {});
-                      },
-                    ),
-                    DecorationListItem(
-                      title: const Text('隐藏抛弃的番剧'),
-                      trailing: Switch(
-                        value: draftHideDropped,
-                        onChanged: (value) {
-                          draftHideDropped = value;
-                          setSheetState(() {});
-                        },
-                      ),
-                      onPressed: () {
-                        draftHideDropped = !draftHideDropped;
-                        setSheetState(() {});
-                      },
-                    ),
-                  ],
-                ),
-              ],
+                },
+              ),
             );
           },
         );

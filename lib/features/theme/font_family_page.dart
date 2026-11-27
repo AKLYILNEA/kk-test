@@ -48,59 +48,63 @@ class _FontFamilyPageState extends State<FontFamilyPage> {
           onPressed: _handleImport,
         ),
       ],
-      body: ValueListenableBuilder<String?>(
-        valueListenable: FontManager.fontFamilyNotifier,
-        builder: (context, activeFamily, _) {
-          final fonts = FontManager.fonts;
-          final selected = FontManager.selectedFont;
-          return CustomScrollView(
-            slivers: [
-              const KonekoScrollStart(),
-              SliverPadding(
-                padding: EdgeInsets.fromLTRB(
-                  16,
-                  8,
-                  16,
-                  28 + MediaQuery.paddingOf(context).bottom,
-                ),
-                sliver: SliverList(
-                  delegate: SliverChildListDelegate([
-                    // Live sample preview card
-                    KonekoCard(
-                      corner: 26,
-                      padding: const EdgeInsets.all(18),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        spacing: 6,
-                        children: [
-                          KonekoChip(
-                            label: selected == null
-                                ? '当前：系统默认'
-                                : '当前：${selected.name}',
-                            backgroundColor: colorScheme.primary.withValues(
-                              alpha: 0.14,
-                            ),
-                            foregroundColor: colorScheme.primary,
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            '星海旅人：北境编年史 2026',
-                            style: AppTextStyle.title2
-                                .of(context, emphasized: true)
-                                .copyWith(fontFamily: activeFamily),
-                          ),
-                          Text(
-                            'AaBbCc 0123456789',
-                            style: AppTextStyle.subheadline
-                                .of(context)
-                                .copyWith(
-                                  fontFamily: activeFamily,
-                                  color: colorScheme.onSurfaceVariant,
+      body: ArrivalCacheExtentBuilder(
+        builder: (context, cacheExtent) => ValueListenableBuilder<String?>(
+          valueListenable: FontManager.fontFamilyNotifier,
+          builder: (context, activeFamily, _) {
+            final fonts = FontManager.fonts;
+            final selected = FontManager.selectedFont;
+            return CustomScrollView(
+              scrollCacheExtent: cacheExtent,
+              slivers: [
+                const KonekoScrollStart(),
+                SliverPadding(
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    8,
+                    16,
+                    28 + MediaQuery.paddingOf(context).bottom,
+                  ),
+                  sliver: SliverList(
+                    delegate: SliverChildListDelegate([
+                      // Live sample preview card
+                      RepaintBoundary(
+                        child: KonekoCard(
+                          corner: 26,
+                          padding: const EdgeInsets.all(18),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            spacing: 6,
+                            children: [
+                              KonekoChip(
+                                label: selected == null
+                                    ? '当前：系统默认'
+                                    : '当前：${selected.name}',
+                                backgroundColor: colorScheme.primary.withValues(
+                                  alpha: 0.14,
                                 ),
+                                foregroundColor: colorScheme.primary,
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                '星海旅人：北境编年史 2026',
+                                style: AppTextStyle.title2
+                                    .of(context, emphasized: true)
+                                    .copyWith(fontFamily: activeFamily),
+                              ),
+                              Text(
+                                'AaBbCc 0123456789',
+                                style: AppTextStyle.subheadline
+                                    .of(context)
+                                    .copyWith(
+                                      fontFamily: activeFamily,
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
-                    ),
 
                     KonekoSection(
                       title: '默认',
@@ -177,7 +181,8 @@ class _FontFamilyPageState extends State<FontFamilyPage> {
               ),
             ],
           );
-        },
+          },
+        ),
       ),
     );
   }

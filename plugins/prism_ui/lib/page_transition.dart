@@ -756,6 +756,9 @@ class _RenderCardTransition extends RenderProxyBox {
   final _visibleClipLayer = LayerHandle<ClipRectLayer>();
   final _clipLayer = LayerHandle<ClipRSuperellipseLayer>();
   final _transformLayer = LayerHandle<TransformLayer>();
+  final _fillPaint = Paint();
+  final _shadowPaint = Paint();
+  bool? _shadowShaderRtl;
 
   bool get _moving =>
       !_animation.isCompleted || !_secondaryAnimation.isDismissed;
@@ -945,7 +948,8 @@ class _RenderCardTransition extends RenderProxyBox {
       _clipLayer.layer = null;
       _transformLayer.layer = null;
       if (_settledFill.a > 0) {
-        context.canvas.drawRect(offset & size, Paint()..color = _settledFill);
+        _fillPaint.color = _settledFill;
+        context.canvas.drawRect(offset & size, _fillPaint);
       }
       context.paintChild(child, offset);
       return;
@@ -964,7 +968,8 @@ class _RenderCardTransition extends RenderProxyBox {
       if (covered > 0 && _animation.isCompleted && !insideInterior) {
         final screen = offset & size;
         if (recedes) {
-          context.canvas.drawRect(screen, Paint()..color = _surface);
+          _fillPaint.color = _surface;
+          context.canvas.drawRect(screen, _fillPaint);
         } else {
           _paintBesideCard(context.canvas, screen, card.shift(offset));
         }
@@ -973,7 +978,8 @@ class _RenderCardTransition extends RenderProxyBox {
         _paintShadow(context.canvas, card.shift(offset));
       }
       void paintCard(PaintingContext context, Offset offset) {
-        context.canvas.drawRect(card.shift(offset), Paint()..color = _surface);
+        _fillPaint.color = _surface;
+        context.canvas.drawRect(card.shift(offset), _fillPaint);
         if (card.width == size.width) {
           _transformLayer.layer = null;
           context.paintChild(child, offset + card.topLeft);
@@ -1007,9 +1013,10 @@ class _RenderCardTransition extends RenderProxyBox {
       }
       if (covered > 0) {
         final dim = recedes ? _recededDim : _coveredDim;
+        _fillPaint.color = dim.withValues(alpha: dim.a * math.min(covered, 1));
         context.canvas.drawRect(
           (visible ?? (Offset.zero & size)).shift(offset),
-          Paint()..color = dim.withValues(alpha: dim.a * math.min(covered, 1)),
+          _fillPaint,
         );
       }
     }
@@ -1020,9 +1027,9 @@ class _RenderCardTransition extends RenderProxyBox {
         final dim = _coveredDim.withValues(
           alpha: _coveredDim.a * math.min(covered, 1),
         );
-        final fill = Paint()..color = Color.alphaBlend(dim, _backdrop);
+        _fillPaint.color = Color.alphaBlend(dim, _backdrop);
         for (final corner in trailingCorners) {
-          context.canvas.drawRect(corner.shift(offset), fill);
+          context.canvas.drawRect(corner.shift(offset), _fillPaint);
         }
       }
       _visibleClipLayer.layer = context.pushClipRect(
@@ -1042,63 +1049,72 @@ class _RenderCardTransition extends RenderProxyBox {
   void _paintShadow(Canvas canvas, Rect card) {
     final rtl = _textDirection == TextDirection.rtl;
     final edge = rtl ? card.right : card.left;
-    final end = edge + (rtl ? 3 : -3) * _cardShadowSigma;
+    final span = (rtl ? 3.0 : -3.0) * _cardShadowSigma;
     final top = card.top + (rtl ? _radius.topRight.y : _radius.topLeft.y);
     final bottom =
         card.bottom - (rtl ? _radius.bottomRight.y : _radius.bottomLeft.y);
     if (bottom <= top) {
       return;
     }
+    if (_shadowShaderRtl != rtl) {
+      _shadowShaderRtl = rtl;
+      _shadowPaint.shader = ui.Gradient.linear(
+        Offset.zero,
+        Offset(span, 0),
+        _cardShadowColors,
+        _cardShadowStops,
+      );
+    }
+    canvas.save();
+    canvas.translate(edge, 0);
     canvas.drawRect(
-      Rect.fromLTRB(math.min(edge, end), top, math.max(edge, end), bottom),
-      Paint()
-        ..shader = ui.Gradient.linear(
-          Offset(edge, 0),
-          Offset(end, 0),
-          _cardShadowColors,
-          _cardShadowStops,
-        ),
+      Rect.fromLTRB(math.min(0.0, span), top, math.max(0.0, span), bottom),
+      _shadowPaint,
     );
+    canvas.restore();
   }
 
   /// Only the uncovered strip and corners take the backdrop; each piece reaches
   /// a pixel under the card so its antialiased edge stays off the root.
   void _paintBesideCard(Canvas canvas, Rect screen, Rect card) {
-    final paint = Paint()..color = _backdrop;
+    _fillPaint.color = _backdrop;
     final radius = _radius;
-    for (final rect in [
-      Rect.fromLTRB(screen.left, screen.top, card.left + 1, screen.bottom),
-      Rect.fromLTRB(card.right - 1, screen.top, screen.right, screen.bottom),
-      Rect.fromLTWH(
-        card.left,
-        card.top,
-        radius.topLeft.x + 1,
-        radius.topLeft.y + 1,
-      ),
-      Rect.fromLTRB(
-        card.right - radius.topRight.x - 1,
-        card.top,
-        card.right,
-        card.top + radius.topRight.y + 1,
-      ),
-      Rect.fromLTRB(
-        card.left,
-        card.bottom - radius.bottomLeft.y - 1,
-        card.left + radius.bottomLeft.x + 1,
-        card.bottom,
-      ),
-      Rect.fromLTRB(
-        card.right - radius.bottomRight.x - 1,
-        card.bottom - radius.bottomRight.y - 1,
-        card.right,
-        card.bottom,
-      ),
-    ]) {
-      final visible = rect.intersect(screen);
-      if (!visible.isEmpty) {
-        canvas.drawRect(visible, paint);
+    void drawClipped(double left, double top, double right, double bottom) {
+      final l = math.max(left, screen.left);
+      final t = math.max(top, screen.top);
+      final r = math.min(right, screen.right);
+      final b = math.min(bottom, screen.bottom);
+      if (r > l && b > t) {
+        canvas.drawRect(Rect.fromLTRB(l, t, r, b), _fillPaint);
       }
     }
+
+    drawClipped(screen.left, screen.top, card.left + 1, screen.bottom);
+    drawClipped(card.right - 1, screen.top, screen.right, screen.bottom);
+    drawClipped(
+      card.left,
+      card.top,
+      card.left + radius.topLeft.x + 1,
+      card.top + radius.topLeft.y + 1,
+    );
+    drawClipped(
+      card.right - radius.topRight.x - 1,
+      card.top,
+      card.right,
+      card.top + radius.topRight.y + 1,
+    );
+    drawClipped(
+      card.left,
+      card.bottom - radius.bottomLeft.y - 1,
+      card.left + radius.bottomLeft.x + 1,
+      card.bottom,
+    );
+    drawClipped(
+      card.right - radius.bottomRight.x - 1,
+      card.bottom - radius.bottomRight.y - 1,
+      card.right,
+      card.bottom,
+    );
   }
 
   @override

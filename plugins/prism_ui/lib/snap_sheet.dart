@@ -7,8 +7,10 @@ import 'package:flutter/physics.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
+import 'package:prism_ui/barrier.dart';
 import 'package:prism_ui/context.dart';
 import 'package:prism_ui/deferred_push.dart';
+import 'package:prism_ui/liquid_glass.dart';
 import 'package:prism_ui/scroll_behavior.dart';
 import 'package:prism_ui/surface.dart';
 
@@ -168,14 +170,15 @@ class SnapSheetRoute<T> extends PopupRoute<T>
         onDismiss: onDismiss,
       );
     }
-    return AnimatedModalBarrier(
-      color: animation!.drive(
-        ColorTween(begin: color.withValues(alpha: 0), end: color),
+    return AnimatedBarrierPaint(
+      progress: animation!,
+      color: color,
+      child: ModalBarrier(
+        dismissible: barrierDismissible,
+        semanticsLabel: barrierLabel,
+        barrierSemanticsDismissible: semanticsDismissible,
+        onDismiss: onDismiss,
       ),
-      dismissible: barrierDismissible,
-      semanticsLabel: barrierLabel,
-      barrierSemanticsDismissible: semanticsDismissible,
-      onDismiss: onDismiss,
     );
   }
 
@@ -857,24 +860,69 @@ class _SnapSheetState extends State<_SnapSheet>
     with SingleTickerProviderStateMixin {
   late final _model = _SheetModel(route: widget.route, vsync: this);
   late final _scrollController = _SheetScrollController(model: _model);
+  final _motionSnapshot = SnapshotController();
 
   Duration? _lastWheel;
+  bool _glass = false;
+  bool _pointerDown = false;
+  bool _hadProgress = false;
+  double _keyboard = 0;
 
   @override
   void initState() {
     super.initState();
-    widget.route.animation!.addStatusListener(_handleRouteStatus);
+    widget.route.animation!
+      ..addListener(_handleRouteTick)
+      ..addStatusListener(_handleRouteStatus);
+    widget.route.secondaryAnimation!.addStatusListener(_handleSecondaryStatus);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _glass = LiquidGlassScope.of(context);
+    _keyboard = MediaQuery.viewInsetsOf(context).bottom;
+    _updateMotionSnapshot();
+  }
+
+  void _handleRouteTick() {
+    final hasProgress = widget.route.animation!.value > 0;
+    if (hasProgress != _hadProgress) {
+      _hadProgress = hasProgress;
+      _updateMotionSnapshot();
+    }
   }
 
   void _handleRouteStatus(AnimationStatus status) {
     if (status == AnimationStatus.reverse) {
+      _pointerDown = false;
       _model.stop();
     }
+    _updateMotionSnapshot();
+  }
+
+  void _handleSecondaryStatus(AnimationStatus _) => _updateMotionSnapshot();
+
+  void _updateMotionSnapshot() {
+    final animation = widget.route.animation!;
+    final secondary = widget.route.secondaryAnimation!;
+    _motionSnapshot.allowSnapshotting =
+        !_glass &&
+        !_pointerDown &&
+        _keyboard <= 0 &&
+        ((animation.isAnimating && animation.value > 0) ||
+            secondary.isAnimating);
   }
 
   @override
   void dispose() {
-    widget.route.animation!.removeStatusListener(_handleRouteStatus);
+    widget.route.animation!
+      ..removeListener(_handleRouteTick)
+      ..removeStatusListener(_handleRouteStatus);
+    widget.route.secondaryAnimation!.removeStatusListener(
+      _handleSecondaryStatus,
+    );
+    _motionSnapshot.dispose();
     _scrollController.dispose();
     _model.dispose();
     super.dispose();
@@ -918,8 +966,20 @@ class _SnapSheetState extends State<_SnapSheet>
       );
     }
     final sheet = Listener(
-      onPointerDown: (_) => _model.fingerDown(),
-      onPointerPanZoomStart: (_) => _model.fingerDown(),
+      onPointerDown: (_) {
+        if (!_pointerDown) {
+          _pointerDown = true;
+          _updateMotionSnapshot();
+        }
+        _model.fingerDown();
+      },
+      onPointerPanZoomStart: (_) {
+        if (!_pointerDown) {
+          _pointerDown = true;
+          _updateMotionSnapshot();
+        }
+        _model.fingerDown();
+      },
       onPointerSignal: _handlePointerSignal,
       child: GestureDetector(
         onVerticalDragUpdate: (details) =>
@@ -961,7 +1021,14 @@ class _SnapSheetState extends State<_SnapSheet>
       bottom: false,
       child: _KeyboardViewport(
         model: _model,
-        child: RepaintBoundary(child: sheet),
+        child: RepaintBoundary(
+          child: SnapshotWidget(
+            controller: _motionSnapshot,
+            mode: SnapshotMode.permissive,
+            autoresize: true,
+            child: sheet,
+          ),
+        ),
       ),
     );
   }

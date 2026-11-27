@@ -131,192 +131,215 @@ class _SchedulePageState extends ConsumerState<SchedulePage>
         return StatefulBuilder(
           builder: (sheetContext, setSheetState) {
             final colorScheme = sheetContext.colorScheme;
-            return ListView(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-              children: [
-                // Sort section
-                const ListHeader(title: '排序方式'),
-                KonekoCard(
-                  corner: 22,
-                  padding: const EdgeInsets.all(14),
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final option in _ScheduleSort.values)
-                        KonekoChip(
-                          label: option.label,
-                          height: 34,
-                          fontSize: 13,
-                          selected: _sort == option,
-                          backgroundColor: _sort == option
-                              ? colorScheme.primary
-                              : SurfaceLevel.block.colorOf(colorScheme),
-                          onPressed: () {
-                            setState(() => _sort = option);
-                            setSheetState(() {});
-                          },
-                        ),
-                    ],
-                  ),
-                ),
-
-                // Visibility filter section (Kazumi parity)
-                const ListHeader(title: '显示范围'),
-                KonekoGroup(
-                  items: [
-                    DecorationListItem(
-                      title: const Text('只看在看'),
-                      trailing: Switch(
-                        value: _onlyWatching,
-                        onChanged: (value) {
-                          setState(() => _onlyWatching = value);
-                          setSheetState(() {});
-                        },
-                      ),
-                      onPressed: () {
-                        setState(() => _onlyWatching = !_onlyWatching);
-                        setSheetState(() {});
-                      },
-                    ),
-                    DecorationListItem(
-                      title: const Text('隐藏看过的番剧'),
-                      trailing: Switch(
-                        value: _hideWatched,
-                        onChanged: (value) {
-                          setState(() => _hideWatched = value);
-                          setSheetState(() {});
-                        },
-                      ),
-                      onPressed: () {
-                        setState(() => _hideWatched = !_hideWatched);
-                        setSheetState(() {});
-                      },
-                    ),
-                    DecorationListItem(
-                      title: const Text('隐藏抛弃的番剧'),
-                      trailing: Switch(
-                        value: _hideDropped,
-                        onChanged: (value) {
-                          setState(() => _hideDropped = value);
-                          setSheetState(() {});
-                        },
-                      ),
-                      onPressed: () {
-                        setState(() => _hideDropped = !_hideDropped);
-                        setSheetState(() {});
-                      },
-                    ),
-                  ],
-                ),
-
-                // Year & Season Picker (Kazumi parity)
-                ListHeader(
-                  title: '切换年份与季度',
-                  trailing: !_season.isCurrent
-                      ? KonekoChip(
-                          label: '回到本季',
-                          height: 26,
-                          fontSize: 11.5,
-                          backgroundColor: colorScheme.primary.withValues(
-                            alpha: 0.14,
+            return ArrivalCacheExtentBuilder(
+              builder: (context, cacheExtent) => CustomScrollView(
+                scrollCacheExtent: cacheExtent,
+                slivers: [
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                    sliver: SliverList.list(
+                      children: [
+                        // Sort section
+                        const ListHeader(title: '排序方式'),
+                        KonekoCard(
+                          corner: 22,
+                          padding: const EdgeInsets.all(14),
+                          child: Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              for (final option in _ScheduleSort.values)
+                                KonekoChip(
+                                  label: option.label,
+                                  height: 34,
+                                  fontSize: 13,
+                                  selected: _sort == option,
+                                  backgroundColor: _sort == option
+                                      ? colorScheme.primary
+                                      : SurfaceLevel.block.colorOf(colorScheme),
+                                  onPressed: () {
+                                    setState(() => _sort = option);
+                                    setSheetState(() {});
+                                  },
+                                ),
+                            ],
                           ),
-                          foregroundColor: colorScheme.primary,
-                          onPressed: () {
-                            Navigator.of(sheetContext).pop();
-                            unawaited(_selectSeason(AnimeSeason.current()));
-                          },
-                        )
-                      : null,
-                ),
-                Column(
-                  spacing: 10,
-                  children: [
-                    for (final year in years)
-                      KonekoCard(
-                        corner: 22,
-                        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          spacing: 8,
-                          children: [
-                            Text(
-                              '$year 年',
-                              style: AppTextStyle.subheadline
-                                  .of(sheetContext, emphasized: true)
-                                  .copyWith(color: colorScheme.onSurface),
+                        ),
+
+                        // Visibility filter section (Kazumi parity)
+                        const ListHeader(title: '显示范围'),
+                        KonekoGroup(
+                          items: [
+                            DecorationListItem(
+                              title: const Text('只看在看'),
+                              trailing: Switch(
+                                value: _onlyWatching,
+                                onChanged: (value) {
+                                  setState(() => _onlyWatching = value);
+                                  setSheetState(() {});
+                                },
+                              ),
+                              onPressed: () {
+                                setState(() => _onlyWatching = !_onlyWatching);
+                                setSheetState(() {});
+                              },
                             ),
-                            Row(
-                              spacing: 8,
-                              children: [
-                                for (var q = 1; q <= 4; q++)
-                                  Expanded(
-                                    child: Builder(
-                                      builder: (_) {
-                                        final target = AnimeSeason(
-                                          year: year,
-                                          quarter: q,
-                                        );
-                                        final selected = target == _season;
-                                        final disabled = target.isAfter(now);
-                                        return KonekoBlock(
-                                          corner: 14,
-                                          padding: const EdgeInsets.symmetric(
-                                            vertical: 10,
-                                          ),
-                                          selected: selected,
-                                          color: selected
-                                              ? colorScheme.primary
-                                              : disabled
-                                              ? SurfaceLevel.block
-                                                    .colorOf(colorScheme)
-                                                    .withValues(alpha: 0.45)
-                                              : SurfaceLevel.block.colorOf(
-                                                  colorScheme,
-                                                ),
-                                          onPressed: disabled
-                                              ? null
-                                              : () {
-                                                  Navigator.of(
-                                                    sheetContext,
-                                                  ).pop();
-                                                  unawaited(
-                                                    _selectSeason(target),
-                                                  );
-                                                },
-                                          child: Center(
-                                            child: Text(
-                                              '${target.seasonName}季',
-                                              style: AppTextStyle.footnote
-                                                  .of(
-                                                    sheetContext,
-                                                    emphasized: selected,
-                                                  )
-                                                  .copyWith(
-                                                    color: selected
-                                                        ? colorScheme.onPrimary
-                                                        : disabled
-                                                        ? colorScheme
-                                                              .onSurfaceVariant
-                                                              .withValues(
-                                                                alpha: 0.42,
-                                                              )
-                                                        : colorScheme.onSurface,
-                                                  ),
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  ),
-                              ],
+                            DecorationListItem(
+                              title: const Text('隐藏看过的番剧'),
+                              trailing: Switch(
+                                value: _hideWatched,
+                                onChanged: (value) {
+                                  setState(() => _hideWatched = value);
+                                  setSheetState(() {});
+                                },
+                              ),
+                              onPressed: () {
+                                setState(() => _hideWatched = !_hideWatched);
+                                setSheetState(() {});
+                              },
+                            ),
+                            DecorationListItem(
+                              title: const Text('隐藏抛弃的番剧'),
+                              trailing: Switch(
+                                value: _hideDropped,
+                                onChanged: (value) {
+                                  setState(() => _hideDropped = value);
+                                  setSheetState(() {});
+                                },
+                              ),
+                              onPressed: () {
+                                setState(() => _hideDropped = !_hideDropped);
+                                setSheetState(() {});
+                              },
                             ),
                           ],
                         ),
-                      ),
-                  ],
-                ),
-              ],
+
+                        // Year & Season Picker header
+                        ListHeader(
+                          title: '切换年份与季度',
+                          trailing: !_season.isCurrent
+                              ? KonekoChip(
+                                  label: '回到本季',
+                                  height: 26,
+                                  fontSize: 11.5,
+                                  backgroundColor: colorScheme.primary
+                                      .withValues(alpha: 0.14),
+                                  foregroundColor: colorScheme.primary,
+                                  onPressed: () {
+                                    Navigator.of(sheetContext).pop();
+                                    unawaited(
+                                      _selectSeason(AnimeSeason.current()),
+                                    );
+                                  },
+                                )
+                              : null,
+                        ),
+                      ],
+                    ),
+                  ),
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                    sliver: SliverList.builder(
+                      itemCount: years.length,
+                      itemBuilder: (context, index) {
+                        final year = years[index];
+                        return Padding(
+                          padding: EdgeInsets.only(
+                            bottom: index == years.length - 1 ? 0 : 10,
+                          ),
+                          child: KonekoCard(
+                            corner: 22,
+                            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              spacing: 8,
+                              children: [
+                                Text(
+                                  '$year 年',
+                                  style: AppTextStyle.subheadline
+                                      .of(sheetContext, emphasized: true)
+                                      .copyWith(color: colorScheme.onSurface),
+                                ),
+                                Row(
+                                  spacing: 8,
+                                  children: [
+                                    for (var q = 1; q <= 4; q++)
+                                      Expanded(
+                                        child: Builder(
+                                          builder: (_) {
+                                            final target = AnimeSeason(
+                                              year: year,
+                                              quarter: q,
+                                            );
+                                            final selected = target == _season;
+                                            final disabled = target.isAfter(
+                                              now,
+                                            );
+                                            return KonekoBlock(
+                                              corner: 14,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    vertical: 10,
+                                                  ),
+                                              selected: selected,
+                                              color: selected
+                                                  ? colorScheme.primary
+                                                  : disabled
+                                                  ? SurfaceLevel.block
+                                                        .colorOf(colorScheme)
+                                                        .withValues(alpha: 0.45)
+                                                  : SurfaceLevel.block.colorOf(
+                                                      colorScheme,
+                                                    ),
+                                              onPressed: disabled
+                                                  ? null
+                                                  : () {
+                                                      Navigator.of(
+                                                        sheetContext,
+                                                      ).pop();
+                                                      unawaited(
+                                                        _selectSeason(target),
+                                                      );
+                                                    },
+                                              child: Center(
+                                                child: Text(
+                                                  '${target.seasonName}季',
+                                                  style: AppTextStyle.footnote
+                                                      .of(
+                                                        sheetContext,
+                                                        emphasized: selected,
+                                                      )
+                                                      .copyWith(
+                                                        color: selected
+                                                            ? colorScheme
+                                                                  .onPrimary
+                                                            : disabled
+                                                            ? colorScheme
+                                                                  .onSurfaceVariant
+                                                                  .withValues(
+                                                                    alpha: 0.42,
+                                                                  )
+                                                            : colorScheme
+                                                                  .onSurface,
+                                                      ),
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
             );
           },
         );

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
+import 'package:prism_ui/deferred_push.dart';
 import 'package:prism_ui/dialog.dart';
 import 'package:prism_ui/inherited.dart';
 import 'package:prism_ui/shape.dart';
@@ -17,7 +18,11 @@ final ShapeBorder formSheetShape = AppShape.all(AppCorner.alert);
 
 /// A form in a card centered over the navigator, moving as a dialog does.
 class FormSheetRoute<T> extends PopupRoute<T>
-    with SheetCoverRouteMixin<T>, AlertMotionRouteMixin<T>, AlertHostRoute<T> {
+    with
+        SheetCoverRouteMixin<T>,
+        DeferredPushRouteMixin<T>,
+        AlertMotionRouteMixin<T>,
+        AlertHostRoute<T> {
   FormSheetRoute({
     required this.builder,
     required this.barrierColor,

@@ -271,6 +271,38 @@ class FadePageRoute<T> extends PageRoute<T>
     );
   }
 
+  final _motionSnapshot = SnapshotController();
+  bool _glass = false;
+
+  void _updateMotionSnapshot() {
+    final animation = this.animation;
+    final secondary = secondaryAnimation;
+    if (animation == null || secondary == null) return;
+    final dragged = navigator?.userGestureInProgress ?? false;
+    _motionSnapshot.allowSnapshotting =
+        !_glass &&
+        (isDragBackActive ||
+            animation.status == AnimationStatus.reverse ||
+            (secondary.status == AnimationStatus.forward && !dragged));
+  }
+
+  void _handleMotionStatus(AnimationStatus _) => _updateMotionSnapshot();
+
+  @override
+  void install() {
+    super.install();
+    animation!.addStatusListener(_handleMotionStatus);
+    secondaryAnimation!.addStatusListener(_handleMotionStatus);
+  }
+
+  @override
+  void dispose() {
+    animation?.removeStatusListener(_handleMotionStatus);
+    secondaryAnimation?.removeStatusListener(_handleMotionStatus);
+    _motionSnapshot.dispose();
+    super.dispose();
+  }
+
   @override
   Widget buildTransitions(
     BuildContext context,
@@ -278,10 +310,20 @@ class FadePageRoute<T> extends PageRoute<T>
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
+    _glass = LiquidGlassScope.of(context);
+    _updateMotionSnapshot();
+    final content = RepaintBoundary(
+      child: SnapshotWidget(
+        controller: _motionSnapshot,
+        mode: SnapshotMode.permissive,
+        autoresize: true,
+        child: child,
+      ),
+    );
     return dragBackDetector(
       isDragBackActive
-          ? dragBackSlide(context, animation, child)
-          : FadeTransition(opacity: animation, child: child),
+          ? dragBackSlide(context, animation, content)
+          : FadeTransition(opacity: animation, child: content),
     );
   }
 

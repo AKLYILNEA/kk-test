@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -273,24 +274,65 @@ class _RuleStorePage extends ConsumerStatefulWidget {
   ConsumerState<_RuleStorePage> createState() => _RuleStorePageState();
 }
 
-class _RuleStorePageState extends ConsumerState<_RuleStorePage> {
+class _RuleStorePageState extends ConsumerState<_RuleStorePage>
+    with
+        RouteMotionHoldMixin<_RuleStorePage>,
+        RouteSettledMixin<_RuleStorePage> {
   final TextEditingController _customRepoController = TextEditingController();
   String _customRepoUrl = '';
   String _query = '';
-  late Future<List<RuleListing>> _rules = widget.repository.browse();
+  List<RuleListing>? _loadedRules;
+  Object? _loadError;
+  bool _loading = true;
+  int _loadToken = 0;
   final _installing = <Uri>{};
   int _selectedPreset = 0;
 
   @override
+  void didSettleRoute() {
+    unawaited(_fetchRules());
+  }
+
+  @override
   void dispose() {
+    _loadToken++;
     _customRepoController.dispose();
     super.dispose();
   }
 
+  Future<void> _fetchRules({String? repository}) async {
+    final token = ++_loadToken;
+    if (mounted) {
+      setState(() {
+        _loading = true;
+        _loadError = null;
+      });
+    }
+    try {
+      final result = await widget.repository.browse(repository: repository);
+      if (!mounted || token != _loadToken) return;
+      updateWhenRouteSettled(() {
+        if (!mounted || token != _loadToken) return;
+        setState(() {
+          _loadedRules = result;
+          _loadError = null;
+          _loading = false;
+        });
+      });
+    } on Object catch (error) {
+      if (!mounted || token != _loadToken) return;
+      updateWhenRouteSettled(() {
+        if (!mounted || token != _loadToken) return;
+        setState(() {
+          _loadError = error;
+          _loading = false;
+        });
+      });
+    }
+  }
+
   void _reload({String? repository}) {
-    setState(() {
-      _rules = widget.repository.browse(repository: repository);
-    });
+    unawaited(_fetchRules(repository: repository));
   }
 
   void _selectPreset(int index) {
@@ -301,8 +343,8 @@ class _RuleStorePageState extends ConsumerState<_RuleStorePage> {
       if (index == 0) {
         _customRepoController.clear();
       }
-      _rules = widget.repository.browse(repository: preset.repository);
     });
+    unawaited(_fetchRules(repository: preset.repository));
   }
 
   void _applyCustomRepo() {
@@ -310,8 +352,8 @@ class _RuleStorePageState extends ConsumerState<_RuleStorePage> {
     setState(() {
       _customRepoUrl = url;
       _selectedPreset = url.isEmpty ? 0 : -1;
-      _rules = widget.repository.browse(repository: url);
     });
+    unawaited(_fetchRules(repository: url));
   }
 
   Future<void> _install(RuleListing listing) async {
@@ -450,38 +492,48 @@ class _RuleStorePageState extends ConsumerState<_RuleStorePage> {
           },
         ),
       ],
-      body: CustomScrollView(
-        slivers: [
-          const KonekoScrollStart(),
-          SliverToBoxAdapter(
-            child: KonekoAutoScrollChipBar(
-              height: 46,
-              chipHeight: 34,
-              fontSize: 12.5,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              labels: [for (final p in _ruleStorePresets) p.label],
-              selectedIndex: _selectedPreset >= 0 ? _selectedPreset : -1,
-              onSelected: _selectPreset,
-            ),
-          ),
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            sliver: SliverToBoxAdapter(
-              child: FutureBuilder<List<RuleListing>>(
-                future: _rules,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState != ConnectionState.done) {
-                    return const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 48),
-                      child: Center(child: ActivityIndicator()),
-                    );
-                  }
-                  if (snapshot.hasError) {
-                    final message = featureError(
-                      snapshot.error!,
-                      '仓库读取失败，请检查网络或切换上方镜像源。',
-                    );
-                    return KonekoCard(
+      body: ArrivalCacheExtentBuilder(
+        builder: (context, cacheExtent) {
+          final allItems = _loadedRules ?? const <RuleListing>[];
+          final items = query.isEmpty
+              ? allItems
+              : allItems
+                    .where((item) => item.name.toLowerCase().contains(query))
+                    .toList();
+          final installedById = {
+            for (final rule in installed) rule.id: rule,
+          };
+
+          return CustomScrollView(
+            scrollCacheExtent: cacheExtent,
+            slivers: [
+              const KonekoScrollStart(),
+              SliverToBoxAdapter(
+                child: KonekoAutoScrollChipBar(
+                  height: 46,
+                  chipHeight: 34,
+                  fontSize: 12.5,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 6,
+                  ),
+                  labels: [for (final p in _ruleStorePresets) p.label],
+                  selectedIndex: _selectedPreset >= 0 ? _selectedPreset : -1,
+                  onSelected: _selectPreset,
+                ),
+              ),
+              if (_loading)
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 48),
+                    child: Center(child: ActivityIndicator()),
+                  ),
+                )
+              else if (_loadError != null)
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  sliver: SliverToBoxAdapter(
+                    child: KonekoCard(
                       corner: 26,
                       padding: const EdgeInsets.all(18),
                       child: Column(
@@ -495,7 +547,10 @@ class _RuleStorePageState extends ConsumerState<_RuleStorePage> {
                                 .copyWith(color: colorScheme.onSurface),
                           ),
                           Text(
-                            message,
+                            featureError(
+                              _loadError!,
+                              '仓库读取失败，请检查网络或切换上方镜像源。',
+                            ),
                             style: AppTextStyle.footnote
                                 .of(context)
                                 .copyWith(color: colorScheme.onSurfaceVariant),
@@ -531,11 +586,14 @@ class _RuleStorePageState extends ConsumerState<_RuleStorePage> {
                           ),
                         ],
                       ),
-                    );
-                  }
-                  final allItems = snapshot.data ?? const [];
-                  if (allItems.isEmpty) {
-                    return KonekoCard(
+                    ),
+                  ),
+                )
+              else if (allItems.isEmpty)
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  sliver: SliverToBoxAdapter(
+                    child: KonekoCard(
                       corner: 24,
                       padding: const EdgeInsets.all(24),
                       child: Center(
@@ -546,17 +604,14 @@ class _RuleStorePageState extends ConsumerState<_RuleStorePage> {
                               .copyWith(color: colorScheme.onSurfaceVariant),
                         ),
                       ),
-                    );
-                  }
-                  final items = query.isEmpty
-                      ? allItems
-                      : allItems
-                            .where(
-                              (item) => item.name.toLowerCase().contains(query),
-                            )
-                            .toList();
-                  if (items.isEmpty) {
-                    return KonekoCard(
+                    ),
+                  ),
+                )
+              else if (items.isEmpty)
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  sliver: SliverToBoxAdapter(
+                    child: KonekoCard(
                       corner: 24,
                       padding: const EdgeInsets.all(24),
                       child: Center(
@@ -567,94 +622,127 @@ class _RuleStorePageState extends ConsumerState<_RuleStorePage> {
                               .copyWith(color: colorScheme.onSurfaceVariant),
                         ),
                       ),
-                    );
-                  }
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      ListHeader(
-                        title: query.isEmpty
-                            ? '可用规则 (${allItems.length})'
-                            : '筛选结果 (${items.length} / ${allItems.length})',
-                      ),
-                      KonekoGroup(
-                        items: [
-                          for (final item in items)
-                            Builder(
-                              builder: (context) {
-                                final key = item.name.trim().toLowerCase();
-                                RulePluginMeta? current;
-                                for (final rule in installed) {
-                                  if (rule.id == key) {
-                                    current = rule;
-                                    break;
-                                  }
-                                }
-                                final upToDate =
-                                    current != null &&
-                                    current.version == item.version;
-                                final hasUpdate = current != null && !upToDate;
-                                final busy = _installing.contains(item.url);
-                                final statusText = upToDate
-                                    ? 'v${item.version} · 已是最新'
-                                    : hasUpdate
-                                    ? 'v${current.version} → v${item.version}'
-                                    : 'v${item.version}';
+                    ),
+                  ),
+                )
+              else ...[
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  sliver: SliverToBoxAdapter(
+                    child: ListHeader(
+                      title: query.isEmpty
+                          ? '可用规则 (${allItems.length})'
+                          : '筛选结果 (${items.length} / ${allItems.length})',
+                    ),
+                  ),
+                ),
+                SliverPadding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  sliver: SliverPrismList(
+                    itemCount: items.length,
+                    gap: 8,
+                    estimatedItemExtent: 64,
+                    itemBuilder: (context, index) {
+                      final item = items[index];
+                      final current =
+                          installedById[item.name.trim().toLowerCase()];
+                      final upToDate =
+                          current != null && current.version == item.version;
+                      final hasUpdate = current != null && !upToDate;
+                      final busy = _installing.contains(item.url);
+                      final statusText = upToDate
+                          ? 'v${item.version} · 已是最新'
+                          : hasUpdate
+                          ? 'v${current.version} → v${item.version}'
+                          : 'v${item.version}';
 
-                                return DecorationListItem(
-                                  leading: GlyphIcon(
-                                    KonekoGlyphs.puzzle,
-                                    color: upToDate
-                                        ? colorScheme.primary
-                                        : colorScheme.onSurfaceVariant,
-                                  ),
-                                  title: Text(item.name),
-                                  subtitle: Text(statusText),
-                                  trailing: busy
-                                      ? const ActivityIndicator()
-                                      : KonekoChip(
-                                          label: upToDate
-                                              ? '已安装'
-                                              : hasUpdate
-                                              ? '更新'
-                                              : '安装',
-                                          height: 26,
-                                          fontSize: 11.5,
-                                          backgroundColor: upToDate
-                                              ? colorScheme.successContainer
-                                              : hasUpdate
-                                              ? colorScheme.primary.withValues(
-                                                  alpha: 0.14,
-                                                )
-                                              : colorScheme.primary,
-                                          foregroundColor: upToDate
-                                              ? colorScheme.onSuccessContainer
-                                              : hasUpdate
-                                              ? colorScheme.primary
-                                              : colorScheme.onPrimary,
-                                        ),
-                                  onPressed: busy ? null : () => _install(item),
-                                );
-                              },
+                      return KonekoCard(
+                        corner: 20,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 11,
+                        ),
+                        onPressed: busy ? null : () => _install(item),
+                        child: Row(
+                          spacing: 10,
+                          children: [
+                            GlyphIcon(
+                              KonekoGlyphs.puzzle,
+                              color: upToDate
+                                  ? colorScheme.primary
+                                  : colorScheme.onSurfaceVariant,
                             ),
-                        ],
-                      ),
-                    ],
-                  );
-                },
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                spacing: 2,
+                                children: [
+                                  Text(
+                                    item.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: AppTextStyle.subheadline
+                                        .of(context, emphasized: true)
+                                        .copyWith(color: colorScheme.onSurface),
+                                  ),
+                                  Text(
+                                    statusText,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: AppTextStyle.caption1
+                                        .of(context)
+                                        .copyWith(
+                                          color: colorScheme.onSurfaceVariant,
+                                        ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (busy)
+                              const ActivityIndicator()
+                            else
+                              KonekoChip(
+                                label: upToDate
+                                    ? '已安装'
+                                    : hasUpdate
+                                    ? '更新'
+                                    : '安装',
+                                height: 26,
+                                fontSize: 11.5,
+                                backgroundColor: upToDate
+                                    ? colorScheme.successContainer
+                                    : hasUpdate
+                                    ? colorScheme.primary.withValues(
+                                        alpha: 0.14,
+                                      )
+                                    : colorScheme.primary,
+                                foregroundColor: upToDate
+                                    ? colorScheme.onSuccessContainer
+                                    : hasUpdate
+                                    ? colorScheme.primary
+                                    : colorScheme.onPrimary,
+                              ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  12,
+                  16,
+                  30 + MediaQuery.paddingOf(context).bottom,
+                ),
+                sliver: SliverToBoxAdapter(
+                  child: _buildCustomRepoSection(context),
+                ),
               ),
-            ),
-          ),
-          SliverPadding(
-            padding: EdgeInsets.fromLTRB(
-              16,
-              12,
-              16,
-              30 + MediaQuery.paddingOf(context).bottom,
-            ),
-            sliver: SliverToBoxAdapter(child: _buildCustomRepoSection(context)),
-          ),
-        ],
+            ],
+          );
+        },
       ),
     );
   }

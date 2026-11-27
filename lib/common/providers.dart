@@ -180,9 +180,11 @@ final themeSettingsProvider =
 
 class DanmakuSettingsNotifier extends Notifier<DanmakuSettings> {
   static const _prefKey = 'koneko_danmaku_settings_v1';
+  Timer? _saveDebounce;
 
   @override
   DanmakuSettings build() {
+    ref.onDispose(() => _saveDebounce?.cancel());
     unawaited(_load());
     return const DanmakuSettings();
   }
@@ -201,12 +203,23 @@ class DanmakuSettingsNotifier extends Notifier<DanmakuSettings> {
 
   void update(DanmakuSettings Function(DanmakuSettings current) updater) {
     state = updater(state);
-    unawaited(_save(state));
+    _scheduleSave();
   }
 
   void reset() {
     state = const DanmakuSettings();
-    unawaited(_save(state));
+    _scheduleSave(immediate: true);
+  }
+
+  void _scheduleSave({bool immediate = false}) {
+    _saveDebounce?.cancel();
+    if (immediate) {
+      unawaited(_save(state));
+      return;
+    }
+    _saveDebounce = Timer(const Duration(milliseconds: 250), () {
+      unawaited(_save(state));
+    });
   }
 
   Future<void> _save(DanmakuSettings settings) async {
@@ -222,7 +235,10 @@ final danmakuSettingsProvider =
       DanmakuSettingsNotifier.new,
     );
 
-/// Generates a [ColorScheme] using prism_ui's HCT seeded scheme, matching FlClash.
+final _colorSchemeCache = <(Brightness, int, ColorStyle), ColorScheme>{};
+
+/// Generates a [ColorScheme] using prism_ui's HCT seeded scheme, matching FlClash,
+/// cached by `(brightness, seed, style)` to avoid redundant HCT solves.
 ColorScheme buildKonekoColorScheme({
   required Brightness brightness,
   required int? primaryColor,
@@ -231,11 +247,19 @@ ColorScheme buildKonekoColorScheme({
   Color? overrideColor,
 }) {
   final seed = overrideColor ?? Color(primaryColor ?? kDefaultPrimaryColor);
-  return seededColorScheme(
+  final key = (brightness, seed.toARGB32(), colorStyle);
+  final cached = _colorSchemeCache[key];
+  if (cached != null) return cached;
+  final scheme = seededColorScheme(
     seedColor: seed,
     brightness: brightness,
     style: colorStyle,
   );
+  if (_colorSchemeCache.length >= 24) {
+    _colorSchemeCache.remove(_colorSchemeCache.keys.first);
+  }
+  _colorSchemeCache[key] = scheme;
+  return scheme;
 }
 
 ThemeData buildKonekoTheme({

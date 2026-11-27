@@ -71,21 +71,23 @@ class MiniScreenThumb extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: _height,
-      width: _height * _screenSize.width / _shownHeight,
-      child: ClipRSuperellipse(
-        borderRadius: AppRadius.sm,
-        child: FittedBox(
-          child: SizedBox(
-            width: _screenSize.width,
-            height: _shownHeight,
-            child: ClipRect(
-              child: OverflowBox(
-                alignment: Alignment.bottomCenter,
-                minHeight: _screenSize.height,
-                maxHeight: _screenSize.height,
-                child: screen,
+    return RepaintBoundary(
+      child: SizedBox(
+        height: _height,
+        width: _height * _screenSize.width / _shownHeight,
+        child: ClipRSuperellipse(
+          borderRadius: AppRadius.sm,
+          child: FittedBox(
+            child: SizedBox(
+              width: _screenSize.width,
+              height: _shownHeight,
+              child: ClipRect(
+                child: OverflowBox(
+                  alignment: Alignment.bottomCenter,
+                  minHeight: _screenSize.height,
+                  maxHeight: _screenSize.height,
+                  child: screen,
+                ),
               ),
             ),
           ),
@@ -163,70 +165,84 @@ class _ThemeLivePreviewState extends ConsumerState<ThemeLivePreview>
 
   @override
   Widget build(BuildContext context) {
-    final settings = ref.watch(themeSettingsProvider);
+    final (themeMode, primaryColor, colorStyle, tabAnimation, liquidGlass) =
+        ref.watch(
+          themeSettingsProvider.select(
+            (s) => (
+              s.themeMode,
+              s.primaryColor,
+              s.colorStyle,
+              s.tabAnimation,
+              s.liquidGlass != LiquidGlassMode.none,
+            ),
+          ),
+        );
     final outerScheme = context.colorScheme;
-    final brightness = switch (settings.themeMode) {
+    final brightness = switch (themeMode) {
       ThemeMode.light => Brightness.light,
       ThemeMode.dark => Brightness.dark,
       ThemeMode.system => MediaQuery.platformBrightnessOf(context),
     };
     final scheme = buildKonekoColorScheme(
       brightness: brightness,
-      primaryColor: settings.primaryColor,
-      colorStyle: settings.colorStyle,
+      primaryColor: primaryColor,
+      colorStyle: colorStyle,
     );
-    final liquidGlass = settings.liquidGlass != LiquidGlassMode.none;
     final corner = AppCorner.fit(_phoneWidth);
 
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.symmetric(vertical: 22),
-      alignment: Alignment.center,
-      decoration: ShapeDecoration(
-        color: SurfaceLevel.card.colorOf(outerScheme),
-        shape: AppShape.xxl,
-        shadows: konekoCardShadows(outerScheme),
-      ),
-      child: DecoratedBox(
+    return RepaintBoundary(
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.symmetric(vertical: 22),
+        alignment: Alignment.center,
         decoration: ShapeDecoration(
-          shape: SuperellipseBorder(
-            borderRadius: AppRadius.all(corner),
-            side: BorderSide(
-              color: outerScheme.outlineVariant.withValues(alpha: 0.24),
-              width: 1,
-            ),
-          ),
-          shadows: [
-            BoxShadow(
-              color: outerScheme.shadow.withValues(alpha: 0.14),
-              blurRadius: 18,
-              offset: const Offset(0, 8),
-            ),
-          ],
+          color: SurfaceLevel.card.colorOf(outerScheme),
+          shape: AppShape.xxl,
+          shadows: konekoCardShadows(outerScheme),
         ),
-        child: SizedBox(
-          width: _phoneWidth,
-          child: AspectRatio(
-            aspectRatio: 9 / 17,
-            child: ClipRSuperellipse(
+        child: DecoratedBox(
+          decoration: ShapeDecoration(
+            shape: SuperellipseBorder(
               borderRadius: AppRadius.all(corner),
-              child: TweenAnimationBuilder<ColorScheme>(
-                tween: _ColorSchemeTween(end: scheme),
-                duration: _duration,
-                builder: (_, animatedScheme, _) => AnimatedSwitcher(
-                  duration: _duration,
-                  child: AnimatedBuilder(
-                    key: ValueKey(liquidGlass),
-                    animation: _slideCurve,
-                    builder: (_, _) => MiniScreen(
-                      colorScheme: animatedScheme,
-                      floatingBar: true,
-                      liquidGlass: liquidGlass,
-                      selected: _selected,
-                      previous: _previous,
-                      progress: _previous == null ? 1 : _slideCurve.value,
-                      tabAnimation: settings.tabAnimation,
-                      onSelect: _select,
+              side: BorderSide(
+                color: outerScheme.outlineVariant.withValues(alpha: 0.24),
+                width: 1,
+              ),
+            ),
+            shadows: [
+              BoxShadow(
+                color: outerScheme.shadow.withValues(alpha: 0.14),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: SizedBox(
+            width: _phoneWidth,
+            child: AspectRatio(
+              aspectRatio: 9 / 17,
+              child: ClipRSuperellipse(
+                borderRadius: AppRadius.all(corner),
+                child: RepaintBoundary(
+                  child: TweenAnimationBuilder<ColorScheme>(
+                    tween: _ColorSchemeTween(end: scheme),
+                    duration: _duration,
+                    builder: (_, animatedScheme, _) => AnimatedSwitcher(
+                      duration: _duration,
+                      child: AnimatedBuilder(
+                        key: ValueKey(liquidGlass),
+                        animation: _slideCurve,
+                        builder: (_, _) => MiniScreen(
+                          colorScheme: animatedScheme,
+                          floatingBar: true,
+                          liquidGlass: liquidGlass,
+                          selected: _selected,
+                          previous: _previous,
+                          progress: _previous == null ? 1 : _slideCurve.value,
+                          tabAnimation: tabAnimation,
+                          onSelect: _select,
+                        ),
+                      ),
                     ),
                   ),
                 ),

@@ -8,38 +8,49 @@ import 'package:koneko_contract/koneko_contract.dart';
 import 'package:prism_ui/icons/icons.dart';
 import 'package:prism_ui/prism_ui.dart';
 
+final _cardShadowCache = <(bool, int), List<BoxShadow>>{};
+final _pillShadowCache = <(bool, int), List<BoxShadow>>{};
+
 /// Apple/FlClash-style soft layered elevation shadow (no heavy Material borders).
 List<BoxShadow> konekoCardShadows(ColorScheme colorScheme) {
   final isDark = colorScheme.brightness == Brightness.dark;
-  return [
-    BoxShadow(
-      color: colorScheme.shadow.withValues(alpha: isDark ? 0.24 : 0.055),
-      blurRadius: isDark ? 20 : 18,
-      offset: const Offset(0, 6),
-    ),
-    BoxShadow(
-      color: colorScheme.shadow.withValues(alpha: isDark ? 0.14 : 0.03),
-      blurRadius: 3,
-      offset: const Offset(0, 1),
-    ),
-  ];
+  final shadow = colorScheme.shadow;
+  return _cardShadowCache.putIfAbsent((isDark, shadow.toARGB32()), () {
+    if (_cardShadowCache.length >= 16) _cardShadowCache.clear();
+    return List<BoxShadow>.unmodifiable([
+      BoxShadow(
+        color: shadow.withValues(alpha: isDark ? 0.24 : 0.055),
+        blurRadius: isDark ? 20 : 18,
+        offset: const Offset(0, 6),
+      ),
+      BoxShadow(
+        color: shadow.withValues(alpha: isDark ? 0.14 : 0.03),
+        blurRadius: 3,
+        offset: const Offset(0, 1),
+      ),
+    ]);
+  });
 }
 
 /// Matching softer elevation shadow for page-level pills, chip bars & segmented controls.
 List<BoxShadow> konekoPillShadows(ColorScheme colorScheme) {
   final isDark = colorScheme.brightness == Brightness.dark;
-  return [
-    BoxShadow(
-      color: colorScheme.shadow.withValues(alpha: isDark ? 0.22 : 0.055),
-      blurRadius: isDark ? 14 : 12,
-      offset: const Offset(0, 4),
-    ),
-    BoxShadow(
-      color: colorScheme.shadow.withValues(alpha: isDark ? 0.12 : 0.028),
-      blurRadius: 2.5,
-      offset: const Offset(0, 1),
-    ),
-  ];
+  final shadow = colorScheme.shadow;
+  return _pillShadowCache.putIfAbsent((isDark, shadow.toARGB32()), () {
+    if (_pillShadowCache.length >= 16) _pillShadowCache.clear();
+    return List<BoxShadow>.unmodifiable([
+      BoxShadow(
+        color: shadow.withValues(alpha: isDark ? 0.22 : 0.055),
+        blurRadius: isDark ? 14 : 12,
+        offset: const Offset(0, 4),
+      ),
+      BoxShadow(
+        color: shadow.withValues(alpha: isDark ? 0.12 : 0.028),
+        blurRadius: 2.5,
+        offset: const Offset(0, 1),
+      ),
+    ]);
+  });
 }
 
 void showKonekoBanner(

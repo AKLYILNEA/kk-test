@@ -6,6 +6,7 @@ import 'package:prism_ui/l10n.dart';
 import 'package:prism_ui/color.dart';
 import 'package:prism_ui/deferred_push.dart';
 import 'package:prism_ui/drag_back.dart';
+import 'package:prism_ui/liquid_glass.dart';
 import 'package:prism_ui/shape.dart';
 import 'package:prism_ui/sheet_navigator.dart';
 import 'package:prism_ui/surface.dart';
@@ -230,6 +231,69 @@ class _ModalSideSheet<T> extends StatefulWidget {
 }
 
 class _ModalSideSheetState<T> extends State<_ModalSideSheet<T>> {
+  final _motionSnapshot = SnapshotController();
+  bool _glass = false;
+  bool _pointerDown = false;
+  bool _hadProgress = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.route.animation!
+      ..addListener(_handleTick)
+      ..addStatusListener(_handleStatus);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _glass = LiquidGlassScope.of(context);
+    _updateSnapshot();
+  }
+
+  @override
+  void didUpdateWidget(_ModalSideSheet<T> oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.route != oldWidget.route) {
+      oldWidget.route.animation!
+        ..removeListener(_handleTick)
+        ..removeStatusListener(_handleStatus);
+      widget.route.animation!
+        ..addListener(_handleTick)
+        ..addStatusListener(_handleStatus);
+      _hadProgress = widget.route.animation!.value > 0;
+      _updateSnapshot();
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.route.animation!
+      ..removeListener(_handleTick)
+      ..removeStatusListener(_handleStatus);
+    _motionSnapshot.dispose();
+    super.dispose();
+  }
+
+  void _handleTick() {
+    final hasProgress = widget.route.animation!.value > 0;
+    if (hasProgress != _hadProgress) {
+      _hadProgress = hasProgress;
+      _updateSnapshot();
+    }
+  }
+
+  void _handleStatus(AnimationStatus _) => _updateSnapshot();
+
+  void _updateSnapshot() {
+    final animation = widget.route.animation!;
+    _motionSnapshot.allowSnapshotting =
+        !_glass &&
+        !_pointerDown &&
+        (widget.route.isDragBackActive ||
+            (animation.isAnimating && animation.value > 0));
+  }
+
   String _getRouteLabel(UiLocalizations localizations) {
     switch (Theme.of(context).platform) {
       case TargetPlatform.iOS:
@@ -268,31 +332,154 @@ class _ModalSideSheetState<T> extends State<_ModalSideSheet<T>> {
             );
           },
           width: width,
-          child: AnimatedBuilder(
+          child: _SideSheetSlide(
             animation: route.animation!,
-            child: RepaintBoundary(
-              child: route.dragBackDetector(
-                SideSheet(
-                  builder: route.builder,
-                  backgroundColor: widget.backgroundColor,
+            isDragBackActive: () => route.isDragBackActive,
+            child: Listener(
+              behavior: HitTestBehavior.translucent,
+              onPointerDown: (_) {
+                if (!_pointerDown) {
+                  _pointerDown = true;
+                  _updateSnapshot();
+                }
+              },
+              child: RepaintBoundary(
+                child: SnapshotWidget(
+                  controller: _motionSnapshot,
+                  mode: SnapshotMode.permissive,
+                  autoresize: true,
+                  child: route.dragBackDetector(
+                    SideSheet(
+                      builder: route.builder,
+                      backgroundColor: widget.backgroundColor,
+                    ),
+                  ),
                 ),
               ),
             ),
-            builder: (BuildContext context, Widget? child) {
-              final curve = route.isDragBackActive
-                  ? Curves.linear
-                  : _sideSheetCurve;
-              final double animationValue = curve.transform(
-                route.animation!.value,
-              );
-              return FractionalTranslation(
-                translation: Offset(1.0 - animationValue, 0.0),
-                child: child,
-              );
-            },
           ),
         ),
       ),
+    );
+  }
+}
+
+class _SideSheetSlide extends SingleChildRenderObjectWidget {
+  const _SideSheetSlide({
+    required this.animation,
+    required this.isDragBackActive,
+    super.child,
+  });
+
+  final Animation<double> animation;
+  final bool Function() isDragBackActive;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) {
+    return _RenderSideSheetSlide(
+      animation: animation,
+      isDragBackActive: isDragBackActive,
+    );
+  }
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderSideSheetSlide renderObject,
+  ) {
+    renderObject
+      ..animation = animation
+      ..isDragBackActive = isDragBackActive;
+  }
+}
+
+class _RenderSideSheetSlide extends RenderProxyBox {
+  _RenderSideSheetSlide({
+    required Animation<double> animation,
+    required bool Function() isDragBackActive,
+  }) : _animation = animation,
+       _isDragBackActive = isDragBackActive;
+
+  final _transformLayer = LayerHandle<TransformLayer>();
+
+  Animation<double> _animation;
+  set animation(Animation<double> value) {
+    if (identical(value, _animation)) return;
+    if (attached) {
+      _animation.removeListener(markNeedsPaint);
+      value.addListener(markNeedsPaint);
+    }
+    _animation = value;
+    markNeedsPaint();
+  }
+
+  bool Function() _isDragBackActive;
+  set isDragBackActive(bool Function() value) {
+    if (identical(value, _isDragBackActive)) return;
+    _isDragBackActive = value;
+    markNeedsPaint();
+  }
+
+  double get _dx {
+    final curve = _isDragBackActive() ? Curves.linear : _sideSheetCurve;
+    final t = curve.transform(_animation.value);
+    return (1.0 - t) * size.width;
+  }
+
+  @override
+  void attach(PipelineOwner owner) {
+    super.attach(owner);
+    _animation.addListener(markNeedsPaint);
+  }
+
+  @override
+  void detach() {
+    _animation.removeListener(markNeedsPaint);
+    super.detach();
+  }
+
+  @override
+  void dispose() {
+    _transformLayer.layer = null;
+    super.dispose();
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    final child = this.child;
+    if (child == null) return;
+    final dx = _dx;
+    if (dx.abs() < 0.01) {
+      _transformLayer.layer = null;
+      context.paintChild(child, offset);
+      return;
+    }
+    _transformLayer.layer = context.pushTransform(
+      needsCompositing,
+      offset,
+      Matrix4.translationValues(dx, 0, 0),
+      (context, offset) => context.paintChild(child, offset),
+      oldLayer: _transformLayer.layer,
+    );
+  }
+
+  @override
+  void applyPaintTransform(RenderBox child, Matrix4 transform) {
+    final dx = _dx;
+    if (dx.abs() >= 0.01) {
+      transform.translateByDouble(dx, 0, 0, 1);
+    }
+  }
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
+    final child = this.child;
+    if (child == null) return false;
+    final dx = _dx;
+    return result.addWithPaintTransform(
+      transform: dx.abs() < 0.01 ? null : Matrix4.translationValues(dx, 0, 0),
+      position: position,
+      hitTest: (result, position) => child.hitTest(result, position: position),
     );
   }
 }

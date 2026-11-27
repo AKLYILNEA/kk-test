@@ -9,11 +9,13 @@ import 'package:prism_ui/card_surface.dart';
 import 'package:prism_ui/color.dart';
 import 'package:prism_ui/common_button.dart';
 import 'package:prism_ui/context.dart';
+import 'package:prism_ui/deferred_push.dart';
 import 'package:prism_ui/input.dart';
 import 'package:prism_ui/liquid_glass.dart';
 import 'package:prism_ui/motion.dart';
 import 'package:prism_ui/navigation_dock.dart';
 import 'package:prism_ui/shape.dart';
+import 'package:prism_ui/sheet_navigator.dart';
 import 'package:prism_ui/surface.dart';
 import 'package:prism_ui/theme_data.dart';
 import 'package:prism_ui/typography.dart';
@@ -65,7 +67,11 @@ Future<T?> showFloatingDialog<T>({
 mixin AlertHostRoute<T> on ModalRoute<T> {}
 
 class _AlertRoute<T> extends PopupRoute<T>
-    with AlertMotionRouteMixin<T>, AlertHostRoute<T> {
+    with
+        SheetCoverRouteMixin<T>,
+        DeferredPushRouteMixin<T>,
+        AlertMotionRouteMixin<T>,
+        AlertHostRoute<T> {
   _AlertRoute({
     required this.barrierColor,
     required this.barrierDismissible,
@@ -129,14 +135,15 @@ mixin AlertMotionRouteMixin<T> on PopupRoute<T> {
         onDismiss: onBarrierDismiss,
       );
     }
-    final barrier = AnimatedModalBarrier(
-      color: _spring.drive(
-        ColorTween(begin: barrierColor.withValues(alpha: 0), end: barrierColor),
+    final barrier = AnimatedBarrierPaint(
+      progress: _spring,
+      color: barrierColor,
+      child: ModalBarrier(
+        dismissible: barrierDismissible,
+        semanticsLabel: barrierLabel,
+        barrierSemanticsDismissible: semanticsDismissible,
+        onDismiss: onBarrierDismiss,
       ),
-      dismissible: barrierDismissible,
-      semanticsLabel: barrierLabel,
-      barrierSemanticsDismissible: semanticsDismissible,
-      onDismiss: onBarrierDismiss,
     );
     return RepaintBoundary(
       child: Stack(
@@ -188,55 +195,250 @@ class _AlertTransition extends StatefulWidget {
 }
 
 class _AlertTransitionState extends State<_AlertTransition> {
+  final _snapshot = SnapshotController();
   double? _heldScale;
+  bool _glass = false;
+  bool _pointerDown = false;
+  bool _hadProgress = false;
 
-  double get _scale =>
-      _heldScale ??
-      _alertEntryScale + (1 - _alertEntryScale) * widget.animation.value;
+  double _scaleAt(double value) =>
+      _heldScale ?? _alertEntryScale + (1 - _alertEntryScale) * value;
 
   @override
   void initState() {
     super.initState();
-    widget.animation.addStatusListener(_handleStatus);
+    widget.animation
+      ..addListener(_handleTick)
+      ..addStatusListener(_handleStatus);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _glass = LiquidGlassScope.of(context);
+    _updateSnapshot();
   }
 
   @override
   void didUpdateWidget(_AlertTransition oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.animation != oldWidget.animation) {
-      oldWidget.animation.removeStatusListener(_handleStatus);
-      widget.animation.addStatusListener(_handleStatus);
+      oldWidget.animation
+        ..removeListener(_handleTick)
+        ..removeStatusListener(_handleStatus);
+      widget.animation
+        ..addListener(_handleTick)
+        ..addStatusListener(_handleStatus);
+      _hadProgress = widget.animation.value > 0;
+      _updateSnapshot();
     }
   }
 
   @override
   void dispose() {
-    widget.animation.removeStatusListener(_handleStatus);
+    widget.animation
+      ..removeListener(_handleTick)
+      ..removeStatusListener(_handleStatus);
+    _snapshot.dispose();
     super.dispose();
   }
 
-  void _handleStatus(AnimationStatus status) {
-    _heldScale = status == AnimationStatus.reverse ? _scale : null;
+  void _handleTick() {
+    final hasProgress = widget.animation.value > 0;
+    if (hasProgress != _hadProgress) {
+      _hadProgress = hasProgress;
+      _updateSnapshot();
+    }
   }
 
-  Widget _scaled(Alignment alignment) => AnimatedBuilder(
+  void _handleStatus(AnimationStatus status) {
+    _heldScale = status == AnimationStatus.reverse
+        ? _scaleAt(widget.animation.value)
+        : null;
+    _updateSnapshot();
+  }
+
+  void _updateSnapshot() {
+    final animation = widget.animation;
+    _snapshot.allowSnapshotting =
+        !_glass &&
+        !_pointerDown &&
+        animation.isAnimating &&
+        animation.value > 0;
+  }
+
+  Widget _scaled(Alignment alignment, Widget child) => _AlertScaleBox(
     animation: widget.animation,
-    builder: (_, child) =>
-        Transform.scale(scale: _scale, alignment: alignment, child: child),
-    child: widget.child,
+    alignment: alignment,
+    scaleAt: _scaleAt,
+    child: child,
   );
 
   @override
   Widget build(BuildContext context) {
     final origin = widget.origin;
+    final content = Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (_) {
+        if (!_pointerDown) {
+          _pointerDown = true;
+          _updateSnapshot();
+        }
+      },
+      child: RepaintBoundary(
+        child: SnapshotWidget(
+          controller: _snapshot,
+          mode: SnapshotMode.permissive,
+          autoresize: true,
+          child: widget.child,
+        ),
+      ),
+    );
     return LiquidGlassFade(
       opacity: widget.animation,
       child: origin == null
-          ? _scaled(Alignment.center)
+          ? _scaled(Alignment.center, content)
           : LayoutBuilder(
               builder: (context, constraints) =>
-                  _scaled(origin(context, constraints.biggest)),
+                  _scaled(origin(context, constraints.biggest), content),
             ),
+    );
+  }
+}
+
+class _AlertScaleBox extends SingleChildRenderObjectWidget {
+  const _AlertScaleBox({
+    required this.animation,
+    required this.alignment,
+    required this.scaleAt,
+    super.child,
+  });
+
+  final Animation<double> animation;
+  final Alignment alignment;
+  final double Function(double value) scaleAt;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) {
+    return _RenderAlertScaleBox(
+      animation: animation,
+      alignment: alignment,
+      scaleAt: scaleAt,
+    );
+  }
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderAlertScaleBox renderObject,
+  ) {
+    renderObject
+      ..animation = animation
+      ..alignment = alignment
+      ..scaleAt = scaleAt;
+  }
+}
+
+class _RenderAlertScaleBox extends RenderProxyBox {
+  _RenderAlertScaleBox({
+    required Animation<double> animation,
+    required Alignment alignment,
+    required double Function(double value) scaleAt,
+  }) : _animation = animation,
+       _alignment = alignment,
+       _scaleAt = scaleAt;
+
+  final _transformLayer = LayerHandle<TransformLayer>();
+
+  Animation<double> _animation;
+  set animation(Animation<double> value) {
+    if (identical(value, _animation)) return;
+    if (attached) {
+      _animation.removeListener(markNeedsPaint);
+      value.addListener(markNeedsPaint);
+    }
+    _animation = value;
+    markNeedsPaint();
+  }
+
+  Alignment _alignment;
+  set alignment(Alignment value) {
+    if (value == _alignment) return;
+    _alignment = value;
+    markNeedsPaint();
+  }
+
+  double Function(double value) _scaleAt;
+  set scaleAt(double Function(double value) value) {
+    if (identical(value, _scaleAt)) return;
+    _scaleAt = value;
+    markNeedsPaint();
+  }
+
+  Matrix4? get _transform {
+    final s = _scaleAt(_animation.value);
+    if ((s - 1.0).abs() < 1e-4) return null;
+    final origin = _alignment.alongSize(size);
+    return Matrix4.translationValues(
+      origin.dx * (1 - s),
+      origin.dy * (1 - s),
+      0,
+    )..scaleByDouble(s, s, 1, 1);
+  }
+
+  @override
+  void attach(PipelineOwner owner) {
+    super.attach(owner);
+    _animation.addListener(markNeedsPaint);
+  }
+
+  @override
+  void detach() {
+    _animation.removeListener(markNeedsPaint);
+    super.detach();
+  }
+
+  @override
+  void dispose() {
+    _transformLayer.layer = null;
+    super.dispose();
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    final child = this.child;
+    if (child == null) return;
+    final transform = _transform;
+    if (transform == null) {
+      _transformLayer.layer = null;
+      context.paintChild(child, offset);
+      return;
+    }
+    _transformLayer.layer = context.pushTransform(
+      needsCompositing,
+      offset,
+      transform,
+      (context, offset) => context.paintChild(child, offset),
+      oldLayer: _transformLayer.layer,
+    );
+  }
+
+  @override
+  void applyPaintTransform(RenderBox child, Matrix4 transform) {
+    final current = _transform;
+    if (current != null) {
+      transform.multiply(current);
+    }
+  }
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
+    final child = this.child;
+    if (child == null) return false;
+    return result.addWithPaintTransform(
+      transform: _transform,
+      position: position,
+      hitTest: (result, position) => child.hitTest(result, position: position),
     );
   }
 }

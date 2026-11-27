@@ -18,7 +18,8 @@ class ServiceSettingsPage extends ConsumerStatefulWidget {
       _ServiceSettingsPageState();
 }
 
-class _ServiceSettingsPageState extends ConsumerState<ServiceSettingsPage> {
+class _ServiceSettingsPageState extends ConsumerState<ServiceSettingsPage>
+    with RouteMotionHoldMixin<ServiceSettingsPage> {
   final _bangumi = TextEditingController();
   final _davUrl = TextEditingController();
   final _davUser = TextEditingController();
@@ -34,21 +35,28 @@ class _ServiceSettingsPageState extends ConsumerState<ServiceSettingsPage> {
   }
 
   Future<void> _read() async {
+    SecretSettings? loaded;
+    var failed = false;
     try {
-      final secrets = await ref.read(secretsProvider)?.read();
-      if (!mounted || secrets == null) return;
-      _existingSecrets = secrets;
-      _bangumi.text = secrets.bangumiToken;
-      _davUrl.text = secrets.webdavUrl;
-      _davUser.text = secrets.webdavUser;
-      _davPassword.text = secrets.webdavPassword;
+      loaded = await ref.read(secretsProvider)?.read();
     } on Object {
-      if (mounted) {
+      failed = true;
+    }
+    if (!mounted) return;
+    showFirstContent(() {
+      if (!mounted) return;
+      if (loaded != null) {
+        _existingSecrets = loaded;
+        _bangumi.text = loaded.bangumiToken;
+        _davUrl.text = loaded.webdavUrl;
+        _davUser.text = loaded.webdavUser;
+        _davPassword.text = loaded.webdavPassword;
+      }
+      if (failed) {
         showKonekoBanner(context, '无法读取同步设置', level: BannerLevel.error);
       }
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
+      setState(() => _loading = false);
+    });
   }
 
   @override
@@ -133,7 +141,6 @@ class _ServiceSettingsPageState extends ConsumerState<ServiceSettingsPage> {
           autocorrect: false,
           enableSuggestions: !secret,
           keyboardType: keyboardType,
-          onChanged: (_) => setState(() {}),
           decoration: InputDecoration(hintText: hint),
         ),
       ],
@@ -193,229 +200,248 @@ class _ServiceSettingsPageState extends ConsumerState<ServiceSettingsPage> {
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
     final sync = ref.watch(trackingSyncProvider);
-    final hasBangumi = _bangumi.text.trim().isNotEmpty;
-    final hasWebDav = _davUrl.text.trim().isNotEmpty;
 
-    return KonekoScaffold(
-      title: '同步设置',
-      showBack: true,
-      actions: [
-        IconButtonData(
-          glyph: Glyphs.check,
-          tooltip: '保存设置',
-          isLoading: _busy,
-          onPressed: _loading ? null : () => _run(null, '设置'),
-        ),
-      ],
-      body: _loading
-          ? const Center(child: ActivityIndicator())
-          : CustomScrollView(
-              slivers: [
-                const KonekoScrollStart(),
-                SliverPadding(
-                  padding: EdgeInsets.fromLTRB(
-                    16,
-                    4,
-                    16,
-                    32 + MediaQuery.paddingOf(context).bottom,
-                  ),
-                  sliver: SliverList.list(
-                    children: [
-                      const ListHeader(title: 'Bangumi'),
-                      KonekoCard(
-                        corner: 26,
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          spacing: 14,
-                          children: [
-                            Row(
-                              spacing: 10,
-                              children: [
-                                Container(
-                                  width: 36,
-                                  height: 36,
-                                  decoration: BoxDecoration(
-                                    color: const Color(
-                                      0xFFE84C7F,
-                                    ).withValues(alpha: 0.14),
-                                    borderRadius: AppRadius.all(12),
-                                  ),
-                                  child: const Center(
-                                    child: GlyphIcon(
-                                      KonekoGlyphs.user,
-                                      size: 18,
-                                      color: Color(0xFFE84C7F),
-                                    ),
-                                  ),
-                                ),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    spacing: 2,
-                                    children: [
-                                      Text(
-                                        'Bangumi 账号',
-                                        style: AppTextStyle.headline
-                                            .of(context, emphasized: true)
-                                            .copyWith(
-                                              color: colorScheme.onSurface,
-                                            ),
-                                      ),
-                                      Text(
-                                        '同步个人资料、追番状态与观看进度',
-                                        style: AppTextStyle.caption1
-                                            .of(context)
-                                            .copyWith(
-                                              color:
-                                                  colorScheme.onSurfaceVariant,
-                                            ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                _buildStatusPill(context, hasBangumi),
-                              ],
-                            ),
-                            _buildField(
-                              context,
-                              controller: _bangumi,
-                              label: 'Access Token',
-                              hint: '粘贴个人访问令牌',
-                              secret: true,
-                            ),
-                            Row(
-                              spacing: 10,
-                              children: [
-                                KonekoChip(
-                                  label: '获取令牌',
-                                  height: 40,
-                                  fontSize: 13,
-                                  backgroundColor: SurfaceLevel.block.colorOf(
-                                    colorScheme,
-                                  ),
-                                  foregroundColor: colorScheme.onSurface,
-                                  leading: GlyphIcon(
-                                    KonekoGlyphs.externalLink,
-                                    size: 13.5,
-                                    color: colorScheme.onSurfaceVariant,
-                                  ),
-                                  onPressed: () => launchUrl(
-                                    Uri.parse('https://bgm.tv/dev/app'),
-                                    mode: LaunchMode.externalApplication,
-                                  ),
-                                ),
-                                Expanded(
-                                  child: _buildPrimaryAction(
-                                    context,
-                                    label: '同步收藏与进度',
-                                    glyph: KonekoGlyphs.sync,
-                                    onPressed: _busy || sync == null
-                                        ? null
-                                        : () =>
-                                              _run(sync.syncBangumi, 'Bangumi'),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
+    return ArrivalHold(
+      ready: !_loading,
+      child: KonekoScaffold(
+        title: '同步设置',
+        showBack: true,
+        actions: [
+          IconButtonData(
+            glyph: Glyphs.check,
+            tooltip: '保存设置',
+            isLoading: _busy,
+            onPressed: _loading ? null : () => _run(null, '设置'),
+          ),
+        ],
+        body: _loading
+            ? const Center(child: ActivityIndicator())
+            : ArrivalCacheExtentBuilder(
+                builder: (context, cacheExtent) => CustomScrollView(
+                  scrollCacheExtent: cacheExtent,
+                  slivers: [
+                    const KonekoScrollStart(),
+                    SliverPadding(
+                      padding: EdgeInsets.fromLTRB(
+                        16,
+                        4,
+                        16,
+                        32 + MediaQuery.paddingOf(context).bottom,
                       ),
-                      const SizedBox(height: 12),
-                      const ListHeader(title: 'WebDAV'),
-                      KonekoCard(
-                        corner: 26,
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          spacing: 14,
-                          children: [
-                            Row(
-                              spacing: 10,
+                      sliver: SliverList.list(
+                        children: [
+                          const ListHeader(title: 'Bangumi'),
+                          KonekoCard(
+                            corner: 26,
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              spacing: 14,
                               children: [
-                                Container(
-                                  width: 36,
-                                  height: 36,
-                                  decoration: BoxDecoration(
-                                    color: colorScheme.primary.withValues(
-                                      alpha: 0.14,
-                                    ),
-                                    borderRadius: AppRadius.all(12),
-                                  ),
-                                  child: Center(
-                                    child: GlyphIcon(
-                                      KonekoGlyphs.cloud,
-                                      size: 18,
-                                      color: colorScheme.primary,
-                                    ),
-                                  ),
-                                ),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    spacing: 2,
-                                    children: [
-                                      Text(
-                                        'WebDAV 云盘',
-                                        style: AppTextStyle.headline
-                                            .of(context, emphasized: true)
-                                            .copyWith(
-                                              color: colorScheme.onSurface,
-                                            ),
+                                Row(
+                                  spacing: 10,
+                                  children: [
+                                    Container(
+                                      width: 36,
+                                      height: 36,
+                                      decoration: BoxDecoration(
+                                        color: const Color(
+                                          0xFFE84C7F,
+                                        ).withValues(alpha: 0.14),
+                                        borderRadius: AppRadius.all(12),
                                       ),
-                                      Text(
-                                        '跨设备备份追番收藏与历史记录',
-                                        style: AppTextStyle.caption1
-                                            .of(context)
-                                            .copyWith(
-                                              color:
-                                                  colorScheme.onSurfaceVariant,
-                                            ),
+                                      child: const Center(
+                                        child: GlyphIcon(
+                                          KonekoGlyphs.user,
+                                          size: 18,
+                                          color: Color(0xFFE84C7F),
+                                        ),
                                       ),
-                                    ],
-                                  ),
+                                    ),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        spacing: 2,
+                                        children: [
+                                          Text(
+                                            'Bangumi 账号',
+                                            style: AppTextStyle.headline
+                                                .of(context, emphasized: true)
+                                                .copyWith(
+                                                  color: colorScheme.onSurface,
+                                                ),
+                                          ),
+                                          Text(
+                                            '同步个人资料、追番状态与观看进度',
+                                            style: AppTextStyle.caption1
+                                                .of(context)
+                                                .copyWith(
+                                                  color: colorScheme
+                                                      .onSurfaceVariant,
+                                                ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    ValueListenableBuilder<TextEditingValue>(
+                                      valueListenable: _bangumi,
+                                      builder: (context, value, _) =>
+                                          _buildStatusPill(
+                                            context,
+                                            value.text.trim().isNotEmpty,
+                                          ),
+                                    ),
+                                  ],
                                 ),
-                                _buildStatusPill(context, hasWebDav),
+                                _buildField(
+                                  context,
+                                  controller: _bangumi,
+                                  label: 'Access Token',
+                                  hint: '粘贴个人访问令牌',
+                                  secret: true,
+                                ),
+                                Row(
+                                  spacing: 10,
+                                  children: [
+                                    KonekoChip(
+                                      label: '获取令牌',
+                                      height: 40,
+                                      fontSize: 13,
+                                      backgroundColor: SurfaceLevel.block
+                                          .colorOf(colorScheme),
+                                      foregroundColor: colorScheme.onSurface,
+                                      leading: GlyphIcon(
+                                        KonekoGlyphs.externalLink,
+                                        size: 13.5,
+                                        color: colorScheme.onSurfaceVariant,
+                                      ),
+                                      onPressed: () => launchUrl(
+                                        Uri.parse('https://bgm.tv/dev/app'),
+                                        mode: LaunchMode.externalApplication,
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: _buildPrimaryAction(
+                                        context,
+                                        label: '同步收藏与进度',
+                                        glyph: KonekoGlyphs.sync,
+                                        onPressed: _busy || sync == null
+                                            ? null
+                                            : () => _run(
+                                                sync.syncBangumi,
+                                                'Bangumi',
+                                              ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ],
                             ),
-                            _buildField(
-                              context,
-                              controller: _davUrl,
-                              label: '服务器地址',
-                              hint: 'https://dav.example.com/koneko/',
-                              keyboardType: TextInputType.url,
+                          ),
+                          const SizedBox(height: 12),
+                          const ListHeader(title: 'WebDAV'),
+                          KonekoCard(
+                            corner: 26,
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              spacing: 14,
+                              children: [
+                                Row(
+                                  spacing: 10,
+                                  children: [
+                                    Container(
+                                      width: 36,
+                                      height: 36,
+                                      decoration: BoxDecoration(
+                                        color: colorScheme.primary.withValues(
+                                          alpha: 0.14,
+                                        ),
+                                        borderRadius: AppRadius.all(12),
+                                      ),
+                                      child: Center(
+                                        child: GlyphIcon(
+                                          KonekoGlyphs.cloud,
+                                          size: 18,
+                                          color: colorScheme.primary,
+                                        ),
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        spacing: 2,
+                                        children: [
+                                          Text(
+                                            'WebDAV 云盘',
+                                            style: AppTextStyle.headline
+                                                .of(context, emphasized: true)
+                                                .copyWith(
+                                                  color: colorScheme.onSurface,
+                                                ),
+                                          ),
+                                          Text(
+                                            '跨设备备份追番收藏与历史记录',
+                                            style: AppTextStyle.caption1
+                                                .of(context)
+                                                .copyWith(
+                                                  color: colorScheme
+                                                      .onSurfaceVariant,
+                                                ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    ValueListenableBuilder<TextEditingValue>(
+                                      valueListenable: _davUrl,
+                                      builder: (context, value, _) =>
+                                          _buildStatusPill(
+                                            context,
+                                            value.text.trim().isNotEmpty,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                                _buildField(
+                                  context,
+                                  controller: _davUrl,
+                                  label: '服务器地址',
+                                  hint: 'https://dav.example.com/koneko/',
+                                  keyboardType: TextInputType.url,
+                                ),
+                                _buildField(
+                                  context,
+                                  controller: _davUser,
+                                  label: '用户名',
+                                  hint: '输入账号',
+                                ),
+                                _buildField(
+                                  context,
+                                  controller: _davPassword,
+                                  label: '密码',
+                                  hint: '输入密码或应用专用密码',
+                                  secret: true,
+                                ),
+                                _buildPrimaryAction(
+                                  context,
+                                  label: '立即同步',
+                                  glyph: KonekoGlyphs.cloud,
+                                  onPressed: _busy || sync == null
+                                      ? null
+                                      : () => _run(sync.syncWebDav, 'WebDAV'),
+                                ),
+                              ],
                             ),
-                            _buildField(
-                              context,
-                              controller: _davUser,
-                              label: '用户名',
-                              hint: '输入账号',
-                            ),
-                            _buildField(
-                              context,
-                              controller: _davPassword,
-                              label: '密码',
-                              hint: '输入密码或应用专用密码',
-                              secret: true,
-                            ),
-                            _buildPrimaryAction(
-                              context,
-                              label: '立即同步',
-                              glyph: KonekoGlyphs.cloud,
-                              onPressed: _busy || sync == null
-                                  ? null
-                                  : () => _run(sync.syncWebDav, 'WebDAV'),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+      ),
     );
   }
 }

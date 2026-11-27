@@ -35,8 +35,6 @@ class DanmakuSettingsPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final colorScheme = context.colorScheme;
-    final settings = ref.watch(danmakuSettingsProvider);
     final notifier = ref.read(danmakuSettingsProvider.notifier);
 
     return KonekoScaffold(
@@ -52,260 +50,367 @@ class DanmakuSettingsPage extends ConsumerWidget {
           },
         ),
       ],
-      body: CustomScrollView(
-        slivers: [
-          const KonekoScrollStart(),
-          SliverPadding(
-            padding: EdgeInsets.fromLTRB(
-              16,
-              4,
-              16,
-              32 + MediaQuery.paddingOf(context).bottom,
+      body: ArrivalCacheExtentBuilder(
+        builder: (context, cacheExtent) => CustomScrollView(
+          scrollCacheExtent: cacheExtent,
+          slivers: [
+            const KonekoScrollStart(),
+            SliverPadding(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                4,
+                16,
+                32 + MediaQuery.paddingOf(context).bottom,
+              ),
+              sliver: SliverList.builder(
+                itemCount: 5,
+                itemBuilder: (context, index) => switch (index) {
+                  0 => const _DanmakuPreviewSection(),
+                  1 => const _DanmakuAreaSection(),
+                  2 => const _DanmakuStyleSection(),
+                  3 => const _DanmakuDisplaySection(),
+                  _ => const _DanmakuSourceSection(),
+                },
+              ),
             ),
-            sliver: SliverList(
-              delegate: SliverChildListDelegate([
-                _DanmakuPreviewCard(settings: settings),
-                const ListHeader(title: '显示区域'),
-                KonekoCard(
-                  corner: 24,
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    spacing: 10,
-                    children: [
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          for (final (ratio, label) in _areaPresets)
-                            KonekoChip(
-                              label: label,
-                              height: 32,
-                              fontSize: 12.5,
-                              selected: (settings.area - ratio).abs() < 0.02,
-                              backgroundColor:
-                                  (settings.area - ratio).abs() < 0.02
-                                  ? colorScheme.primary
-                                  : SurfaceLevel.block.colorOf(colorScheme),
-                              onPressed: () => notifier.update(
-                                (s) => s.copyWith(area: ratio),
-                              ),
-                            ),
-                        ],
-                      ),
-                      _SliderRow(
-                        label: '屏幕占比',
-                        valueText: '${(settings.area * 100).round()}%',
-                        value: settings.area,
-                        min: 0.125,
-                        max: 1.0,
-                        onChanged: (v) {
-                          final snapped = (v * 8).round() / 8;
-                          notifier.update((s) => s.copyWith(area: snapped));
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-                const ListHeader(title: '样式'),
-                KonekoCard(
-                  corner: 24,
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    spacing: 10,
-                    children: [
-                      _SliderRow(
-                        label: '字号',
-                        valueText: '${settings.fontSize.round()} px',
-                        value: settings.fontSize,
-                        min: 10,
-                        max: 36,
-                        onChanged: (v) => notifier.update(
-                          (s) => s.copyWith(fontSize: v.roundToDouble()),
-                        ),
-                      ),
-                      _SliderRow(
-                        label: '字重',
-                        valueText: _weightLabel(settings.fontWeight),
-                        value: settings.fontWeight.toDouble(),
-                        min: 1,
-                        max: 9,
-                        onChanged: (v) => notifier.update(
-                          (s) => s.copyWith(fontWeight: v.round()),
-                        ),
-                      ),
-                      _SliderRow(
-                        label: '描边',
-                        valueText: settings.strokeEnabled
-                            ? settings.strokeWidth.toStringAsFixed(1)
-                            : '关',
-                        value: settings.strokeWidth,
-                        min: 0.2,
-                        max: 3.0,
-                        onChanged: settings.strokeEnabled
-                            ? (v) => notifier.update(
-                                (s) => s.copyWith(
-                                  strokeWidth: double.parse(
-                                    v.toStringAsFixed(1),
-                                  ),
-                                ),
-                              )
-                            : null,
-                      ),
-                      _SliderRow(
-                        label: '透明度',
-                        valueText: '${(settings.opacity * 100).round()}%',
-                        value: settings.opacity,
-                        min: 0.1,
-                        max: 1.0,
-                        onChanged: (v) => notifier.update(
-                          (s) => s.copyWith(
-                            opacity: double.parse(v.toStringAsFixed(2)),
-                          ),
-                        ),
-                      ),
-                      _SliderRow(
-                        label: '滚动时长',
-                        valueText: '${settings.duration.round()} 秒',
-                        value: settings.duration,
-                        min: 3,
-                        max: 16,
-                        onChanged: (v) => notifier.update(
-                          (s) => s.copyWith(duration: v.roundToDouble()),
-                        ),
-                      ),
-                      _SliderRow(
-                        label: '行距',
-                        valueText: settings.lineHeight.toStringAsFixed(1),
-                        value: settings.lineHeight,
-                        min: 0.8,
-                        max: 2.2,
-                        onChanged: (v) => notifier.update(
-                          (s) => s.copyWith(
-                            lineHeight: double.parse(v.toStringAsFixed(1)),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const ListHeader(title: '显示'),
-                KonekoGroup(
-                  items: [
-                    DecorationListItem(
-                      title: const Text('滚动弹幕'),
-                      trailing: Switch(
-                        value: settings.showScroll,
-                        onChanged: (v) =>
-                            notifier.update((s) => s.copyWith(showScroll: v)),
-                      ),
-                      onPressed: () => notifier.update(
-                        (s) => s.copyWith(showScroll: !s.showScroll),
-                      ),
-                    ),
-                    DecorationListItem(
-                      title: const Text('顶部弹幕'),
-                      trailing: Switch(
-                        value: settings.showTop,
-                        onChanged: (v) =>
-                            notifier.update((s) => s.copyWith(showTop: v)),
-                      ),
-                      onPressed: () => notifier.update(
-                        (s) => s.copyWith(showTop: !s.showTop),
-                      ),
-                    ),
-                    DecorationListItem(
-                      title: const Text('底部弹幕'),
-                      trailing: Switch(
-                        value: settings.showBottom,
-                        onChanged: (v) =>
-                            notifier.update((s) => s.copyWith(showBottom: v)),
-                      ),
-                      onPressed: () => notifier.update(
-                        (s) => s.copyWith(showBottom: !s.showBottom),
-                      ),
-                    ),
-                    DecorationListItem(
-                      title: const Text('描边'),
-                      trailing: Switch(
-                        value: settings.strokeEnabled,
-                        onChanged: (v) => notifier.update(
-                          (s) => s.copyWith(strokeEnabled: v),
-                        ),
-                      ),
-                      onPressed: () => notifier.update(
-                        (s) => s.copyWith(strokeEnabled: !s.strokeEnabled),
-                      ),
-                    ),
-                    DecorationListItem(
-                      title: const Text('彩色弹幕'),
-                      trailing: Switch(
-                        value: settings.colorful,
-                        onChanged: (v) =>
-                            notifier.update((s) => s.copyWith(colorful: v)),
-                      ),
-                      onPressed: () => notifier.update(
-                        (s) => s.copyWith(colorful: !s.colorful),
-                      ),
-                    ),
-                    DecorationListItem(
-                      title: const Text('海量模式'),
-                      trailing: Switch(
-                        value: settings.massiveMode,
-                        onChanged: (v) =>
-                            notifier.update((s) => s.copyWith(massiveMode: v)),
-                      ),
-                      onPressed: () => notifier.update(
-                        (s) => s.copyWith(massiveMode: !s.massiveMode),
-                      ),
-                    ),
-                  ],
-                ),
-                const ListHeader(title: '来源'),
-                KonekoGroup(
-                  items: [
-                    DecorationListItem(
-                      title: const Text('B站'),
-                      trailing: Switch(
-                        value: settings.sourceBilibili,
-                        onChanged: (v) => notifier.update(
-                          (s) => s.copyWith(sourceBilibili: v),
-                        ),
-                      ),
-                      onPressed: () => notifier.update(
-                        (s) => s.copyWith(sourceBilibili: !s.sourceBilibili),
-                      ),
-                    ),
-                    DecorationListItem(
-                      title: const Text('巴哈姆特'),
-                      trailing: Switch(
-                        value: settings.sourceGamer,
-                        onChanged: (v) =>
-                            notifier.update((s) => s.copyWith(sourceGamer: v)),
-                      ),
-                      onPressed: () => notifier.update(
-                        (s) => s.copyWith(sourceGamer: !s.sourceGamer),
-                      ),
-                    ),
-                    DecorationListItem(
-                      title: const Text('弹弹Play'),
-                      trailing: Switch(
-                        value: settings.sourceDandan,
-                        onChanged: (v) =>
-                            notifier.update((s) => s.copyWith(sourceDandan: v)),
-                      ),
-                      onPressed: () => notifier.update(
-                        (s) => s.copyWith(sourceDandan: !s.sourceDandan),
-                      ),
-                    ),
-                  ],
-                ),
-              ]),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
+    );
+  }
+}
+
+class _DanmakuPreviewSection extends ConsumerWidget {
+  const _DanmakuPreviewSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(danmakuSettingsProvider);
+    return RepaintBoundary(child: _DanmakuPreviewCard(settings: settings));
+  }
+}
+
+class _DanmakuAreaSection extends ConsumerWidget {
+  const _DanmakuAreaSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colorScheme = context.colorScheme;
+    final area = ref.watch(danmakuSettingsProvider.select((s) => s.area));
+    final notifier = ref.read(danmakuSettingsProvider.notifier);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const ListHeader(title: '显示区域'),
+        KonekoCard(
+          corner: 24,
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            spacing: 10,
+            children: [
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final (ratio, label) in DanmakuSettingsPage._areaPresets)
+                    KonekoChip(
+                      label: label,
+                      height: 32,
+                      fontSize: 12.5,
+                      selected: (area - ratio).abs() < 0.02,
+                      backgroundColor: (area - ratio).abs() < 0.02
+                          ? colorScheme.primary
+                          : SurfaceLevel.block.colorOf(colorScheme),
+                      onPressed: () =>
+                          notifier.update((s) => s.copyWith(area: ratio)),
+                    ),
+                ],
+              ),
+              _SliderRow(
+                label: '屏幕占比',
+                valueText: '${(area * 100).round()}%',
+                value: area,
+                min: 0.125,
+                max: 1.0,
+                onChanged: (v) {
+                  final snapped = (v * 8).round() / 8;
+                  notifier.update((s) => s.copyWith(area: snapped));
+                },
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DanmakuStyleSection extends ConsumerWidget {
+  const _DanmakuStyleSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final (
+      fontSize,
+      fontWeight,
+      strokeEnabled,
+      strokeWidth,
+      opacity,
+      duration,
+      lineHeight,
+    ) = ref.watch(
+      danmakuSettingsProvider.select(
+        (s) => (
+          s.fontSize,
+          s.fontWeight,
+          s.strokeEnabled,
+          s.strokeWidth,
+          s.opacity,
+          s.duration,
+          s.lineHeight,
+        ),
+      ),
+    );
+    final notifier = ref.read(danmakuSettingsProvider.notifier);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const ListHeader(title: '样式'),
+        KonekoCard(
+          corner: 24,
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            spacing: 10,
+            children: [
+              _SliderRow(
+                label: '字号',
+                valueText: '${fontSize.round()} px',
+                value: fontSize,
+                min: 10,
+                max: 36,
+                onChanged: (v) => notifier.update(
+                  (s) => s.copyWith(fontSize: v.roundToDouble()),
+                ),
+              ),
+              _SliderRow(
+                label: '字重',
+                valueText: DanmakuSettingsPage._weightLabel(fontWeight),
+                value: fontWeight.toDouble(),
+                min: 1,
+                max: 9,
+                onChanged: (v) =>
+                    notifier.update((s) => s.copyWith(fontWeight: v.round())),
+              ),
+              _SliderRow(
+                label: '描边',
+                valueText: strokeEnabled ? strokeWidth.toStringAsFixed(1) : '关',
+                value: strokeWidth,
+                min: 0.2,
+                max: 3.0,
+                onChanged: strokeEnabled
+                    ? (v) => notifier.update(
+                        (s) => s.copyWith(
+                          strokeWidth: double.parse(v.toStringAsFixed(1)),
+                        ),
+                      )
+                    : null,
+              ),
+              _SliderRow(
+                label: '透明度',
+                valueText: '${(opacity * 100).round()}%',
+                value: opacity,
+                min: 0.1,
+                max: 1.0,
+                onChanged: (v) => notifier.update(
+                  (s) =>
+                      s.copyWith(opacity: double.parse(v.toStringAsFixed(2))),
+                ),
+              ),
+              _SliderRow(
+                label: '滚动时长',
+                valueText: '${duration.round()} 秒',
+                value: duration,
+                min: 3,
+                max: 16,
+                onChanged: (v) => notifier.update(
+                  (s) => s.copyWith(duration: v.roundToDouble()),
+                ),
+              ),
+              _SliderRow(
+                label: '行距',
+                valueText: lineHeight.toStringAsFixed(1),
+                value: lineHeight,
+                min: 0.8,
+                max: 2.2,
+                onChanged: (v) => notifier.update(
+                  (s) => s.copyWith(
+                    lineHeight: double.parse(v.toStringAsFixed(1)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DanmakuDisplaySection extends ConsumerWidget {
+  const _DanmakuDisplaySection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final (
+      showScroll,
+      showTop,
+      showBottom,
+      strokeEnabled,
+      colorful,
+      massiveMode,
+    ) = ref.watch(
+      danmakuSettingsProvider.select(
+        (s) => (
+          s.showScroll,
+          s.showTop,
+          s.showBottom,
+          s.strokeEnabled,
+          s.colorful,
+          s.massiveMode,
+        ),
+      ),
+    );
+    final notifier = ref.read(danmakuSettingsProvider.notifier);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const ListHeader(title: '显示'),
+        KonekoGroup(
+          items: [
+            DecorationListItem(
+              title: const Text('滚动弹幕'),
+              trailing: Switch(
+                value: showScroll,
+                onChanged: (v) =>
+                    notifier.update((s) => s.copyWith(showScroll: v)),
+              ),
+              onPressed: () =>
+                  notifier.update((s) => s.copyWith(showScroll: !s.showScroll)),
+            ),
+            DecorationListItem(
+              title: const Text('顶部弹幕'),
+              trailing: Switch(
+                value: showTop,
+                onChanged: (v) =>
+                    notifier.update((s) => s.copyWith(showTop: v)),
+              ),
+              onPressed: () =>
+                  notifier.update((s) => s.copyWith(showTop: !s.showTop)),
+            ),
+            DecorationListItem(
+              title: const Text('底部弹幕'),
+              trailing: Switch(
+                value: showBottom,
+                onChanged: (v) =>
+                    notifier.update((s) => s.copyWith(showBottom: v)),
+              ),
+              onPressed: () =>
+                  notifier.update((s) => s.copyWith(showBottom: !s.showBottom)),
+            ),
+            DecorationListItem(
+              title: const Text('描边'),
+              trailing: Switch(
+                value: strokeEnabled,
+                onChanged: (v) =>
+                    notifier.update((s) => s.copyWith(strokeEnabled: v)),
+              ),
+              onPressed: () => notifier.update(
+                (s) => s.copyWith(strokeEnabled: !s.strokeEnabled),
+              ),
+            ),
+            DecorationListItem(
+              title: const Text('彩色弹幕'),
+              trailing: Switch(
+                value: colorful,
+                onChanged: (v) =>
+                    notifier.update((s) => s.copyWith(colorful: v)),
+              ),
+              onPressed: () =>
+                  notifier.update((s) => s.copyWith(colorful: !s.colorful)),
+            ),
+            DecorationListItem(
+              title: const Text('海量模式'),
+              trailing: Switch(
+                value: massiveMode,
+                onChanged: (v) =>
+                    notifier.update((s) => s.copyWith(massiveMode: v)),
+              ),
+              onPressed: () => notifier.update(
+                (s) => s.copyWith(massiveMode: !s.massiveMode),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _DanmakuSourceSection extends ConsumerWidget {
+  const _DanmakuSourceSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final (sourceBilibili, sourceGamer, sourceDandan) = ref.watch(
+      danmakuSettingsProvider.select(
+        (s) => (s.sourceBilibili, s.sourceGamer, s.sourceDandan),
+      ),
+    );
+    final notifier = ref.read(danmakuSettingsProvider.notifier);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const ListHeader(title: '来源'),
+        KonekoGroup(
+          items: [
+            DecorationListItem(
+              title: const Text('B站'),
+              trailing: Switch(
+                value: sourceBilibili,
+                onChanged: (v) =>
+                    notifier.update((s) => s.copyWith(sourceBilibili: v)),
+              ),
+              onPressed: () => notifier.update(
+                (s) => s.copyWith(sourceBilibili: !s.sourceBilibili),
+              ),
+            ),
+            DecorationListItem(
+              title: const Text('巴哈姆特'),
+              trailing: Switch(
+                value: sourceGamer,
+                onChanged: (v) =>
+                    notifier.update((s) => s.copyWith(sourceGamer: v)),
+              ),
+              onPressed: () => notifier.update(
+                (s) => s.copyWith(sourceGamer: !s.sourceGamer),
+              ),
+            ),
+            DecorationListItem(
+              title: const Text('弹弹Play'),
+              trailing: Switch(
+                value: sourceDandan,
+                onChanged: (v) =>
+                    notifier.update((s) => s.copyWith(sourceDandan: v)),
+              ),
+              onPressed: () => notifier.update(
+                (s) => s.copyWith(sourceDandan: !s.sourceDandan),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

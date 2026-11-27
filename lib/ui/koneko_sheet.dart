@@ -145,12 +145,8 @@ class KonekoSheetFrame extends StatelessWidget {
       ),
     );
 
-    if (isBottom) {
-      return ClipRSuperellipse(
-        borderRadius: bottomSheetRadiusOf(context),
-        child: content,
-      );
-    }
+    // Bottom sheets are already clipped by SnapSheet's dynamic superellipse
+    // viewport layer, avoiding a redundant nested ClipRSuperellipse pass.
     return content;
   }
 }
