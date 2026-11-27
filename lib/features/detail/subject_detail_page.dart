@@ -35,6 +35,8 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
   _DetailSection _section = _DetailSection.play;
   bool _sectionsReady = false;
   bool _peopleVisited = false;
+  final _scroll = ScrollController(keepScrollOffset: false);
+  late final _scrollPhysics = _DetailScrollPhysics(() => routeSettled);
   final _liveProbes = ValueNotifier<Map<String, RuleProbeResult>>(const {});
   int _probeGeneration = 0;
   int? _probedSubjectId;
@@ -65,6 +67,7 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
   void dispose() {
     _probeGeneration++;
     _liveProbes.dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -273,6 +276,8 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
 
             return ArrivalCacheExtentBuilder(
               builder: (context, cacheExtent) => CustomScrollView(
+                controller: _scroll,
+                physics: _scrollPhysics,
                 scrollCacheExtent: cacheExtent,
                 slivers: [
                   const KonekoScrollStart(),
@@ -462,6 +467,20 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
       ),
     );
   }
+}
+
+class _DetailScrollPhysics extends ScrollPhysics {
+  const _DetailScrollPhysics(this.isSettled, {super.parent});
+
+  final bool Function() isSettled;
+
+  @override
+  _DetailScrollPhysics applyTo(ScrollPhysics? ancestor) =>
+      _DetailScrollPhysics(isSettled, parent: buildParent(ancestor));
+
+  @override
+  bool get allowImplicitScrolling =>
+      isSettled() && super.allowImplicitScrolling;
 }
 
 class _HeroCard extends StatefulWidget {

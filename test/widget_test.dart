@@ -321,6 +321,40 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('a long-title detail starts and stays at the top on arrival', (
+    tester,
+  ) async {
+    _setViewport(tester, const Size(360, 460));
+    final catalog = _LongTitleCatalog();
+    addTearDown(catalog.events.close);
+    await tester.pumpWidget(_testApp(catalog: catalog));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text(_LongTitleCatalog.title).first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 16));
+
+    final detail = find.byType(SubjectDetailPage);
+    final scrollable = find
+        .descendant(of: detail, matching: find.byType(Scrollable))
+        .first;
+    final position = tester.state<ScrollableState>(scrollable).position;
+    final segment = find.descendant(of: detail, matching: find.text('评论'));
+    expect(tester.getBottomLeft(segment).dy, greaterThan(460));
+    expect(position.pixels, 0);
+    tester.renderObject(segment).showOnScreen();
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(position.pixels, 0);
+
+    catalog.detail.complete();
+    await tester.pumpAndSettle();
+    expect(position.pixels, 0);
+    await tester.drag(scrollable, const Offset(0, -150));
+    await tester.pumpAndSettle();
+    expect(position.pixels, greaterThan(0));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('a hidden home tab does not refresh its feed', (tester) async {
     _setViewport(tester, const Size(420, 880));
     final catalog = _PendingCatalog();
@@ -464,4 +498,41 @@ class _PendingCatalog extends MockCatalogRepository implements OnlineCatalog {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _LongTitleCatalog extends _PendingCatalog {
+  static const title = '乱世千金倪亚‧利斯顿转生为娇弱千金的弑神武人华丽无双录';
+  static const id = 624085;
+  final detail = Completer<void>();
+  bool _loaded = false;
+
+  @override
+  List<AnimeSubject> getTrending({String? tag}) => [getSubjectById(id)!];
+
+  @override
+  AnimeSubject? getSubjectById(int subjectId) => subjectId != id
+      ? super.getSubjectById(subjectId)
+      : AnimeSubject(
+          subjectId: id,
+          title: title,
+          originalTitle: '凶乱令嬢ニア・リストン 病弱令嬢に転生した神殺しの武人の華麗なる無双録',
+          summary: List.filled(_loaded ? 48 : 32, '转生之后展开的新冒险。').join(),
+          score: 6.8,
+          rank: 3549,
+          year: 2026,
+          seasonLabel: '2026 年 10 月',
+          weekday: 2,
+          airedEpisodes: 9,
+          totalEpisodes: 25,
+          tags: const ['动画', '转生', '战斗'],
+          studio: _loaded ? '动画制作' : '',
+          poster: super.getSubjectById(1001)!.poster,
+        );
+
+  @override
+  Future<void> loadSubject(int subjectId, {bool includeExtras = true}) async {
+    await detail.future;
+    _loaded = true;
+    events.add(null);
+  }
 }
