@@ -45,9 +45,24 @@ Future<void> main() async {
               NativeDanmaku(items: items, status: status, settings: settings),
         ),
         verifyWebViewBuilderProvider.overrideWithValue(
-          (initialUrl, onReady) => InteractiveVerifyWebView(
+          ({
+            required initialUrl,
+            required onReady,
+            verifyHint,
+            onProgress,
+            onCaptchaImage,
+            onCaptchaResolved,
+          }) => InteractiveVerifyWebView(
             initialUrl: initialUrl,
-            onControllerReady: onReady,
+            verifyHint: verifyHint,
+            onProgress: onProgress,
+            onCaptchaImage: onCaptchaImage,
+            onCaptchaResolved: onCaptchaResolved,
+            onSessionReady: (session) => onReady((
+              harvest: session.harvest,
+              reload: session.reload,
+              submitCaptchaCode: session.submitCaptchaCode,
+            )),
           ),
         ),
       ],

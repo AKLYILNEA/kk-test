@@ -170,13 +170,15 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
     AnimeSubject subject,
     String ruleId,
     String ruleName,
-    Uri verifyUrl,
-  ) async {
+    Uri verifyUrl, {
+    RuleVerifyHint? verifyHint,
+  }) async {
     final verified = await showRuleVerifySheet(
       context: context,
       ruleId: ruleId,
       ruleName: ruleName,
       verifyUrl: verifyUrl,
+      verifyHint: verifyHint,
     );
     if (!mounted || verified != true) return;
     showKonekoBanner(
@@ -313,8 +315,15 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
                   unawaited(_probeAllEnabledRules(subject));
                 }
               },
-              onVerify: (ruleId, ruleName, verifyUrl) =>
-                  unawaited(_verifyRule(subject, ruleId, ruleName, verifyUrl)),
+              onVerify: (ruleId, ruleName, verifyUrl, verifyHint) => unawaited(
+                _verifyRule(
+                  subject,
+                  ruleId,
+                  ruleName,
+                  verifyUrl,
+                  verifyHint: verifyHint,
+                ),
+              ),
               onToggleSelect: (ruleId, ruleName) {
                 if (_selectedRule.value.$1 == ruleId) {
                   _selectedRule.value = ('', '');
@@ -1208,15 +1217,9 @@ class _CommentsSectionSliver extends StatelessWidget {
                             .copyWith(color: colorScheme.onSurface),
                       ),
                     ),
-                    KonekoChip(
+                    KonekoRefreshChip(
                       label: '刷新',
-                      height: 28,
-                      fontSize: 12,
-                      leading: GlyphIcon(
-                        KonekoGlyphs.refresh,
-                        size: 13,
-                        color: colorScheme.primary,
-                      ),
+                      loading: commentsAsync.isLoading,
                       onPressed: onRefresh,
                     ),
                   ],
@@ -1391,7 +1394,13 @@ class _RuleSourcesCard extends StatelessWidget {
   final String selectedRuleName;
   final VoidCallback onRefresh;
   final VoidCallback onManage;
-  final void Function(String ruleId, String ruleName, Uri verifyUrl) onVerify;
+  final void Function(
+    String ruleId,
+    String ruleName,
+    Uri verifyUrl,
+    RuleVerifyHint? verifyHint,
+  )
+  onVerify;
   final void Function(String ruleId, String ruleName) onToggleSelect;
 
   @override
@@ -1400,6 +1409,11 @@ class _RuleSourcesCard extends StatelessWidget {
     final hasAny = hasLiveResolver
         ? enabledRules.isNotEmpty
         : mockProbes.isNotEmpty;
+    final anySearching =
+        hasLiveResolver &&
+        enabledRules.any(
+          (rule) => liveProbes[rule.id]?.state == RuleProbeState.searching,
+        );
 
     return KonekoCard(
       corner: 30,
@@ -1419,15 +1433,10 @@ class _RuleSourcesCard extends StatelessWidget {
                 ),
               ),
               if (hasLiveResolver && enabledRules.isNotEmpty)
-                KonekoChip(
+                KonekoRefreshChip(
                   label: '重新检测',
-                  height: 28,
-                  fontSize: 12,
-                  leading: GlyphIcon(
-                    KonekoGlyphs.refresh,
-                    size: 12,
-                    color: colorScheme.primary,
-                  ),
+                  loadingLabel: '检测中',
+                  loading: anySearching,
                   onPressed: onRefresh,
                 ),
             ],
@@ -1524,7 +1533,7 @@ class _RuleSourcesCard extends StatelessWidget {
       onPressed: () {
         if (state == RuleProbeState.captchaRequired &&
             probe?.verifyUrl != null) {
-          onVerify(rule.id, rule.name, probe!.verifyUrl!);
+          onVerify(rule.id, rule.name, probe!.verifyUrl!, probe.verifyHint);
         } else {
           onToggleSelect(rule.id, rule.name);
         }
@@ -1592,7 +1601,12 @@ class _RuleSourcesCard extends StatelessWidget {
               fontSize: 11.5,
               backgroundColor: colorScheme.primary,
               foregroundColor: colorScheme.onPrimary,
-              onPressed: () => onVerify(rule.id, rule.name, probe!.verifyUrl!),
+              onPressed: () => onVerify(
+                rule.id,
+                rule.name,
+                probe!.verifyUrl!,
+                probe.verifyHint,
+              ),
             )
           else if (state == RuleProbeState.searching)
             const KonekoSkeletonBox(width: 56, height: 24, corner: 12)

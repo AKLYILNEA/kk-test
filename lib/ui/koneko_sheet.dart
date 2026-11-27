@@ -105,7 +105,7 @@ class KonekoSheetFrame extends StatelessWidget {
                       spacing: 6,
                       children: [
                         for (final action in actions)
-                          AppBarActionButton(data: action),
+                          KonekoBarActionButton(data: action),
                         AppBarActionButton(
                           data: IconButtonData(
                             glyph: Glyphs.close,

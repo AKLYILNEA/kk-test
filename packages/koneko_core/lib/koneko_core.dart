@@ -15,7 +15,8 @@ import 'src/tracking.dart';
 
 export 'src/app_release.dart' show findKonekoUpdate;
 export 'src/player.dart' show NativePlayback, NativeDanmaku;
-export 'src/verify_webview.dart' show InteractiveVerifyWebView;
+export 'src/verify_webview.dart'
+    show InteractiveVerifyWebView, VerifyWebViewSession;
 
 class KonekoCore {
   KonekoCore._({

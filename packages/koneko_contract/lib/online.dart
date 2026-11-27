@@ -254,6 +254,26 @@ class RuleSearchHit {
   final String sourceUrl;
 }
 
+/// Optional XPath descriptors allowing Koneko to present a native image-captcha
+/// input UI (aligned with Kazumi) so the user can read and enter the code
+/// directly without zooming an embedded desktop webpage.
+class RuleVerifyHint {
+  const RuleVerifyHint({
+    required this.imageXpath,
+    required this.inputXpath,
+    required this.buttonXpath,
+  });
+
+  final String imageXpath;
+  final String inputXpath;
+  final String buttonXpath;
+
+  bool get supportsImageCaptcha =>
+      imageXpath.trim().isNotEmpty &&
+      inputXpath.trim().isNotEmpty &&
+      buttonXpath.trim().isNotEmpty;
+}
+
 class RuleProbeResult {
   const RuleProbeResult({
     required this.ruleId,
@@ -262,6 +282,7 @@ class RuleProbeResult {
     this.hits = const [],
     this.message = '',
     this.verifyUrl,
+    this.verifyHint,
     this.latencyMs = 0,
   });
 
@@ -271,6 +292,7 @@ class RuleProbeResult {
   final List<RuleSearchHit> hits;
   final String message;
   final Uri? verifyUrl;
+  final RuleVerifyHint? verifyHint;
   final int latencyMs;
 }
 

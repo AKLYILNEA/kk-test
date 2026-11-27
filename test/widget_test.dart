@@ -12,6 +12,7 @@ import 'package:koneko/features/about/about_page.dart';
 import 'package:koneko/features/detail/subject_detail_page.dart';
 import 'package:koneko/features/discover/discover_page.dart';
 import 'package:koneko/features/player/player_page.dart';
+import 'package:koneko/features/player/rule_verify_page.dart';
 import 'package:koneko/features/theme/theme_page.dart';
 import 'package:koneko/features/theme/theme_preview.dart';
 import 'package:koneko/main.dart';
@@ -715,6 +716,86 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'unified refresh chip animates and Kazumi-style verify sheet toggles modes',
+    (tester) async {
+      _setViewport(tester, const Size(420, 880));
+      var refreshCount = 0;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            verifyWebViewBuilderProvider.overrideWithValue(
+              ({
+                required initialUrl,
+                required onReady,
+                verifyHint,
+                onProgress,
+                onCaptchaImage,
+                onCaptchaResolved,
+              }) => const SizedBox.expand(),
+            ),
+          ],
+          child: PrismApp(
+            theme: buildKonekoTheme(
+              settings: const ThemeSettings(),
+              brightness: Brightness.light,
+            ),
+            home: Builder(
+              builder: (context) => Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  spacing: 12,
+                  children: [
+                    KonekoRefreshChip(
+                      label: '刷新测试',
+                      onPressed: () => refreshCount++,
+                    ),
+                    KonekoChip(
+                      label: '打开验证',
+                      onPressed: () => unawaited(
+                        showRuleVerifySheet(
+                          context: context,
+                          ruleId: 'demo',
+                          ruleName: '测试源',
+                          verifyUrl: Uri.parse('https://example.com/search'),
+                          verifyHint: const RuleVerifyHint(
+                            imageXpath: '//img[@id="captcha"]',
+                            inputXpath: '//input[@name="code"]',
+                            buttonXpath: '//button[@type="submit"]',
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(KonekoSpinningRefreshIcon), findsOneWidget);
+      await tester.tap(find.text('刷新测试'));
+      await tester.pumpAndSettle();
+      expect(refreshCount, 1);
+
+      await tester.tap(find.text('打开验证'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('图形验证码'), findsOneWidget);
+      expect(find.text('换一张'), findsOneWidget);
+      expect(find.text('提交验证'), findsOneWidget);
+      expect(find.text('网页模式'), findsOneWidget);
+
+      await tester.tap(find.text('网页模式'));
+      await tester.pump();
+      expect(find.text('简洁模式'), findsOneWidget);
+      expect(find.text('已完成验证'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'schedule and library tabs render entrance skeletons before settling live',

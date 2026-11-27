@@ -269,15 +269,13 @@ class _AboutPageState extends ConsumerState<AboutPage>
           ],
         ),
         const SizedBox(height: 16),
-        KonekoChip(
-          label: _checkingUpdate ? '正在检查更新...' : '检查更新',
+        KonekoRefreshChip(
+          label: '检查更新',
+          loadingLabel: '正在检查更新…',
+          loading: _checkingUpdate,
           height: 40,
           fontSize: 13.5,
-          leading: GlyphIcon(
-            KonekoGlyphs.refresh,
-            size: 16,
-            color: colorScheme.primary,
-          ),
+          iconSize: 16,
           backgroundColor: isDark
               ? colorScheme.surfaceContainer.withValues(alpha: 0.75)
               : const Color(0xD8FFFFFF),

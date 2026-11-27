@@ -486,6 +486,7 @@ class _RuleStorePageState extends ConsumerState<_RuleStorePage>
         IconButtonData(
           glyph: KonekoGlyphs.refresh,
           tooltip: '重新加载',
+          isLoading: _loading,
           onPressed: () {
             final url = _customRepoUrl.trim();
             _reload(repository: url.isEmpty ? null : url);
@@ -559,17 +560,12 @@ class _RuleStorePageState extends ConsumerState<_RuleStorePage>
                             spacing: 8,
                             runSpacing: 8,
                             children: [
-                              KonekoChip(
+                              KonekoRefreshChip(
                                 label: '重新加载',
                                 height: 32,
                                 fontSize: 12.5,
-                                backgroundColor: colorScheme.primary,
-                                foregroundColor: colorScheme.onPrimary,
-                                leading: GlyphIcon(
-                                  KonekoGlyphs.refresh,
-                                  size: 13,
-                                  color: colorScheme.onPrimary,
-                                ),
+                                prominent: true,
+                                loading: _loading,
                                 onPressed: () {
                                   final url = _customRepoUrl.trim();
                                   _reload(repository: url.isEmpty ? null : url);

@@ -70,6 +70,7 @@ class KonekoCard extends StatelessWidget {
     this.corner = 26,
     this.onPressed,
     this.color,
+    this.borderSide,
     this.clip = false,
   });
 
@@ -78,13 +79,17 @@ class KonekoCard extends StatelessWidget {
   final double corner;
   final VoidCallback? onPressed;
   final Color? color;
+  final BorderSide? borderSide;
   final bool clip;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
     final fill = color ?? SurfaceLevel.card.colorOf(colorScheme);
-    final shape = SuperellipseBorder(borderRadius: AppRadius.all(corner));
+    final shape = SuperellipseBorder(
+      borderRadius: AppRadius.all(corner),
+      side: borderSide ?? BorderSide.none,
+    );
     final content = SurfaceScope(
       level: SurfaceLevel.card,
       child: Padding(padding: padding, child: child),
@@ -130,6 +135,7 @@ class KonekoBlock extends StatelessWidget {
     this.onPressed,
     this.selected = false,
     this.color,
+    this.borderSide,
   });
 
   final Widget child;
@@ -138,6 +144,7 @@ class KonekoBlock extends StatelessWidget {
   final VoidCallback? onPressed;
   final bool selected;
   final Color? color;
+  final BorderSide? borderSide;
 
   @override
   Widget build(BuildContext context) {
@@ -147,7 +154,10 @@ class KonekoBlock extends StatelessWidget {
         (selected
             ? colorScheme.primary.withValues(alpha: 0.14)
             : SurfaceLevel.block.colorOf(colorScheme));
-    final shape = SuperellipseBorder(borderRadius: AppRadius.all(corner));
+    final shape = SuperellipseBorder(
+      borderRadius: AppRadius.all(corner),
+      side: borderSide ?? BorderSide.none,
+    );
     final inner = SurfaceScope(
       level: SurfaceLevel.block,
       child: Padding(padding: padding, child: child),
@@ -600,6 +610,241 @@ class KonekoChip extends StatelessWidget {
         child: Center(widthFactor: 1.0, child: row),
       ),
     );
+  }
+}
+
+/// GPU-composited clockwise spinning refresh glyph used across all refresh
+/// buttons in Koneko. Continuously spins while [spinning] is true, eases to an
+/// upright finish when loading ends, and plays a crisp 360° pulse whenever
+/// [pulse] increments.
+class KonekoSpinningRefreshIcon extends StatefulWidget {
+  const KonekoSpinningRefreshIcon({
+    super.key,
+    this.spinning = false,
+    this.pulse = 0,
+    this.size,
+    this.color,
+  });
+
+  final bool spinning;
+  final int pulse;
+  final double? size;
+  final Color? color;
+
+  @override
+  State<KonekoSpinningRefreshIcon> createState() =>
+      _KonekoSpinningRefreshIconState();
+}
+
+class _KonekoSpinningRefreshIconState extends State<KonekoSpinningRefreshIcon>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 760),
+  );
+  bool _animDisabled = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _animDisabled = MediaQuery.disableAnimationsOf(context);
+    if (_animDisabled) {
+      _controller.stop();
+      _controller.value = 0;
+    } else if (widget.spinning && !_controller.isAnimating) {
+      _controller.repeat();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant KonekoSpinningRefreshIcon oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_animDisabled) {
+      _controller.stop();
+      _controller.value = 0;
+      return;
+    }
+    if (widget.spinning && !oldWidget.spinning) {
+      _controller.repeat();
+    } else if (!widget.spinning && oldWidget.spinning) {
+      _finishGracefully();
+    } else if (!widget.spinning && widget.pulse != oldWidget.pulse) {
+      _runPulse();
+    }
+  }
+
+  void _finishGracefully() {
+    if (!_controller.isAnimating && _controller.value == 0) return;
+    final remaining = (1.0 - _controller.value).clamp(0.15, 1.0);
+    unawaited(
+      _controller
+          .animateTo(
+            1.0,
+            duration: Duration(milliseconds: (420 * remaining).round()),
+            curve: Curves.easeOutCubic,
+          )
+          .then((_) {
+            if (mounted && !widget.spinning) _controller.value = 0;
+          }),
+    );
+  }
+
+  void _runPulse() {
+    _controller.value = 0;
+    unawaited(
+      _controller
+          .animateTo(
+            1.0,
+            duration: const Duration(milliseconds: 540),
+            curve: Curves.easeOutCubic,
+          )
+          .then((_) {
+            if (mounted && !widget.spinning) _controller.value = 0;
+          }),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final glyph = GlyphIcon(
+      KonekoGlyphs.refresh,
+      size: widget.size,
+      color: widget.color,
+    );
+    if (_animDisabled) return glyph;
+    return RotationTransition(turns: _controller, child: glyph);
+  }
+}
+
+/// Unified FlClash-styled refresh pill button shared across cards, sheets, and
+/// empty/error states. Tapping always triggers a smooth 360° spin and stays
+/// continuously spinning while [loading] is true.
+class KonekoRefreshChip extends StatefulWidget {
+  const KonekoRefreshChip({
+    super.key,
+    this.label = '刷新',
+    this.loadingLabel,
+    this.loading = false,
+    this.onPressed,
+    this.height = 30,
+    this.fontSize = 12,
+    this.iconSize = 13,
+    this.elevated = false,
+    this.prominent = false,
+    this.backgroundColor,
+    this.foregroundColor,
+  });
+
+  final String label;
+  final String? loadingLabel;
+  final bool loading;
+  final VoidCallback? onPressed;
+  final double height;
+  final double fontSize;
+  final double iconSize;
+  final bool elevated;
+  final bool prominent;
+  final Color? backgroundColor;
+  final Color? foregroundColor;
+
+  @override
+  State<KonekoRefreshChip> createState() => _KonekoRefreshChipState();
+}
+
+class _KonekoRefreshChipState extends State<KonekoRefreshChip> {
+  int _pulse = 0;
+
+  void _handleTap() {
+    if (widget.loading) return;
+    setState(() => _pulse++);
+    widget.onPressed?.call();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = context.colorScheme;
+    final bg =
+        widget.backgroundColor ??
+        (widget.prominent
+            ? colorScheme.primary
+            : widget.elevated
+            ? SurfaceLevel.card.colorOf(colorScheme)
+            : SurfaceLevel.block.colorOf(colorScheme));
+    final fg =
+        widget.foregroundColor ??
+        (widget.prominent ? colorScheme.onPrimary : colorScheme.onSurface);
+    final iconColor = widget.prominent
+        ? fg
+        : widget.foregroundColor ?? colorScheme.primary;
+    final displayLabel = widget.loading && widget.loadingLabel != null
+        ? widget.loadingLabel!
+        : widget.label;
+
+    return KonekoChip(
+      label: displayLabel,
+      height: widget.height,
+      fontSize: widget.fontSize,
+      elevated: widget.elevated,
+      backgroundColor: bg,
+      foregroundColor: fg,
+      leading: KonekoSpinningRefreshIcon(
+        spinning: widget.loading,
+        pulse: _pulse,
+        size: widget.iconSize,
+        color: iconColor,
+      ),
+      onPressed: widget.onPressed == null || widget.loading ? null : _handleTap,
+    );
+  }
+}
+
+/// AppBar / Sheet header action button wrapper that automatically animates
+/// [KonekoGlyphs.refresh] actions with the unified 360° spin both on tap and
+/// while [IconButtonData.isLoading] is true.
+class KonekoBarActionButton extends StatefulWidget {
+  const KonekoBarActionButton({super.key, required this.data, this.icon});
+
+  final IconButtonData data;
+  final Widget? icon;
+
+  @override
+  State<KonekoBarActionButton> createState() => _KonekoBarActionButtonState();
+}
+
+class _KonekoBarActionButtonState extends State<KonekoBarActionButton> {
+  int _pulse = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final data = widget.data;
+    if (widget.icon == null && identical(data.glyph, KonekoGlyphs.refresh)) {
+      final effective = IconButtonData(
+        glyph: data.glyph,
+        tooltip: data.tooltip,
+        isSelected: data.isSelected,
+        isLoading: false,
+        onPressed: data.isLoading || data.onPressed == null
+            ? null
+            : () {
+                setState(() => _pulse++);
+                data.onPressed?.call();
+              },
+      );
+      return AppBarActionButton(
+        data: effective,
+        icon: KonekoSpinningRefreshIcon(
+          spinning: data.isLoading,
+          pulse: _pulse,
+        ),
+      );
+    }
+    return AppBarActionButton(data: data, icon: widget.icon);
   }
 }
 

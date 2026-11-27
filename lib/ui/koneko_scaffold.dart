@@ -4,6 +4,7 @@ import 'dart:ui' show ImageFilter, lerpDouble;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter/widgets.dart';
+import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:prism_ui/icons/icons.dart';
 import 'package:prism_ui/prism_ui.dart';
 import 'package:prism_ui/route_scope.dart';
@@ -186,7 +187,7 @@ class _KonekoScaffoldState extends State<KonekoScaffold>
 
   Widget _button(IconButtonData data, {Widget? icon}) => ElasticPress(
     enabled: !data.isLoading && data.onPressed != null,
-    child: AppBarActionButton(data: data, icon: icon),
+    child: KonekoBarActionButton(data: data, icon: icon),
   );
 
   @override
@@ -284,9 +285,9 @@ class _KonekoScaffoldState extends State<KonekoScaffold>
                           ? _SearchLead(
                               key: _searchLeadKey,
                               motion: _searchMotion,
-                              child: AppBarActionButton(data: data),
+                              child: KonekoBarActionButton(data: data),
                             )
-                          : AppBarActionButton(data: data),
+                          : KonekoBarActionButton(data: data),
                   ],
                 ),
               ),

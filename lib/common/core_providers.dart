@@ -29,13 +29,22 @@ final danmakuViewportProvider =
     Provider<
       Widget Function(List<DanmakuItem>, PlaybackStatus, DanmakuSettings)?
     >((_) => null);
+typedef VerifySessionCallbacks = ({
+  Future<({String cookies, String userAgent})> Function() harvest,
+  Future<void> Function() reload,
+  Future<void> Function(String code) submitCaptchaCode,
+});
+
 final verifyWebViewBuilderProvider =
     Provider<
-      Widget Function(
-        Uri initialUrl,
-        ValueChanged<Future<({String cookies, String userAgent})> Function()>
-        onReady,
-      )?
+      Widget Function({
+        required Uri initialUrl,
+        required ValueChanged<VerifySessionCallbacks> onReady,
+        RuleVerifyHint? verifyHint,
+        ValueChanged<double>? onProgress,
+        ValueChanged<String>? onCaptchaImage,
+        VoidCallback? onCaptchaResolved,
+      })?
     >((_) => null);
 
 final onlineCatalogProvider = Provider<OnlineCatalog?>((ref) {

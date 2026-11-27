@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'bangumi.dart';
 import 'kazumi/modules/search/plugin_search_module.dart';
+import 'kazumi/plugins/anti_crawler_config.dart';
 import 'kazumi/plugins/plugins.dart';
 import 'kazumi/services/plugin/rule_engine.dart';
 import 'rules.dart';
@@ -139,12 +140,26 @@ class KazumiSources implements PlaybackSources {
     }
 
     if (sawCaptcha) {
+      final anti = rule.antiCrawlerConfig;
+      final hint =
+          anti.enabled &&
+              anti.captchaType == CaptchaType.imageCaptcha &&
+              anti.captchaImage.trim().isNotEmpty &&
+              anti.captchaInput.trim().isNotEmpty &&
+              anti.captchaButton.trim().isNotEmpty
+          ? RuleVerifyHint(
+              imageXpath: anti.captchaImage.trim(),
+              inputXpath: anti.captchaInput.trim(),
+              buttonXpath: anti.captchaButton.trim(),
+            )
+          : null;
       return RuleProbeResult(
         ruleId: ruleId,
         ruleName: rule.name,
         state: RuleProbeState.captchaRequired,
         message: '需要站点验证',
         verifyUrl: _buildVerifyUri(rule, primaryKeyword),
+        verifyHint: hint,
         latencyMs: sw.elapsedMilliseconds,
       );
     }

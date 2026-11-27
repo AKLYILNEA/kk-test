@@ -103,9 +103,11 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   );
   String? _error;
   Uri? _errorVerifyUrl;
+  RuleVerifyHint? _errorVerifyHint;
   String? _errorVerifyRuleId;
   String? _errorVerifyRuleName;
   String? _activeHitUrl;
+  int _danmakuRefreshPulse = 0;
   late String? _loadingHint = widget.offline != null
       ? '正在打开离线缓存…'
       : (widget.initialRuleName.isNotEmpty
@@ -476,8 +478,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   Future<void> _verifyRule(
     String ruleId,
     String ruleName,
-    Uri verifyUrl,
-  ) async {
+    Uri verifyUrl, {
+    RuleVerifyHint? verifyHint,
+  }) async {
     if (_fullscreen) {
       await _setFullscreen(false);
     }
@@ -487,6 +490,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       ruleId: ruleId,
       ruleName: ruleName,
       verifyUrl: verifyUrl,
+      verifyHint: verifyHint,
     );
     if (!mounted || verified != true) return;
     showKonekoBanner(
@@ -547,6 +551,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       _loaded = false;
       _error = null;
       _errorVerifyUrl = null;
+      _errorVerifyHint = null;
       _errorVerifyRuleId = null;
       _errorVerifyRuleName = null;
       _scrub = null;
@@ -667,6 +672,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       _loadingHint = autoSelectFastest ? '正在并发优选最快播放源…' : '正在加载第 $episode 话…';
       _error = null;
       _errorVerifyUrl = null;
+      _errorVerifyHint = null;
       _errorVerifyRuleId = null;
       _errorVerifyRuleName = null;
       _scrub = null;
@@ -801,6 +807,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           _loadingHint = null;
           _error = '${captchaProbe!.ruleName} 需要验证';
           _errorVerifyUrl = captchaProbe.verifyUrl;
+          _errorVerifyHint = captchaProbe.verifyHint;
           _errorVerifyRuleId = captchaProbe.ruleId;
           _errorVerifyRuleName = captchaProbe.ruleName;
         });
@@ -948,6 +955,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           _loadingHint = null;
           _error = '${required.ruleName} 需要验证';
           _errorVerifyUrl = required.verifyUrl;
+          _errorVerifyHint = required.verifyHint;
           _errorVerifyRuleId = required.ruleId;
           _errorVerifyRuleName = required.ruleName;
         });
@@ -1721,35 +1729,47 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
         ),
         if (error == null && (_loading || _waitingForPlayback))
           Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              spacing: 8,
-              children: [
-                const ActivityIndicator(color: Colors.white),
-                if (_loading && (_loadingHint?.isNotEmpty ?? false))
-                  _HudSurface(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 5,
-                    ),
+            child: _HudSurface(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                spacing: 10,
+                children: [
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: ActivityIndicator(color: Colors.white),
+                  ),
+                  Flexible(
                     child: Text(
-                      _loadingHint!,
+                      (_loading && (_loadingHint?.isNotEmpty ?? false))
+                          ? _loadingHint!
+                          : '正在缓冲…',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: _style(context, small: true),
                     ),
                   ),
-                if (!offline && rules.any((rule) => rule.enabled))
-                  _HudAction(label: '手动切换源', onTap: _switchToSources),
-              ],
+                  if (!offline && rules.any((rule) => rule.enabled)) ...[
+                    Container(
+                      width: 1,
+                      height: 14,
+                      color: Colors.white.withValues(alpha: 0.2),
+                    ),
+                    _HudAction(label: '换源', onTap: _switchToSources),
+                  ],
+                ],
+              ),
             ),
           ),
         if (error != null)
           Center(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 18),
               child: _HudSurface(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 12,
+                  horizontal: 16,
+                  vertical: 14,
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -1761,7 +1781,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                       overflow: TextOverflow.ellipsis,
                       style: _style(context, small: !_fullscreen),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 12),
                     Wrap(
                       spacing: 8,
                       runSpacing: 6,
@@ -1783,6 +1803,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                               _errorVerifyRuleId!,
                               _errorVerifyRuleName ?? _errorVerifyRuleId!,
                               _errorVerifyUrl!,
+                              verifyHint: _errorVerifyHint,
                             ),
                           ),
                         _HudAction(
@@ -1844,90 +1865,206 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
             child: Center(
               child: _HudSurface(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 5,
+                  horizontal: 14,
+                  vertical: 8,
                 ),
-                child: Text(
-                  '亮度 ${(_brightness * 100).round()}%',
-                  style: _style(context, small: true),
-                ),
-              ),
-            ),
-          ),
-        // Top HUD bar — ultra-slim gradient scrim in compact portrait mode
-        if (_showHud)
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: Container(
-              padding: EdgeInsets.fromLTRB(
-                safe.left + (_fullscreen ? 12 : 4),
-                safe.top + (_fullscreen ? 8 : 2),
-                safe.right + (_fullscreen ? 12 : 4),
-                _fullscreen ? 14 : 10,
-              ),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.black.withValues(alpha: 0.72),
-                    Colors.transparent,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  spacing: 10,
+                  children: [
+                    Text(
+                      '亮度',
+                      style: _style(context, small: true).copyWith(
+                        color: Colors.white.withValues(alpha: 0.72),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 82,
+                      height: 4,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(2),
+                        child: ColoredBox(
+                          color: Colors.white.withValues(alpha: 0.22),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: FractionallySizedBox(
+                              widthFactor: _brightness.clamp(0.0, 1.0),
+                              child: const ColoredBox(color: Colors.white),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '${(_brightness * 100).round()}%',
+                      style: _style(context, small: true),
+                    ),
                   ],
                 ),
               ),
-              child: Row(
-                spacing: 2,
-                children: [
-                  _bareIcon(
-                    glyph: Glyphs.backFor(Theme.of(context).platform),
-                    tooltip: _fullscreen ? '退出全屏' : '返回',
-                    onPressed: () {
-                      if (_fullscreen) {
-                        unawaited(_setFullscreen(false));
-                      } else {
-                        Navigator.of(context).maybePop();
-                      }
-                    },
-                  ),
-                  Expanded(
-                    child: Text(
-                      '$title · 第 $_episode 话',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: _style(context, small: !_fullscreen),
-                    ),
-                  ),
-                  _bareIcon(
-                    glyph: KonekoGlyphs.danmaku,
-                    tooltip: _showDanmaku ? '关闭弹幕' : '开启弹幕',
-                    active: _showDanmaku,
-                    onPressed: () {
-                      setState(() => _showDanmaku = !_showDanmaku);
-                      if (_showDanmaku) unawaited(_loadDanmaku());
-                      _armHudAutoHide();
-                    },
-                  ),
-                  if (_fullscreen)
-                    _bareIcon(
-                      glyph: KonekoGlyphs.layers,
-                      tooltip: '选集与播放源',
-                      onPressed: () =>
-                          setState(() => _drawerOpen = !_drawerOpen),
-                    ),
-                ],
+            ),
+          ),
+        if (_scrub != null && status.duration.inSeconds > 0)
+          Positioned(
+            bottom: safe.bottom + (_fullscreen ? 92 : 66),
+            left: 16,
+            right: 16,
+            child: Center(
+              child: _HudSurface(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 6,
+                ),
+                child: Text(
+                  '${formatDurationShort(_scrub!.round())}  /  ${formatDurationShort(status.duration.inSeconds)}',
+                  style: _style(context, small: false),
+                ),
               ),
             ),
           ),
-        // Bottom HUD bar — single compact slim row in portrait, rich bar in fullscreen
-        if (_showHud)
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: _controls(context, status, session, offline, safe),
+        // Top HUD bar with smooth fade and subtle translucent badges
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: IgnorePointer(
+            ignoring: !_showHud,
+            child: AnimatedOpacity(
+              opacity: _showHud ? 1.0 : 0.0,
+              duration: context.motionDuration(
+                const Duration(milliseconds: 180),
+              ),
+              curve: Curves.easeOutCubic,
+              child: Container(
+                padding: EdgeInsets.fromLTRB(
+                  safe.left + (_fullscreen ? 14 : 6),
+                  safe.top + (_fullscreen ? 10 : 4),
+                  safe.right + (_fullscreen ? 14 : 6),
+                  _fullscreen ? 22 : 14,
+                ),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    stops: const [0.0, 0.55, 1.0],
+                    colors: [
+                      Colors.black.withValues(alpha: 0.74),
+                      Colors.black.withValues(alpha: 0.28),
+                      Colors.transparent,
+                    ],
+                  ),
+                ),
+                child: Row(
+                  spacing: 6,
+                  children: [
+                    _bareIcon(
+                      glyph: Glyphs.backFor(Theme.of(context).platform),
+                      tooltip: _fullscreen ? '退出全屏' : '返回',
+                      onPressed: () {
+                        if (_fullscreen) {
+                          unawaited(_setFullscreen(false));
+                        } else {
+                          Navigator.of(context).maybePop();
+                        }
+                      },
+                    ),
+                    Expanded(
+                      child: Row(
+                        spacing: 8,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: _style(context, small: !_fullscreen),
+                            ),
+                          ),
+                          DecoratedBox(
+                            decoration: ShapeDecoration(
+                              color: Colors.white.withValues(alpha: 0.16),
+                              shape: AppShape.full,
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
+                              child: Text(
+                                '第 $_episode 话',
+                                style: _style(context, small: true).copyWith(
+                                  fontSize: 11,
+                                  color: Colors.white.withValues(alpha: 0.92),
+                                ),
+                              ),
+                            ),
+                          ),
+                          if (_fullscreen && !offline && _ruleName.isNotEmpty)
+                            DecoratedBox(
+                              decoration: ShapeDecoration(
+                                color: Colors.white.withValues(alpha: 0.12),
+                                shape: AppShape.full,
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 3,
+                                ),
+                                child: Text(
+                                  _ruleName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: _style(context, small: true).copyWith(
+                                    fontSize: 11,
+                                    color: Colors.white.withValues(alpha: 0.78),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    _HudTogglePill(
+                      glyph: KonekoGlyphs.danmaku,
+                      label: _fullscreen ? (_showDanmaku ? '弹幕开' : '弹幕关') : null,
+                      tooltip: _showDanmaku ? '关闭弹幕' : '开启弹幕',
+                      active: _showDanmaku,
+                      onPressed: () {
+                        setState(() => _showDanmaku = !_showDanmaku);
+                        if (_showDanmaku) unawaited(_loadDanmaku());
+                        _armHudAutoHide();
+                      },
+                    ),
+                    if (_fullscreen)
+                      _bareIcon(
+                        glyph: KonekoGlyphs.layers,
+                        tooltip: '选集与播放源',
+                        onPressed: () =>
+                            setState(() => _drawerOpen = !_drawerOpen),
+                      ),
+                  ],
+                ),
+              ),
+            ),
           ),
+        ),
+        // Bottom HUD bar with smooth fade and custom sleek video scrubber
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: IgnorePointer(
+            ignoring: !_showHud,
+            child: AnimatedOpacity(
+              opacity: _showHud ? 1.0 : 0.0,
+              duration: context.motionDuration(
+                const Duration(milliseconds: 180),
+              ),
+              curve: Curves.easeOutCubic,
+              child: _controls(context, status, session, offline, safe),
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -2497,8 +2634,21 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                     child: _buildDanmakuActionTile(
                       context: context,
                       glyph: KonekoGlyphs.refresh,
-                      label: '重新拉取',
-                      onPressed: _danmakuLoading ? null : () => _loadDanmaku(),
+                      icon: KonekoSpinningRefreshIcon(
+                        spinning: _danmakuLoading,
+                        pulse: _danmakuRefreshPulse,
+                        size: 13.5,
+                        color: _danmakuLoading
+                            ? colorScheme.primary
+                            : colorScheme.onSurfaceVariant,
+                      ),
+                      label: _danmakuLoading ? '拉取中' : '重新拉取',
+                      onPressed: _danmakuLoading
+                          ? null
+                          : () {
+                              setState(() => _danmakuRefreshPulse++);
+                              unawaited(_loadDanmaku());
+                            },
                     ),
                   ),
                 ],
@@ -2780,6 +2930,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   Widget _buildDanmakuActionTile({
     required BuildContext context,
     required Glyph glyph,
+    Widget? icon,
     required String label,
     required VoidCallback? onPressed,
   }) {
@@ -2798,13 +2949,14 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           mainAxisAlignment: MainAxisAlignment.center,
           spacing: 5,
           children: [
-            GlyphIcon(
-              glyph,
-              size: 13.5,
-              color: onPressed == null
-                  ? colorScheme.onSurfaceVariant.withValues(alpha: 0.45)
-                  : colorScheme.onSurfaceVariant,
-            ),
+            icon ??
+                GlyphIcon(
+                  glyph,
+                  size: 13.5,
+                  color: onPressed == null
+                      ? colorScheme.onSurfaceVariant.withValues(alpha: 0.45)
+                      : colorScheme.onSurfaceVariant,
+                ),
             Flexible(
               child: Text(
                 label,
@@ -2864,12 +3016,25 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
 
     return KonekoBlock(
       corner: 16,
-      selected: isCurrent,
+      color: SurfaceLevel.block.colorOf(colorScheme),
+      borderSide: isCurrent
+          ? BorderSide(
+              color: colorScheme.primary.withValues(alpha: 0.58),
+              width: 1.25,
+            )
+          : null,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
       onPressed: () {
         if (state == RuleProbeState.captchaRequired &&
             probe?.verifyUrl != null) {
-          unawaited(_verifyRule(rule.id, rule.name, probe!.verifyUrl!));
+          unawaited(
+            _verifyRule(
+              rule.id,
+              rule.name,
+              probe!.verifyUrl!,
+              verifyHint: probe.verifyHint,
+            ),
+          );
         } else if (state == RuleProbeState.found &&
             probe != null &&
             probe.hits.isNotEmpty) {
@@ -2881,6 +3046,15 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       child: Row(
         spacing: 8,
         children: [
+          if (isCurrent)
+            Container(
+              width: 7,
+              height: 7,
+              decoration: ShapeDecoration(
+                color: colorScheme.primary,
+                shape: AppShape.full,
+              ),
+            ),
           Expanded(
             child: Text(
               rule.name,
@@ -2888,7 +3062,11 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
               overflow: TextOverflow.ellipsis,
               style: AppTextStyle.subheadline
                   .of(context, emphasized: true)
-                  .copyWith(color: colorScheme.onSurface),
+                  .copyWith(
+                    color: isCurrent
+                        ? colorScheme.primary
+                        : colorScheme.onSurface,
+                  ),
             ),
           ),
           if (isCurrent)
@@ -2959,7 +3137,14 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     void handleSelectRule() {
       if (state == RuleProbeState.captchaRequired && probe?.verifyUrl != null) {
         onDismissSheet?.call();
-        unawaited(_verifyRule(rule.id, rule.name, probe!.verifyUrl!));
+        unawaited(
+          _verifyRule(
+            rule.id,
+            rule.name,
+            probe!.verifyUrl!,
+            verifyHint: probe.verifyHint,
+          ),
+        );
       } else if (state == RuleProbeState.found &&
           probe != null &&
           probe.hits.isNotEmpty) {
@@ -2974,10 +3159,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     return KonekoCard(
       corner: 22,
       padding: const EdgeInsets.all(14),
-      color: isCurrent
-          ? Color.alphaBlend(
-              colorScheme.primary.withValues(alpha: 0.08),
-              SurfaceLevel.card.colorOf(colorScheme),
+      borderSide: isCurrent
+          ? BorderSide(
+              color: colorScheme.primary.withValues(alpha: 0.65),
+              width: 1.5,
             )
           : null,
       child: Column(
@@ -2993,6 +3178,15 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
               child: Row(
                 spacing: 8,
                 children: [
+                  if (isCurrent)
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: ShapeDecoration(
+                        color: colorScheme.primary,
+                        shape: AppShape.full,
+                      ),
+                    ),
                   Expanded(
                     child: Text(
                       rule.name,
@@ -3000,7 +3194,11 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                       overflow: TextOverflow.ellipsis,
                       style: AppTextStyle.subheadline
                           .of(context, emphasized: true)
-                          .copyWith(color: colorScheme.onSurface),
+                          .copyWith(
+                            color: isCurrent
+                                ? colorScheme.primary
+                                : colorScheme.onSurface,
+                          ),
                     ),
                   ),
                   if (isCurrent)
@@ -3067,7 +3265,14 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                   foregroundColor: colorScheme.onPrimary,
                   onPressed: () {
                     onDismissSheet?.call();
-                    unawaited(_verifyRule(rule.id, rule.name, probe.verifyUrl!));
+                    unawaited(
+                      _verifyRule(
+                        rule.id,
+                        rule.name,
+                        probe.verifyUrl!,
+                        verifyHint: probe.verifyHint,
+                      ),
+                    );
                   },
                 ),
               ],
@@ -3097,139 +3302,126 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     final position = status.position.inSeconds;
     final max = math.max(1, duration).toDouble();
     final value = (_scrub ?? position.toDouble()).clamp(0.0, max);
+    final progress = duration > 0 ? (value / max).clamp(0.0, 1.0) : 0.0;
     final canAdvance = _choices.any(
       (episode) => episode.number == _episode + 1,
     );
 
-    // Compact portrait non-fullscreen bottom bar: single ultra-slim row over soft gradient
+    void cycleSpeed() {
+      const speeds = [1.0, 1.25, 1.5, 2.0, 0.75];
+      setState(
+        () => _speed = speeds[(speeds.indexOf(_speed) + 1) % speeds.length],
+      );
+      unawaited(session?.setRate(_speed));
+      _armHudAutoHide();
+    }
+
+    final scrubber = _VideoProgressBar(
+      progress: progress,
+      enabled: duration > 0 && _loaded,
+      scrubbing: _scrub != null,
+      accentColor: context.colorScheme.primary,
+      onScrubUpdate: (ratio) {
+        _hudTimer?.cancel();
+        setState(() => _scrub = ratio * max);
+      },
+      onScrubEnd: (ratio) {
+        setState(() => _scrub = null);
+        unawaited(session?.seek(Duration(seconds: (ratio * max).round())));
+        _armHudAutoHide();
+      },
+    );
+
+    // Sleek 2-tier portrait bottom bar over smooth 3-stop scrim
     if (!_fullscreen) {
       return Container(
-        padding: const EdgeInsets.fromLTRB(4, 14, 4, 4),
+        padding: const EdgeInsets.fromLTRB(10, 18, 10, 4),
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.bottomCenter,
             end: Alignment.topCenter,
-            colors: [Colors.black.withValues(alpha: 0.76), Colors.transparent],
+            stops: const [0.0, 0.58, 1.0],
+            colors: [
+              Colors.black.withValues(alpha: 0.78),
+              Colors.black.withValues(alpha: 0.30),
+              Colors.transparent,
+            ],
           ),
         ),
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            _bareIcon(
-              glyph: status.playing ? KonekoGlyphs.pause : KonekoGlyphs.play,
-              tooltip: status.playing ? '暂停' : '播放',
-              onPressed: !_loaded
-                  ? null
-                  : () {
-                      session?.setPlaying(!status.playing);
-                      _armHudAutoHide();
-                    },
-            ),
-            Text(
-              formatDurationShort(value.round()),
-              style: _style(context, small: true),
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: Slider(
-                  min: 0,
-                  max: max,
-                  value: value,
-                  onChanged: duration > 0 && _loaded
-                      ? (v) {
-                          _hudTimer?.cancel();
-                          setState(() => _scrub = v);
-                        }
-                      : null,
-                  onChangeEnd: (v) {
-                    setState(() => _scrub = null);
-                    unawaited(session?.seek(Duration(seconds: v.round())));
-                    _armHudAutoHide();
-                  },
+            scrubber,
+            Row(
+              spacing: 4,
+              children: [
+                _bareIcon(
+                  glyph: status.playing ? KonekoGlyphs.pause : KonekoGlyphs.play,
+                  tooltip: status.playing ? '暂停' : '播放',
+                  onPressed: !_loaded
+                      ? null
+                      : () {
+                          session?.setPlaying(!status.playing);
+                          _armHudAutoHide();
+                        },
                 ),
-              ),
-            ),
-            Text(
-              formatDurationShort(duration),
-              style: _style(context, small: true),
-            ),
-            const SizedBox(width: 4),
-            PressSurface(
-              fill: Colors.transparent,
-              shape: AppShape.full,
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-              onPressed: !_loaded
-                  ? null
-                  : () {
-                      const speeds = [1.0, 1.25, 1.5, 2.0, 0.75];
-                      setState(
-                        () => _speed =
-                            speeds[(speeds.indexOf(_speed) + 1) %
-                                speeds.length],
-                      );
-                      unawaited(session?.setRate(_speed));
-                      _armHudAutoHide();
-                    },
-              child: Text(
-                _formatSpeed(_speed),
-                style: _style(context, small: true),
-              ),
-            ),
-            _bareIcon(
-              glyph: KonekoGlyphs.fullscreen,
-              tooltip: '全屏播放',
-              onPressed: () => unawaited(_setFullscreen(true)),
+                Text(
+                  '${formatDurationShort(value.round())} / ${formatDurationShort(duration)}',
+                  style: _style(context, small: true).copyWith(
+                    fontSize: 11.5,
+                    color: Colors.white.withValues(alpha: 0.88),
+                  ),
+                ),
+                const Spacer(),
+                _HudAction(
+                  label: _formatSpeed(_speed),
+                  active: _speed != 1,
+                  onTap: !_loaded ? null : cycleSpeed,
+                ),
+                _bareIcon(
+                  glyph: KonekoGlyphs.fullscreen,
+                  tooltip: '全屏播放',
+                  onPressed: () => unawaited(_setFullscreen(true)),
+                ),
+              ],
             ),
           ],
         ),
       );
     }
 
-    // Rich fullscreen bottom bar
+    // Flagship fullscreen bottom bar
     return Container(
       padding: EdgeInsets.fromLTRB(
-        safe.left + 14,
-        18,
-        safe.right + 14,
+        safe.left + 18,
+        24,
+        safe.right + 18,
         safe.bottom + 10,
       ),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.bottomCenter,
           end: Alignment.topCenter,
-          colors: [Colors.black.withValues(alpha: 0.78), Colors.transparent],
+          stops: const [0.0, 0.56, 1.0],
+          colors: [
+            Colors.black.withValues(alpha: 0.82),
+            Colors.black.withValues(alpha: 0.34),
+            Colors.transparent,
+          ],
         ),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
+        spacing: 4,
         children: [
           Row(
+            spacing: 12,
             children: [
               Text(
                 formatDurationShort(value.round()),
                 style: _style(context, small: true),
               ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  child: Slider(
-                    min: 0,
-                    max: max,
-                    value: value,
-                    onChanged: duration > 0 && _loaded
-                        ? (v) {
-                            _hudTimer?.cancel();
-                            setState(() => _scrub = v);
-                          }
-                        : null,
-                    onChangeEnd: (v) {
-                      setState(() => _scrub = null);
-                      unawaited(session?.seek(Duration(seconds: v.round())));
-                      _armHudAutoHide();
-                    },
-                  ),
-                ),
-              ),
+              Expanded(child: scrubber),
               Text(
                 formatDurationShort(duration),
                 style: _style(context, small: true),
@@ -3237,7 +3429,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
             ],
           ),
           Row(
-            spacing: 4,
+            spacing: 6,
             children: [
               _bareIcon(
                 glyph: status.playing ? KonekoGlyphs.pause : KonekoGlyphs.play,
@@ -3261,24 +3453,30 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
               _HudAction(
                 label: _formatSpeed(_speed),
                 active: _speed != 1,
-                onTap: !_loaded
-                    ? null
-                    : () {
-                        const speeds = [1.0, 1.25, 1.5, 2.0, 0.75];
-                        setState(
-                          () => _speed =
-                              speeds[(speeds.indexOf(_speed) + 1) %
-                                  speeds.length],
-                        );
-                        unawaited(session?.setRate(_speed));
-                        _armHudAutoHide();
-                      },
+                onTap: !_loaded ? null : cycleSpeed,
               ),
               _HudAction(
                 label: '超分',
                 active: _upscale,
                 onTap: !_loaded ? null : () => _setUpscale(!_upscale),
               ),
+              _HudAction(
+                label: '选集',
+                active: _drawerOpen && _drawer == _DrawerTab.episodes,
+                onTap: () => setState(() {
+                  _drawer = _DrawerTab.episodes;
+                  _drawerOpen = true;
+                }),
+              ),
+              if (!offline)
+                _HudAction(
+                  label: '切源',
+                  active: _drawerOpen && _drawer == _DrawerTab.sources,
+                  onTap: () => setState(() {
+                    _drawer = _DrawerTab.sources;
+                    _drawerOpen = true;
+                  }),
+                ),
               _bareIcon(
                 glyph: KonekoGlyphs.fullscreenExit,
                 tooltip: '退出全屏',
@@ -3309,10 +3507,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
-            spacing: 6,
+            spacing: 8,
             children: [
               Expanded(
-                child: SegmentedControl<_DrawerTab>(
+                child: _HudDarkSegmentBar<_DrawerTab>(
                   segments: const [
                     (_DrawerTab.episodes, '选集'),
                     (_DrawerTab.sources, '切源'),
@@ -3426,6 +3624,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                                       rule.id,
                                       rule.name,
                                       probe!.verifyUrl!,
+                                      verifyHint: probe.verifyHint,
                                     ),
                                   );
                                 } else if (probe?.state ==
@@ -3514,7 +3713,21 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                       }
                     },
                   ),
-                  _HudAction(label: '重新加载弹幕', onTap: _loadDanmaku),
+                  _HudAction(
+                    label: _danmakuLoading ? '正在拉取弹幕…' : '重新加载弹幕',
+                    leading: KonekoSpinningRefreshIcon(
+                      spinning: _danmakuLoading,
+                      pulse: _danmakuRefreshPulse,
+                      size: 13,
+                      color: Colors.white,
+                    ),
+                    onTap: _danmakuLoading
+                        ? null
+                        : () {
+                            setState(() => _danmakuRefreshPulse++);
+                            unawaited(_loadDanmaku());
+                          },
+                  ),
                   _HudAction(
                     label: '手动匹配弹幕',
                     onTap: () async {
@@ -3544,24 +3757,21 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     required Glyph glyph,
     required String tooltip,
     VoidCallback? onPressed,
-    bool active = false,
   }) => Tooltip(
     message: tooltip,
     child: SizedBox(
       width: 34,
       height: 34,
       child: PressSurface(
-        fill: active
-            ? context.colorScheme.primary.withValues(alpha: 0.78)
-            : Colors.transparent,
+        fill: Colors.white.withValues(alpha: 0.08),
         shape: AppShape.full,
         onPressed: onPressed,
         child: Center(
           child: GlyphIcon(
             glyph,
-            size: 17,
+            size: 16.5,
             color: onPressed == null
-                ? Colors.white.withValues(alpha: 0.36)
+                ? Colors.white.withValues(alpha: 0.34)
                 : Colors.white,
           ),
         ),
@@ -3621,38 +3831,305 @@ class _EpisodeChipButton extends StatelessWidget {
 }
 
 class _HudAction extends StatelessWidget {
-  const _HudAction({required this.label, this.active = false, this.onTap});
+  const _HudAction({
+    required this.label,
+    this.leading,
+    this.active = false,
+    this.onTap,
+  });
 
   final String label;
+  final Widget? leading;
   final bool active;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final fill = active
-        ? context.colorScheme.primary.withValues(alpha: .88)
-        : Colors.white.withValues(alpha: .16);
+        ? context.colorScheme.primary.withValues(alpha: .90)
+        : Colors.white.withValues(alpha: .15);
     return PressSurface(
       fill: fill,
       shape: AppShape.full,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
       onPressed: onTap,
-      child: Center(
-        child: Text(
-          label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: AppTextStyle.caption1
-              .of(context, emphasized: true)
-              .copyWith(
-                color: onTap == null
-                    ? Colors.white.withValues(alpha: 0.38)
-                    : Colors.white,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        spacing: 5,
+        children: [
+          if (leading != null) leading!,
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTextStyle.caption1
+                  .of(context, emphasized: true)
+                  .copyWith(
+                    color: onTap == null
+                        ? Colors.white.withValues(alpha: 0.38)
+                        : Colors.white,
+                  ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HudTogglePill extends StatelessWidget {
+  const _HudTogglePill({
+    required this.glyph,
+    required this.tooltip,
+    required this.active,
+    required this.onPressed,
+    this.label,
+  });
+
+  final Glyph glyph;
+  final String tooltip;
+  final bool active;
+  final VoidCallback onPressed;
+  final String? label;
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = context.colorScheme.primary;
+    return Tooltip(
+      message: tooltip,
+      child: PressSurface(
+        fill: active
+            ? primary.withValues(alpha: 0.36)
+            : Colors.white.withValues(alpha: 0.12),
+        shape: SuperellipseBorder(
+          borderRadius: AppRadius.all(99),
+          side: BorderSide(
+            color: active
+                ? primary.withValues(alpha: 0.85)
+                : Colors.white.withValues(alpha: 0.16),
+            width: 1,
+          ),
+        ),
+        padding: EdgeInsets.symmetric(
+          horizontal: label != null ? 10 : 8,
+          vertical: 6,
+        ),
+        onPressed: onPressed,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          spacing: 5,
+          children: [
+            GlyphIcon(
+              glyph,
+              size: 15,
+              color: active
+                  ? Colors.white
+                  : Colors.white.withValues(alpha: 0.65),
+            ),
+            if (label != null)
+              Text(
+                label!,
+                style: AppTextStyle.caption1
+                    .of(context, emphasized: true)
+                    .copyWith(
+                      fontSize: 11.5,
+                      color: active
+                          ? Colors.white
+                          : Colors.white.withValues(alpha: 0.72),
+                    ),
               ),
+          ],
         ),
       ),
     );
   }
+}
+
+class _HudDarkSegmentBar<T> extends StatelessWidget {
+  const _HudDarkSegmentBar({
+    required this.segments,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final List<(T, String)> segments;
+  final T value;
+  final ValueChanged<T> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = context.colorScheme.primary;
+    return DecoratedBox(
+      decoration: ShapeDecoration(
+        color: Colors.white.withValues(alpha: 0.10),
+        shape: SuperellipseBorder(borderRadius: AppRadius.all(14)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(3),
+        child: Row(
+          children: [
+            for (final (tab, label) in segments)
+              Expanded(
+                child: PressSurface(
+                  fill: tab == value
+                      ? primary.withValues(alpha: 0.90)
+                      : Colors.transparent,
+                  shape: SuperellipseBorder(borderRadius: AppRadius.all(11)),
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  onPressed: () => onChanged(tab),
+                  child: Center(
+                    child: Text(
+                      label,
+                      style: AppTextStyle.caption1
+                          .of(context, emphasized: true)
+                          .copyWith(
+                            color: tab == value
+                                ? Colors.white
+                                : Colors.white.withValues(alpha: 0.72),
+                          ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Sleek video progress scrubber tailored for dark video HUDs: slim 3px track,
+/// expanding thumb on scrub, generous 28px touch target, drag & tap-to-seek.
+class _VideoProgressBar extends StatelessWidget {
+  const _VideoProgressBar({
+    required this.progress,
+    required this.enabled,
+    required this.scrubbing,
+    required this.accentColor,
+    required this.onScrubUpdate,
+    required this.onScrubEnd,
+  });
+
+  final double progress;
+  final bool enabled;
+  final bool scrubbing;
+  final Color accentColor;
+  final ValueChanged<double> onScrubUpdate;
+  final ValueChanged<double> onScrubEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = math.max(1.0, constraints.maxWidth);
+        double ratioFor(double dx) => (dx / width).clamp(0.0, 1.0);
+
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: !enabled
+              ? null
+              : (d) => onScrubEnd(ratioFor(d.localPosition.dx)),
+          onHorizontalDragStart: !enabled
+              ? null
+              : (d) => onScrubUpdate(ratioFor(d.localPosition.dx)),
+          onHorizontalDragUpdate: !enabled
+              ? null
+              : (d) => onScrubUpdate(ratioFor(d.localPosition.dx)),
+          onHorizontalDragEnd: !enabled
+              ? null
+              : (_) => onScrubEnd(progress.clamp(0.0, 1.0)),
+          child: SizedBox(
+            height: 26,
+            child: CustomPaint(
+              size: Size(width, 26),
+              painter: _VideoProgressPainter(
+                progress: progress.clamp(0.0, 1.0),
+                accentColor: accentColor,
+                scrubbing: scrubbing,
+                enabled: enabled,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _VideoProgressPainter extends CustomPainter {
+  const _VideoProgressPainter({
+    required this.progress,
+    required this.accentColor,
+    required this.scrubbing,
+    required this.enabled,
+  });
+
+  final double progress;
+  final Color accentColor;
+  final bool scrubbing;
+  final bool enabled;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cy = size.height / 2;
+    final trackH = scrubbing ? 4.5 : 3.0;
+    final trackR = Radius.circular(trackH / 2);
+
+    // Base track
+    final bgPaint = Paint()..color = Colors.white.withValues(alpha: 0.26);
+    canvas.drawRRect(
+      RRect.fromLTRBR(
+        0,
+        cy - trackH / 2,
+        size.width,
+        cy + trackH / 2,
+        trackR,
+      ),
+      bgPaint,
+    );
+
+    if (!enabled) return;
+
+    final playedX = (size.width * progress).clamp(0.0, size.width);
+    if (playedX > 0) {
+      final playedPaint = Paint()..color = accentColor;
+      canvas.drawRRect(
+        RRect.fromLTRBR(
+          0,
+          cy - trackH / 2,
+          playedX,
+          cy + trackH / 2,
+          trackR,
+        ),
+        playedPaint,
+      );
+    }
+
+    // Soft outer halo while dragging + crisp white thumb
+    final thumbR = scrubbing ? 6.5 : 4.5;
+    final thumbX = playedX.clamp(thumbR, math.max(thumbR, size.width - thumbR));
+    if (scrubbing) {
+      canvas.drawCircle(
+        Offset(thumbX, cy),
+        thumbR + 4.5,
+        Paint()..color = accentColor.withValues(alpha: 0.34),
+      );
+    }
+    canvas.drawCircle(
+      Offset(thumbX, cy),
+      thumbR,
+      Paint()..color = Colors.white,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _VideoProgressPainter oldDelegate) =>
+      oldDelegate.progress != progress ||
+      oldDelegate.accentColor != accentColor ||
+      oldDelegate.scrubbing != scrubbing ||
+      oldDelegate.enabled != enabled;
 }
 
 /// Crisp dark translucent video HUD surface with continuous superellipse
@@ -3666,7 +4143,7 @@ class _HudSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) => DecoratedBox(
     decoration: ShapeDecoration(
-      color: Colors.black.withValues(alpha: 0.72),
+      color: Colors.black.withValues(alpha: 0.74),
       shape: SuperellipseBorder(
         borderRadius: AppRadius.all(18),
         side: BorderSide(color: Colors.white.withValues(alpha: 0.14)),

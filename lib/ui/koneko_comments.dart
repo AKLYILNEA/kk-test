@@ -102,19 +102,10 @@ class _KonekoCommentsPanelState extends ConsumerState<KonekoCommentsPanel> {
                 .copyWith(color: colorScheme.onSurface),
           ),
         ),
-        KonekoChip(
+        KonekoRefreshChip(
           label: '刷新',
-          height: 28,
-          fontSize: 12,
+          loading: commentsAsync.isLoading,
           elevated: widget.embedded,
-          backgroundColor: widget.embedded
-              ? SurfaceLevel.card.colorOf(colorScheme)
-              : null,
-          leading: GlyphIcon(
-            KonekoGlyphs.refresh,
-            size: 13,
-            color: colorScheme.primary,
-          ),
           onPressed: _refresh,
         ),
       ],
@@ -140,12 +131,12 @@ class _KonekoCommentsPanelState extends ConsumerState<KonekoCommentsPanel> {
                       .of(context)
                       .copyWith(color: colorScheme.onSurfaceVariant),
                 ),
-                KonekoChip(
+                KonekoRefreshChip(
                   label: '重新加载',
                   height: 32,
                   fontSize: 12.5,
-                  backgroundColor: colorScheme.primary,
-                  foregroundColor: colorScheme.onPrimary,
+                  prominent: true,
+                  loading: commentsAsync.isLoading,
                   onPressed: _refresh,
                 ),
               ],

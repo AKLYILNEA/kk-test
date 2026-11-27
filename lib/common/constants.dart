@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 const String kAppName = 'Koneko';
-const String kAppVersion = '0.0.21';
+const String kAppVersion = '0.0.22';
 const kAppLocale = Locale('zh', 'CN');
 const String kPackageName = 'com.anime.koneko';
 const String kRepoUrl = 'https://github.com/AKLYILNEA/kk-test';
