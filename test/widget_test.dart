@@ -634,7 +634,8 @@ void main() {
       final dock = find.byType(NavigationDock);
       await tester.tap(find.descendant(of: dock, matching: find.text('时间表')));
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 40));
+      await tester.pump(const Duration(milliseconds: 25));
+      await tester.pump(const Duration(milliseconds: 25));
       expect(
         find.byKey(const ValueKey('schedule-loading-skeleton')),
         findsOneWidget,
@@ -647,7 +648,8 @@ void main() {
 
       await tester.tap(find.descendant(of: dock, matching: find.text('追番')));
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 40));
+      await tester.pump(const Duration(milliseconds: 25));
+      await tester.pump(const Duration(milliseconds: 25));
       expect(
         find.byKey(const ValueKey('library-loading-skeleton')),
         findsOneWidget,
