@@ -15,7 +15,7 @@ Dio networkClient() => Dio(
     sendTimeout: const Duration(seconds: 12),
     headers: {
       'user-agent':
-          'AKLYILNEA/Koneko/0.0.14 (https://github.com/AKLYILNEA/kk-test)',
+          'AKLYILNEA/Koneko/0.0.15 (https://github.com/AKLYILNEA/kk-test)',
     },
   ),
 );
@@ -26,6 +26,13 @@ List<dynamic> jsonList(Object? value) => value is List ? value : const [];
 int jsonInt(Object? value) =>
     value is num ? value.toInt() : int.tryParse('$value') ?? 0;
 String jsonString(Object? value) => value is String ? value : '';
+
+typedef _CatalogEpisode = ({
+  int number,
+  String title,
+  String airDate,
+  DateTime? airTime,
+});
 
 class BangumiCatalog implements OnlineCatalog {
   BangumiCatalog(this._preferences, {Dio? client})
@@ -65,7 +72,17 @@ class BangumiCatalog implements OnlineCatalog {
   final _details = <int, Future<void>>{};
   final _episodeLoads = <int, Future<void>>{};
   final _episodesLoaded = <int>{};
-  final _episodes = <int, List<Map<String, dynamic>>>{};
+  final _episodes = <int, List<_CatalogEpisode>>{};
+  final _episodeViews =
+      <
+        int,
+        ({
+          int watched,
+          int? current,
+          DateTime? expires,
+          List<EpisodeItem> items,
+        })
+      >{};
   final _related = <int, List<int>>{};
   final _relations = <int, Future<List<SubjectRelation>>>{};
   final _characters = <int, Future<List<SubjectCharacter>>>{};
@@ -586,10 +603,42 @@ class BangumiCatalog implements OnlineCatalog {
     if (items.isEmpty && primaryError != null) {
       throw primaryError;
     }
-    _episodes[id] = items;
+    _episodes[id] = items.map(_parseEpisode).toList(growable: false);
+    _episodeViews.remove(id);
     _episodesLoaded.add(id);
     _subjectViews.remove(id);
     _changes.add(null);
+  }
+
+  _CatalogEpisode _parseEpisode(Map<String, dynamic> item) {
+    final rawSort = item['sort'];
+    final sort = jsonInt(rawSort);
+    final number = rawSort is num && rawSort % 1 != 0
+        ? 0
+        : sort > 0
+        ? sort
+        : jsonInt(item['ep']);
+    final localized = jsonString(item['name_cn']);
+    final alternate = jsonString(item['nameCN']);
+    final airDate = jsonString(item['airdate']);
+    return (
+      number: number,
+      title: localized.isNotEmpty
+          ? localized
+          : alternate.isNotEmpty
+          ? alternate
+          : jsonString(item['name']),
+      airDate: airDate,
+      airTime: DateTime.tryParse(airDate),
+    );
+  }
+
+  int _episodeCount(Map<String, dynamic>? data) {
+    if (data == null) return 0;
+    final total = jsonInt(data['total_episodes']);
+    return total > 0
+        ? total
+        : math.max(jsonInt(data['eps']), jsonInt(data['episodes']));
   }
 
   Future<List<T>> _loadSubjectItems<T>(
@@ -730,6 +779,7 @@ class BangumiCatalog implements OnlineCatalog {
     } else {
       _subjects[id] = merged;
       _subjectViews.remove(id);
+      if (_episodeCount(old) != _episodeCount(merged)) _episodeViews.remove(id);
     }
   }
 
@@ -886,13 +936,10 @@ class BangumiCatalog implements OnlineCatalog {
     final chinese = jsonString(data['name_cn']).isNotEmpty
         ? jsonString(data['name_cn'])
         : jsonString(data['nameCN']);
-    final total = jsonInt(data['total_episodes']) > 0
-        ? jsonInt(data['total_episodes'])
-        : math.max(jsonInt(data['eps']), jsonInt(data['episodes']));
-    final episodes = _episodes[id] ?? const [];
-    final aired = episodes.where((ep) {
-      final air = DateTime.tryParse(jsonString(ep['airdate']));
-      return air != null && air.isBefore(now);
+    final total = _episodeCount(data);
+    final aired = (_episodes[id] ?? const []).where((episode) {
+      final airTime = episode.airTime;
+      return airTime != null && airTime.isBefore(now);
     }).length;
     final tags = jsonList(data['tags'])
         .map((tag) => jsonString(jsonObject(tag)['name']))
@@ -938,43 +985,43 @@ class BangumiCatalog implements OnlineCatalog {
     int watchedCount = 0,
     int? currentEp,
   }) {
-    final result = <EpisodeItem>[];
     final now = DateTime.now();
-    for (final item in _episodes[subjectId] ?? const <Map<String, dynamic>>[]) {
-      final rawSort = item['sort'];
-      if (rawSort is num && rawSort % 1 != 0) continue;
-      final number = jsonInt(rawSort) > 0
-          ? jsonInt(rawSort)
-          : jsonInt(item['ep']);
+    final cached = _episodeViews[subjectId];
+    if (cached != null &&
+        cached.watched == watchedCount &&
+        cached.current == currentEp &&
+        (cached.expires == null || now.isBefore(cached.expires!))) {
+      return cached.items;
+    }
+
+    DateTime? expires;
+    final result = <EpisodeItem>[];
+    for (final episode in _episodes[subjectId] ?? const <_CatalogEpisode>[]) {
+      final number = episode.number;
       if (number <= 0) continue;
-      final airdate = jsonString(item['airdate']);
-      final air = DateTime.tryParse(airdate);
-      final nameCn = jsonString(item['name_cn']).isNotEmpty
-          ? jsonString(item['name_cn'])
-          : jsonString(item['nameCN']);
+      final airTime = episode.airTime;
+      final unaired = airTime != null && airTime.isAfter(now);
+      if (unaired && (expires == null || airTime.isBefore(expires))) {
+        expires = airTime;
+      }
       result.add(
         EpisodeItem(
           episodeNumber: number,
-          title: nameCn.isNotEmpty ? nameCn : jsonString(item['name']),
+          title: episode.title,
           durationSeconds: 0,
-          airDate: airdate,
+          airDate: episode.airDate,
           state: number == currentEp
               ? EpisodeWatchState.current
               : number <= watchedCount
               ? EpisodeWatchState.watched
-              : air != null && air.isAfter(now)
+              : unaired
               ? EpisodeWatchState.unaired
               : EpisodeWatchState.aired,
         ),
       );
     }
     if (result.isEmpty) {
-      final data = _subjects[subjectId];
-      final total = data == null
-          ? 0
-          : (jsonInt(data['total_episodes']) > 0
-                ? jsonInt(data['total_episodes'])
-                : math.max(jsonInt(data['eps']), jsonInt(data['episodes'])));
+      final total = _episodeCount(_subjects[subjectId]);
       if (total > 0 && total <= 500) {
         for (var i = 1; i <= total; i++) {
           result.add(
@@ -993,7 +1040,18 @@ class BangumiCatalog implements OnlineCatalog {
         }
       }
     }
-    return result;
+
+    if (_episodeViews.length >= 64 && cached == null) {
+      _episodeViews.remove(_episodeViews.keys.first);
+    }
+    final items = List<EpisodeItem>.unmodifiable(result);
+    _episodeViews[subjectId] = (
+      watched: watchedCount,
+      current: currentEp,
+      expires: expires,
+      items: items,
+    );
+    return items;
   }
 
   @override

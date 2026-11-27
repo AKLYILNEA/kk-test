@@ -280,7 +280,7 @@ void main() {
     },
   );
 
-  testWidgets('detail keeps the push isolated from episodes and source rows', (
+  testWidgets('detail retains the visible episode grid through the push', (
     tester,
   ) async {
     _setViewport(tester, const Size(420, 880));
@@ -295,6 +295,19 @@ void main() {
     final route = ModalRoute.of(tester.element(detail))!;
     final overview = tester.renderObject(
       find.descendant(of: detail, matching: find.byType(KonekoStarRating)),
+    );
+    final episodeSnapshot = find.byKey(
+      const ValueKey('episode-arrival-snapshot'),
+    );
+    final firstReads = catalog.episodeReads;
+    expect(firstReads, 1);
+    expect(find.text('选集'), findsOneWidget);
+    expect(
+      tester
+          .widget<SnapshotWidget>(episodeSnapshot)
+          .controller
+          .allowSnapshotting,
+      isTrue,
     );
     final oldProfiling = debugProfilePaintsEnabled;
     final oldPaint = debugOnProfilePaint;
@@ -330,11 +343,18 @@ void main() {
     );
     debugPrint('Detail push work $counts');
     expect(motionFrames, greaterThan(2));
-    expect(episodeReadsDuringMotion, 0, reason: '$counts');
+    expect(episodeReadsDuringMotion, firstReads, reason: '$counts');
     expect(episodeRequestsDuringMotion, 0, reason: '$counts');
-    expect(sourceReadsDuringMotion, 0, reason: '$counts');
+    expect(sourceReadsDuringMotion, lessThanOrEqualTo(1), reason: '$counts');
     expect(overviewPaints, lessThanOrEqualTo(2), reason: '$counts');
     await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<SnapshotWidget>(episodeSnapshot)
+          .controller
+          .allowSnapshotting,
+      isFalse,
+    );
     expect(catalog.episodeRequests, 1);
     final source = find.text('樱花源 · XPath');
     final scrollable = find
@@ -422,6 +442,17 @@ void main() {
         .first;
     final position = tester.state<ScrollableState>(scrollable).position;
     expect(position.pixels, 0);
+
+    final expandButton = find.descendant(
+      of: detail,
+      matching: find.text('展开全部'),
+    );
+    final commentsTab = find.descendant(of: detail, matching: find.text('评论'));
+    expect(expandButton, findsOneWidget);
+    final initialTabY = tester.getTopLeft(commentsTab).dy;
+    await tester.pumpAndSettle();
+    expect(expandButton, findsOneWidget);
+    expect(tester.getTopLeft(commentsTab).dy, closeTo(initialTabY, 0.001));
 
     catalog.detail.complete();
     await tester.pumpAndSettle();

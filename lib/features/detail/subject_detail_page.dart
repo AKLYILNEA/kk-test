@@ -1,12 +1,12 @@
 import 'dart:async';
 
 import 'package:collection/collection.dart';
-import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:koneko/common/constants.dart';
 import 'package:koneko/common/providers.dart';
 import 'package:koneko/features/detail/subject_metadata_tabs.dart';
+import 'package:koneko/features/detail/subject_synopsis.dart';
 import 'package:koneko/features/player/player_page.dart';
 import 'package:koneko/features/player/rule_verify_page.dart';
 import 'package:koneko/features/rules/rules_page.dart';
@@ -17,6 +17,7 @@ import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:koneko_contract/koneko_contract.dart';
 import 'package:prism_ui/icons/icons.dart';
 import 'package:prism_ui/prism_ui.dart';
+import 'package:prism_ui/route_scope.dart';
 
 enum _DetailSection { play, characters, relations, comments }
 
@@ -219,16 +220,29 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
       builder: (context, ref, _) {
         final catalog = ref.watch(catalogRepositoryProvider);
         final episodeProvider = loadCatalogEpisodesProvider(subject.subjectId);
-        final load = ref.watch(episodeProvider);
-        return _EpisodeMatrixCard(
-          episodes: catalog.getEpisodes(
+        final load = _sectionsReady
+            ? ref.watch(episodeProvider)
+            : const AsyncLoading<void>();
+        return MemoBuilder(
+          inputs: [
+            catalog,
             subject.subjectId,
-            watchedCount: watchedCount,
-            currentEp: currentEp,
+            subject.totalEpisodes,
+            subject.airedEpisodes,
+            watchedCount,
+            currentEp,
+            load,
+          ],
+          builder: (context) => _EpisodeMatrixCard(
+            episodes: catalog.getEpisodes(
+              subject.subjectId,
+              watchedCount: watchedCount,
+              currentEp: currentEp,
+            ),
+            isLoading: load.isLoading,
+            onRetry: () => ref.invalidate(episodeProvider),
+            onSelect: (episode) => _playEpisode(subject, episode.episodeNumber),
           ),
-          isLoading: load.isLoading,
-          onRetry: () => ref.invalidate(episodeProvider),
-          onSelect: (episode) => _playEpisode(subject, episode.episodeNumber),
         );
       },
     );
@@ -269,7 +283,7 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
               onVerify: (ruleId, ruleName, verifyUrl) =>
                   unawaited(_verifyRule(subject, ruleId, ruleName, verifyUrl)),
               onToggleSelect: (ruleId, ruleName) {
-                if (selectedId == ruleId) {
+                if (_selectedRule.value.$1 == ruleId) {
                   _selectedRule.value = ('', '');
                   showKonekoBanner(context, '已取消指定播放源，将自动沿用上次线路');
                 } else {
@@ -365,7 +379,6 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
               entry?.status,
               currentEp,
               hasHistory,
-              _sectionsReady,
             ],
             builder: (context) => RepaintBoundary(
               child: _HeroCard(
@@ -373,7 +386,6 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
                 entry: entry,
                 currentEp: currentEp,
                 hasHistory: hasHistory,
-                showSynopsisControls: _sectionsReady,
                 onPlay: () => _playEpisode(subject, currentEp),
                 onStatusChanged: (status) {
                   ref
@@ -420,70 +432,69 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
                     ),
                   ),
                 ),
-                if (_sectionsReady)
-                  ...switch (_section) {
-                    _DetailSection.play => [
-                      SliverPadding(
-                        padding: EdgeInsets.fromLTRB(16, 14, 16, bottomPad),
-                        sliver: _playSliver(
-                          subject,
-                          watchedCount: entry?.watchedEpisodes ?? 0,
-                          currentEp: currentEp,
-                          isWide: isWide,
+                ...switch (_section) {
+                  _DetailSection.play => [
+                    SliverPadding(
+                      padding: EdgeInsets.fromLTRB(16, 14, 16, bottomPad),
+                      sliver: _playSliver(
+                        subject,
+                        watchedCount: entry?.watchedEpisodes ?? 0,
+                        currentEp: currentEp,
+                        isWide: isWide,
+                      ),
+                    ),
+                  ],
+                  _DetailSection.characters => [
+                    SliverPadding(
+                      padding: EdgeInsets.fromLTRB(16, 14, 16, bottomPad),
+                      sliver: SubjectPeopleSliver(subjectId: id),
+                    ),
+                  ],
+                  _DetailSection.relations => [
+                    SliverPadding(
+                      padding: EdgeInsets.fromLTRB(16, 14, 16, bottomPad),
+                      sliver: SubjectRelationsSliver(
+                        subjectId: subject.subjectId,
+                        onOpenAnime: (id) => BaseNavigator.push<void>(
+                          context,
+                          SubjectDetailPage(subjectId: id),
                         ),
                       ),
-                    ],
-                    _DetailSection.characters => [
-                      SliverPadding(
-                        padding: EdgeInsets.fromLTRB(16, 14, 16, bottomPad),
-                        sliver: SubjectPeopleSliver(subjectId: id),
+                    ),
+                  ],
+                  _DetailSection.comments => [
+                    SliverPadding(
+                      padding: EdgeInsets.fromLTRB(16, 14, 16, bottomPad),
+                      sliver: Consumer(
+                        builder: (context, ref, _) {
+                          final commentsAsync = ref.watch(
+                            subjectCommentsProvider(id),
+                          );
+                          return _CommentsSectionSliver(
+                            commentsAsync: commentsAsync,
+                            overrideItems: _extraComments,
+                            overrideTotal: _extraTotal,
+                            overrideHasMore: _extraComments != null
+                                ? _extraHasMore
+                                : null,
+                            loadingMore: _loadingMoreComments,
+                            onRefresh: () {
+                              setState(() {
+                                _extraComments = null;
+                                _extraTotal = null;
+                                _extraHasMore = false;
+                              });
+                              ref.invalidate(
+                                subjectCommentsProvider(widget.subjectId),
+                              );
+                            },
+                            onLoadMore: (count) => _loadMoreComments(count),
+                          );
+                        },
                       ),
-                    ],
-                    _DetailSection.relations => [
-                      SliverPadding(
-                        padding: EdgeInsets.fromLTRB(16, 14, 16, bottomPad),
-                        sliver: SubjectRelationsSliver(
-                          subjectId: subject.subjectId,
-                          onOpenAnime: (id) => BaseNavigator.push<void>(
-                            context,
-                            SubjectDetailPage(subjectId: id),
-                          ),
-                        ),
-                      ),
-                    ],
-                    _DetailSection.comments => [
-                      SliverPadding(
-                        padding: EdgeInsets.fromLTRB(16, 14, 16, bottomPad),
-                        sliver: Consumer(
-                          builder: (context, ref, _) {
-                            final commentsAsync = ref.watch(
-                              subjectCommentsProvider(id),
-                            );
-                            return _CommentsSectionSliver(
-                              commentsAsync: commentsAsync,
-                              overrideItems: _extraComments,
-                              overrideTotal: _extraTotal,
-                              overrideHasMore: _extraComments != null
-                                  ? _extraHasMore
-                                  : null,
-                              loadingMore: _loadingMoreComments,
-                              onRefresh: () {
-                                setState(() {
-                                  _extraComments = null;
-                                  _extraTotal = null;
-                                  _extraHasMore = false;
-                                });
-                                ref.invalidate(
-                                  subjectCommentsProvider(widget.subjectId),
-                                );
-                              },
-                              onLoadMore: (count) => _loadMoreComments(count),
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-                  },
+                    ),
+                  ],
+                },
               ],
             ),
           );
@@ -499,7 +510,6 @@ class _HeroCard extends StatelessWidget {
     required this.entry,
     required this.currentEp,
     required this.hasHistory,
-    required this.showSynopsisControls,
     required this.onPlay,
     required this.onStatusChanged,
   });
@@ -508,7 +518,6 @@ class _HeroCard extends StatelessWidget {
   final CollectionEntry? entry;
   final int currentEp;
   final bool hasHistory;
-  final bool showSynopsisControls;
   final VoidCallback onPlay;
   final ValueChanged<CollectionStatus> onStatusChanged;
 
@@ -685,116 +694,9 @@ class _HeroCard extends StatelessWidget {
           ),
           if (summary.isNotEmpty) ...[
             const SizedBox(height: 14),
-            _Synopsis(summary: summary, showControl: showSynopsisControls),
+            SubjectSynopsis(summary: summary),
           ],
         ],
-      ),
-    );
-  }
-}
-
-class _Synopsis extends StatefulWidget {
-  const _Synopsis({required this.summary, required this.showControl});
-
-  final String summary;
-  final bool showControl;
-
-  @override
-  State<_Synopsis> createState() => _SynopsisState();
-}
-
-class _SynopsisState extends State<_Synopsis> {
-  final _paragraph = GlobalKey();
-  Object? _measured;
-  bool _expanded = false;
-  bool _overflows = false;
-
-  void _measureOverflow(Object inputs) {
-    if (_expanded || _measured == inputs) return;
-    _measured = inputs;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _measured != inputs || _expanded) return;
-      final paragraph = _paragraph.currentContext?.findRenderObject();
-      if (paragraph is! RenderParagraph || !paragraph.hasSize) {
-        _measured = null;
-        return;
-      }
-      final overflows = paragraph.didExceedMaxLines;
-      if (_overflows == overflows) return;
-      if (widget.showControl) {
-        setState(() => _overflows = overflows);
-      } else {
-        _overflows = overflows;
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colorScheme;
-    final style = AppTextStyle.subheadline
-        .of(context)
-        .copyWith(color: colors.onSurfaceVariant, height: 1.55);
-    final scaledText = MediaQuery.textScalerOf(context);
-    final direction = Directionality.of(context);
-    return KonekoBlock(
-      corner: 18,
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          _measureOverflow((
-            widget.summary,
-            constraints.maxWidth,
-            scaledText,
-            direction,
-            style,
-          ));
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              AnimatedSize(
-                duration: context.motionDuration(
-                  const Duration(milliseconds: 220),
-                ),
-                curve: Curves.easeOutCubic,
-                alignment: Alignment.topCenter,
-                child: Text(
-                  widget.summary,
-                  key: _paragraph,
-                  maxLines: _expanded ? null : 3,
-                  overflow: _expanded
-                      ? TextOverflow.visible
-                      : TextOverflow.ellipsis,
-                  style: style,
-                ),
-              ),
-              if (widget.showControl && (_expanded || _overflows)) ...[
-                const SizedBox(height: 6),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: PressSurface(
-                    fill: Colors.transparent,
-                    shape: AppShape.full,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 3,
-                    ),
-                    onPressed: () => setState(() {
-                      _expanded = !_expanded;
-                      _measured = null;
-                    }),
-                    child: Text(
-                      _expanded ? '收起' : '展开全部',
-                      style: AppTextStyle.caption1
-                          .of(context, emphasized: true)
-                          .copyWith(color: colors.primary),
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          );
-        },
       ),
     );
   }
@@ -820,10 +722,48 @@ class _EpisodeMatrixCard extends StatefulWidget {
 class _EpisodeMatrixCardState extends State<_EpisodeMatrixCard> {
   static const int _pageSize = 24;
   int _pageIndex = 0;
+  final _arrivalSnapshot = SnapshotController();
+  Animation<double>? _arrival;
+  bool _live = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = routeOf(context);
+    final arrival = route is CardPageRoute<Object?> ? route.animation : null;
+    if (!identical(arrival, _arrival)) {
+      _arrival?.removeStatusListener(_updateSnapshot);
+      _arrival = arrival?..addStatusListener(_updateSnapshot);
+    }
+    _updateSnapshot();
+  }
+
+  void _updateSnapshot([AnimationStatus? _]) {
+    _arrivalSnapshot.allowSnapshotting =
+        !_live &&
+        widget.episodes.isNotEmpty &&
+        _arrival?.status == AnimationStatus.forward;
+  }
+
+  void _revealLiveCard() {
+    if (!_arrivalSnapshot.allowSnapshotting) return;
+    _live = true;
+    _updateSnapshot();
+  }
+
+  @override
+  void dispose() {
+    _arrival?.removeStatusListener(_updateSnapshot);
+    _arrivalSnapshot.dispose();
+    super.dispose();
+  }
 
   @override
   void didUpdateWidget(covariant _EpisodeMatrixCard oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.episodes, widget.episodes)) {
+      _revealLiveCard();
+    }
     final totalPages = (widget.episodes.length / _pageSize).ceil();
     if (totalPages > 0 && _pageIndex >= totalPages) {
       _pageIndex = 0;
@@ -839,79 +779,90 @@ class _EpisodeMatrixCardState extends State<_EpisodeMatrixCard> {
     final start = safePage * _pageSize;
     final visible = episodes.skip(start).take(_pageSize).toList();
 
-    return KonekoCard(
-      corner: 30,
-      padding: const EdgeInsets.all(18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    return Listener(
+      onPointerDown: (_) => _revealLiveCard(),
+      child: SnapshotWidget(
+        key: const ValueKey('episode-arrival-snapshot'),
+        controller: _arrivalSnapshot,
+        mode: SnapshotMode.permissive,
+        autoresize: true,
+        child: KonekoCard(
+          corner: 30,
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Text(
-                  '选集',
-                  style: AppTextStyle.headline
-                      .of(context, emphasized: true)
-                      .copyWith(color: colorScheme.onSurface),
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '选集',
+                      style: AppTextStyle.headline
+                          .of(context, emphasized: true)
+                          .copyWith(color: colorScheme.onSurface),
+                    ),
+                  ),
+                  Text(
+                    '共 ${episodes.length} 话',
+                    style: AppTextStyle.footnote
+                        .of(context)
+                        .copyWith(color: colorScheme.onSurfaceVariant),
+                  ),
+                ],
               ),
-              Text(
-                '共 ${episodes.length} 话',
-                style: AppTextStyle.footnote
-                    .of(context)
-                    .copyWith(color: colorScheme.onSurfaceVariant),
+              if (totalPages > 1) ...[
+                const SizedBox(height: 10),
+                KonekoAutoScrollChipBar(
+                  height: 32,
+                  chipHeight: 28,
+                  fontSize: 11.5,
+                  elevated: false,
+                  padding: EdgeInsets.zero,
+                  unselectedColor: SurfaceLevel.block.colorOf(colorScheme),
+                  labels: [
+                    for (var idx = 0; idx < totalPages; idx++)
+                      '${idx * _pageSize + 1}-${((idx + 1) * _pageSize).clamp(1, episodes.length)}',
+                  ],
+                  selectedIndex: safePage,
+                  onSelected: (idx) => setState(() => _pageIndex = idx),
+                ),
+              ],
+              const SizedBox(height: 12),
+              if (episodes.isEmpty)
+                widget.isLoading
+                    ? const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 16),
+                        child: Center(child: ActivityIndicator()),
+                      )
+                    : Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '暂无剧集资料，可在播放器内选集',
+                              style: AppTextStyle.footnote
+                                  .of(context)
+                                  .copyWith(
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                            ),
+                          ),
+                          if (widget.onRetry != null)
+                            KonekoChip(
+                              label: '重试',
+                              height: 28,
+                              fontSize: 12,
+                              onPressed: widget.onRetry,
+                            ),
+                        ],
+                      ),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [for (final ep in visible) _episodeCell(context, ep)],
               ),
             ],
           ),
-          if (totalPages > 1) ...[
-            const SizedBox(height: 10),
-            KonekoAutoScrollChipBar(
-              height: 32,
-              chipHeight: 28,
-              fontSize: 11.5,
-              elevated: false,
-              padding: EdgeInsets.zero,
-              unselectedColor: SurfaceLevel.block.colorOf(colorScheme),
-              labels: [
-                for (var idx = 0; idx < totalPages; idx++)
-                  '${idx * _pageSize + 1}-${((idx + 1) * _pageSize).clamp(1, episodes.length)}',
-              ],
-              selectedIndex: safePage,
-              onSelected: (idx) => setState(() => _pageIndex = idx),
-            ),
-          ],
-          const SizedBox(height: 12),
-          if (episodes.isEmpty)
-            widget.isLoading
-                ? const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 16),
-                    child: Center(child: ActivityIndicator()),
-                  )
-                : Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          '暂无剧集资料，可在播放器内选集',
-                          style: AppTextStyle.footnote
-                              .of(context)
-                              .copyWith(color: colorScheme.onSurfaceVariant),
-                        ),
-                      ),
-                      if (widget.onRetry != null)
-                        KonekoChip(
-                          label: '重试',
-                          height: 28,
-                          fontSize: 12,
-                          onPressed: widget.onRetry,
-                        ),
-                    ],
-                  ),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [for (final ep in visible) _episodeCell(context, ep)],
-          ),
-        ],
+        ),
       ),
     );
   }

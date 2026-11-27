@@ -45,9 +45,12 @@ void main() {
       expect(detailSubject?.summary, '详情');
       expect(identical(detailSubject, initialSubject), isFalse);
       await catalog.loadSubject(414461);
+      final episodes = catalog.getEpisodes(414461, currentEp: 1);
+      expect(episodes.single.state, EpisodeWatchState.current);
+      expect(catalog.getEpisodes(414461, currentEp: 1), same(episodes));
       expect(
-        catalog.getEpisodes(414461, currentEp: 1).single.state,
-        EpisodeWatchState.current,
+        catalog.getEpisodes(414461, watchedCount: 1).single.state,
+        EpisodeWatchState.watched,
       );
       final characters = await catalog.loadCharacters(414461);
       expect(characters.single.relation, '主角');
