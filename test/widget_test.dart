@@ -551,7 +551,10 @@ void main() {
       await tester.pumpAndSettle();
 
       // Push AboutPage -> verify scroll drives ValueNotifier without errors
-      await tester.tap(find.text('关于'));
+      final aboutRow = find.text('关于 Koneko');
+      await tester.ensureVisible(aboutRow);
+      await tester.pumpAndSettle();
+      await tester.tap(aboutRow);
       await tester.pumpAndSettle();
       expect(find.byType(AboutPage), findsOneWidget);
       final aboutScroll = find
