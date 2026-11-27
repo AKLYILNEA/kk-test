@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:prism_ui/prism_ui.dart';
+import 'package:flutter/rendering.dart' show OffsetLayer;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import '../helpers/test_app.dart';
