@@ -555,7 +555,8 @@ void main() {
       await tester.ensureVisible(aboutRow);
       await tester.pumpAndSettle();
       await tester.tap(aboutRow);
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
       expect(find.byType(AboutPage), findsOneWidget);
       final aboutScroll = find
           .descendant(
@@ -564,7 +565,8 @@ void main() {
           )
           .first;
       await tester.drag(aboutScroll, const Offset(0, -180));
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
       expect(tester.takeException(), isNull);
     },
   );
