@@ -4,10 +4,12 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart'
     show debugOnProfilePaint, debugProfilePaintsEnabled;
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:koneko/common/constants.dart';
 import 'package:koneko/common/providers.dart';
+import 'package:koneko/common/ui_localizations.dart';
 import 'package:koneko/features/about/about_page.dart';
 import 'package:koneko/features/detail/subject_detail_page.dart';
 import 'package:koneko/features/discover/discover_page.dart';
@@ -742,6 +744,11 @@ void main() {
               brightness: Brightness.light,
               customFontFamily: null,
             ),
+            localizationsDelegates: const [
+              KonekoUiLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+            ],
+            supportedLocales: const [kAppLocale, Locale('en', 'US')],
             builder: (context, child) => ViewScope(
               size: const Size(420, 880),
               isMobile: true,
