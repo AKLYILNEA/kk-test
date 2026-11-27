@@ -240,7 +240,13 @@ void main() {
 
       // Selecting and tapping again cancels the specified playback source
       final firstRule = find.text('樱花源 · XPath');
-      await tester.ensureVisible(firstRule);
+      final detailScroll = find
+          .descendant(
+            of: find.byType(SubjectDetailPage),
+            matching: find.byType(Scrollable),
+          )
+          .first;
+      await tester.scrollUntilVisible(firstRule, 160, scrollable: detailScroll);
       await tester.pumpAndSettle();
       await tester.tap(firstRule);
       await tester.pump(const Duration(seconds: 4));
@@ -252,7 +258,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('已指定'), findsNothing);
 
-      await tester.tap(find.text('关联'));
+      final relatedTab = find.text('关联');
+      await tester.ensureVisible(relatedTab);
+      await tester.pumpAndSettle();
+      await tester.tap(relatedTab);
       await tester.pumpAndSettle();
       expect(find.textContaining('关联系列'), findsWidgets);
 
