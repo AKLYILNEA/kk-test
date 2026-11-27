@@ -458,19 +458,30 @@ class BangumiCatalog implements OnlineCatalog {
 
   @override
   Future<void> loadSubject(int id, {bool includeExtras = true}) async {
-    await _details.putIfAbsent(
-      id,
-      () => _fetchSubjectCore(id).onError((Object error, StackTrace stack) {
-        _details.remove(id);
-        Error.throwWithStackTrace(error, stack);
-      }),
-    );
+    await _ensureSubjectCore(id);
     if (!includeExtras) return;
-    await Future.wait([
-      _ensureEpisodes(id).onError((Object _, StackTrace _) {}),
-      loadRelations(id).onError((Object _, StackTrace _) => const []),
-    ]);
+    await _ensureEpisodesSafe(id);
     _notify();
+    await _ensureRelationsSafe(id);
+    _notify();
+  }
+
+  Future<void> _ensureSubjectCore(int id) async {
+    final existing = _details[id];
+    if (existing != null) {
+      await existing;
+      return;
+    }
+    final task = _fetchSubjectCore(id);
+    _details[id] = task;
+    try {
+      await task;
+    } on Object {
+      if (identical(_details[id], task)) {
+        _details.remove(id);
+      }
+      rethrow;
+    }
   }
 
   Future<void> _fetchSubjectCore(int id) async {
@@ -481,14 +492,40 @@ class BangumiCatalog implements OnlineCatalog {
     _notify();
   }
 
-  Future<void> _ensureEpisodes(int id) {
-    if (_episodesLoaded.contains(id) && (_episodes[id]?.isNotEmpty ?? false)) {
-      return Future<void>.value();
+  Future<void> _ensureEpisodesSafe(int id) async {
+    try {
+      await _ensureEpisodes(id);
+    } on Object {
+      // Keep subject detail usable when episode fetch fails; revisit retries.
     }
-    return _episodeLoads.putIfAbsent(
-      id,
-      () => _fetchEpisodes(id).whenComplete(() => _episodeLoads.remove(id)),
-    );
+  }
+
+  Future<void> _ensureRelationsSafe(int id) async {
+    try {
+      await loadRelations(id);
+    } on Object {
+      // Keep subject detail usable when relations fetch fails.
+    }
+  }
+
+  Future<void> _ensureEpisodes(int id) async {
+    if (_episodesLoaded.contains(id) && (_episodes[id]?.isNotEmpty ?? false)) {
+      return;
+    }
+    final existing = _episodeLoads[id];
+    if (existing != null) {
+      await existing;
+      return;
+    }
+    final task = _fetchEpisodes(id);
+    _episodeLoads[id] = task;
+    try {
+      await task;
+    } finally {
+      if (identical(_episodeLoads[id], task)) {
+        _episodeLoads.remove(id);
+      }
+    }
   }
 
   Future<void> _fetchEpisodes(int id) async {
@@ -504,7 +541,8 @@ class BangumiCatalog implements OnlineCatalog {
         );
         final page = jsonList(response['data']);
         items.addAll(page.map(jsonObject));
-        if (page.length < 100 ||
+        if (page.isEmpty ||
+            page.length < 100 ||
             offset + page.length >= jsonInt(response['total'])) {
           break;
         }
@@ -525,12 +563,15 @@ class BangumiCatalog implements OnlineCatalog {
           final payload = jsonObject(response.data);
           final page = jsonList(payload['data']).map(jsonObject).toList();
           nextItems.addAll(page);
-          if (page.length < 100 ||
+          if (page.isEmpty ||
+              page.length < 100 ||
               offset + page.length >= jsonInt(payload['total'])) {
             break;
           }
         }
-        final mainOnly = nextItems.where((ep) => jsonInt(ep['type']) == 0).toList();
+        final mainOnly = nextItems
+            .where((ep) => jsonInt(ep['type']) == 0)
+            .toList();
         items = mainOnly.isNotEmpty ? mainOnly : nextItems;
       } on Object {
         if (primaryError != null) rethrow;
