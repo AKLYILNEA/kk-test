@@ -474,20 +474,6 @@ class _HeroCardState extends State<_HeroCard> {
                                   height: 1.26,
                                 ),
                           ),
-                          if (subject.originalTitle.trim().isNotEmpty &&
-                              subject.originalTitle.trim() !=
-                                  subject.title.trim()) ...[
-                            const SizedBox(height: 5),
-                            Text(
-                              subject.originalTitle,
-                              style: AppTextStyle.footnote
-                                  .of(context)
-                                  .copyWith(
-                                    color: colorScheme.onSurfaceVariant,
-                                    height: 1.32,
-                                  ),
-                            ),
-                          ],
                         ],
                       ),
                       if (subject.score > 0 || subject.rank > 0) ...[
@@ -604,6 +590,14 @@ class _HeroCardState extends State<_HeroCard> {
                     height: 34,
                     fontSize: 12.5,
                     selected: widget.entry?.status == status,
+                    leading: GlyphIcon(
+                      konekoStatusGlyph(status),
+                      fill: widget.entry?.status == status ? 1 : 0,
+                      size: 13.5,
+                      color: widget.entry?.status == status
+                          ? colorScheme.onPrimary
+                          : konekoStatusColor(status),
+                    ),
                     onPressed: () => widget.onStatusChanged(status),
                   ),
                 ),
@@ -1128,12 +1122,6 @@ class _RuleSourcesCard extends StatelessWidget {
                   ),
                   onPressed: onRefresh,
                 ),
-              KonekoChip(
-                label: '管理规则',
-                height: 28,
-                fontSize: 12,
-                onPressed: onManage,
-              ),
             ],
           ),
           const SizedBox(height: 4),

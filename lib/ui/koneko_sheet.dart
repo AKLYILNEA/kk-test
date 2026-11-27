@@ -194,6 +194,11 @@ Future<CollectionStatusChoice?> showKonekoStatusSheet({
             items: [
               for (final status in CollectionStatus.values)
                 DecorationListItem(
+                  leading: GlyphIcon(
+                    konekoStatusGlyph(status),
+                    fill: currentStatus == status ? 1 : 0,
+                    color: konekoStatusColor(status),
+                  ),
                   title: Text(status.label),
                   subtitle: Text(descriptions[status] ?? ''),
                   trailing: currentStatus == status

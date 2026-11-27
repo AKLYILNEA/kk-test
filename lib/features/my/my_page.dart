@@ -170,7 +170,7 @@ class MyPage extends ConsumerWidget {
                         KonekoGlyphs.cloud,
                         color: colorScheme.primary,
                       ),
-                      title: const Text('同步与服务'),
+                      title: const Text('同步设置'),
                       subtitle: const Text('Bangumi / WebDAV'),
                       trailing: const GlyphIcon(Glyphs.chevronForward),
                       onPressed: () => BaseNavigator.push<void>(

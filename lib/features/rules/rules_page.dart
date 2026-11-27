@@ -9,7 +9,6 @@ import 'package:koneko/common/feature_feedback.dart';
 import 'package:koneko/common/providers.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
 import 'package:koneko/ui/koneko_scaffold.dart';
-import 'package:koneko/ui/koneko_sheet.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:koneko_contract/koneko_contract.dart';
 import 'package:prism_ui/icons/icons.dart';
@@ -77,21 +76,12 @@ class _RulesPageState extends ConsumerState<RulesPage> {
       title: '规则管理',
       showBack: widget.showBack,
       actions: [
-        if (managed != null) ...[
-          IconButtonData(
-            glyph: KonekoGlyphs.resources,
-            tooltip: '规则仓库',
-            onPressed: () => BaseNavigator.push<void>(
-              context,
-              _RuleStorePage(repository: managed),
-            ),
-          ),
+        if (managed != null)
           IconButtonData(
             glyph: KonekoGlyphs.importFile,
             tooltip: '导入规则文件',
             onPressed: () => _importFile(managed),
           ),
-        ],
         IconButtonData(
           glyph: KonekoGlyphs.speed,
           tooltip: '全部测速',
@@ -293,11 +283,18 @@ class _RuleStorePage extends ConsumerStatefulWidget {
 }
 
 class _RuleStorePageState extends ConsumerState<_RuleStorePage> {
+  final TextEditingController _customRepoController = TextEditingController();
   String _customRepoUrl = '';
   String _query = '';
   late Future<List<RuleListing>> _rules = widget.repository.browse();
   final _installing = <Uri>{};
   int _selectedPreset = 0;
+
+  @override
+  void dispose() {
+    _customRepoController.dispose();
+    super.dispose();
+  }
 
   void _reload({String? repository}) {
     setState(() {
@@ -310,79 +307,19 @@ class _RuleStorePageState extends ConsumerState<_RuleStorePage> {
     setState(() {
       _selectedPreset = index;
       _customRepoUrl = index == 0 ? '' : preset.repository;
+      if (index == 0) {
+        _customRepoController.clear();
+      }
       _rules = widget.repository.browse(repository: preset.repository);
     });
   }
 
-  Future<void> _openCustomRepoSheet() async {
-    final controller = TextEditingController(text: _customRepoUrl);
-    final applied = await showKonekoSheet<String>(
-      context: context,
-      title: '自定义仓库',
-      subtitle: '留空恢复默认',
-      detents: const [0.46, 0.72],
-      bodyBuilder: (sheetContext) {
-        final colorScheme = sheetContext.colorScheme;
-        return ListView(
-          shrinkWrap: true,
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
-          children: [
-            KonekoCard(
-              corner: 22,
-              padding: const EdgeInsets.all(14),
-              child: TextField(
-                controller: controller,
-                keyboardType: TextInputType.url,
-                autocorrect: false,
-                decoration: const InputDecoration(
-                  hintText:
-                      'https://raw.githubusercontent.com/.../KazumiRules/main/',
-                ),
-                onSubmitted: (v) => Navigator.of(sheetContext).pop(v.trim()),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              spacing: 10,
-              children: [
-                TextButton(
-                  onPressed: () => Navigator.of(sheetContext).pop(''),
-                  child: const Text('恢复自动优选'),
-                ),
-                Expanded(
-                  child: PressSurface(
-                    fill: colorScheme.primary,
-                    shape: AppShape.full,
-                    clipsChild: true,
-                    onPressed: () =>
-                        Navigator.of(sheetContext).pop(controller.text.trim()),
-                    child: SizedBox(
-                      height: 42,
-                      child: Center(
-                        child: Text(
-                          '应用并加载仓库',
-                          style: AppTextStyle.subheadline
-                              .of(sheetContext, emphasized: true)
-                              .copyWith(color: colorScheme.onPrimary),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        );
-      },
-    );
-    controller.dispose();
-    if (!mounted || applied == null) return;
+  void _applyCustomRepo() {
+    final url = _customRepoController.text.trim();
     setState(() {
-      _customRepoUrl = applied;
-      _selectedPreset = applied.isEmpty ? 0 : -1;
-      _rules = widget.repository.browse(
-        repository: applied.isEmpty ? '' : applied,
-      );
+      _customRepoUrl = url;
+      _selectedPreset = url.isEmpty ? 0 : -1;
+      _rules = widget.repository.browse(repository: url);
     });
   }
 
@@ -410,6 +347,96 @@ class _RuleStorePageState extends ConsumerState<_RuleStorePage> {
     }
   }
 
+  Widget _buildCustomRepoSection(BuildContext context) {
+    final colorScheme = context.colorScheme;
+    final hasCustom = _selectedPreset == -1 && _customRepoUrl.isNotEmpty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const ListHeader(title: '自定义仓库'),
+        KonekoCard(
+          corner: 24,
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            spacing: 12,
+            children: [
+              Row(
+                spacing: 8,
+                children: [
+                  GlyphIcon(
+                    KonekoGlyphs.externalLink,
+                    size: 16,
+                    color: colorScheme.primary,
+                  ),
+                  Expanded(
+                    child: Text(
+                      '仓库地址',
+                      style: AppTextStyle.subheadline
+                          .of(context, emphasized: true)
+                          .copyWith(color: colorScheme.onSurface),
+                    ),
+                  ),
+                  if (hasCustom)
+                    KonekoChip(
+                      label: '已启用',
+                      height: 22,
+                      fontSize: 11,
+                      backgroundColor: colorScheme.primary.withValues(
+                        alpha: 0.14,
+                      ),
+                      foregroundColor: colorScheme.primary,
+                    ),
+                ],
+              ),
+              TextField(
+                controller: _customRepoController,
+                keyboardType: TextInputType.url,
+                autocorrect: false,
+                decoration: const InputDecoration(
+                  hintText: '输入仓库地址，留空恢复默认',
+                ),
+                onSubmitted: (_) => _applyCustomRepo(),
+              ),
+              Row(
+                spacing: 10,
+                children: [
+                  KonekoChip(
+                    label: '恢复默认',
+                    height: 36,
+                    fontSize: 13,
+                    backgroundColor: SurfaceLevel.block.colorOf(colorScheme),
+                    foregroundColor: colorScheme.onSurface,
+                    onPressed: () => _selectPreset(0),
+                  ),
+                  Expanded(
+                    child: PressSurface(
+                      fill: colorScheme.primary,
+                      shape: AppShape.full,
+                      clipsChild: true,
+                      onPressed: _applyCustomRepo,
+                      child: SizedBox(
+                        height: 36,
+                        child: Center(
+                          child: Text(
+                            '加载仓库',
+                            style: AppTextStyle.subheadline
+                                .of(context, emphasized: true)
+                                .copyWith(color: colorScheme.onPrimary),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
@@ -425,11 +452,6 @@ class _RuleStorePageState extends ConsumerState<_RuleStorePage> {
         onChanged: (v) => setState(() => _query = v),
       ),
       actions: [
-        IconButtonData(
-          glyph: KonekoGlyphs.tune,
-          tooltip: '自定义仓库地址',
-          onPressed: _openCustomRepoSheet,
-        ),
         IconButtonData(
           glyph: KonekoGlyphs.refresh,
           tooltip: '重新加载',
@@ -453,41 +475,8 @@ class _RuleStorePageState extends ConsumerState<_RuleStorePage> {
               onSelected: _selectPreset,
             ),
           ),
-          if (_selectedPreset == -1 && _customRepoUrl.isNotEmpty)
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-                child: Wrap(
-                  spacing: 8,
-                  children: [
-                    KonekoChip(
-                      label: '自定义源 · 点击修改',
-                      height: 28,
-                      fontSize: 12,
-                      elevated: true,
-                      backgroundColor: SurfaceLevel.card.colorOf(colorScheme),
-                      foregroundColor: colorScheme.primary,
-                      onPressed: _openCustomRepoSheet,
-                    ),
-                    KonekoChip(
-                      label: '恢复自动优选',
-                      height: 28,
-                      fontSize: 12,
-                      elevated: true,
-                      backgroundColor: SurfaceLevel.card.colorOf(colorScheme),
-                      onPressed: () => _selectPreset(0),
-                    ),
-                  ],
-                ),
-              ),
-            ),
           SliverPadding(
-            padding: EdgeInsets.fromLTRB(
-              16,
-              8,
-              16,
-              30 + MediaQuery.paddingOf(context).bottom,
-            ),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             sliver: SliverToBoxAdapter(
               child: FutureBuilder<List<RuleListing>>(
                 future: _rules,
@@ -666,6 +655,17 @@ class _RuleStorePageState extends ConsumerState<_RuleStorePage> {
                   );
                 },
               ),
+            ),
+          ),
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(
+              16,
+              12,
+              16,
+              30 + MediaQuery.paddingOf(context).bottom,
+            ),
+            sliver: SliverToBoxAdapter(
+              child: _buildCustomRepoSection(context),
             ),
           ),
         ],

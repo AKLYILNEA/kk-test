@@ -25,9 +25,59 @@ abstract final class KonekoGlyphs {
 
   static const heart = Glyph([
     GlyphPath(
-      'M12 20.2C12 20.2 4 15.2 4 9.5C4 6.5 6.4 4.4 9 4.4C10.6 4.4 11.5 5.2 12 6.2'
-      'C12.5 5.2 13.4 4.4 15 4.4C17.6 4.4 20 6.5 20 9.5C20 15.2 12 20.2 12 20.2Z',
+      'M12 19.6C11.4 19.2 3.8 14.4 3.8 9.2C3.8 6.1 6.2 4.1 8.8 4.1'
+      'C10.4 4.1 11.4 5.0 12 6.1C12.6 5.0 13.6 4.1 15.2 4.1'
+      'C17.8 4.1 20.2 6.1 20.2 9.2C20.2 14.4 12.6 19.2 12 19.6Z',
     ),
+  ]);
+
+  static const bookmark = Glyph([
+    GlyphPolyline([
+      GlyphVertex(5.4, 4.0, 2.2),
+      GlyphVertex(18.6, 4.0, 2.2),
+      GlyphVertex(18.6, 20.0, 0.9),
+      GlyphVertex(12.0, 15.8, 1.4),
+      GlyphVertex(5.4, 20.0, 0.9),
+    ], closed: true),
+  ]);
+
+  static const checkBold = Glyph([
+    GlyphPolyline([
+      GlyphVertex(5.2, 12.6),
+      GlyphVertex(9.8, 17.2, 0.4),
+      GlyphVertex(18.8, 7.2),
+    ], role: GlyphRole.line),
+  ]);
+
+  static const checkCircle = Glyph([
+    GlyphCircle(12, 12, 8.8),
+    GlyphPolyline([
+      GlyphVertex(8.3, 12.2),
+      GlyphVertex(10.9, 14.8, 0.4),
+      GlyphVertex(15.9, 9.5),
+    ], role: GlyphRole.detail),
+  ]);
+
+  static const hourglass = Glyph([
+    GlyphPath(
+      'M6.8 4.4H17.2C17.2 8.2 14.4 10.6 13.0 12.0'
+      'C14.4 13.4 17.2 15.8 17.2 19.6H6.8'
+      'C6.8 15.8 9.6 13.4 11.0 12.0C9.6 10.6 6.8 8.2 6.8 4.4Z',
+    ),
+  ]);
+
+  static const heartBroken = Glyph([
+    GlyphPath(
+      'M12 19.6C11.4 19.2 3.8 14.4 3.8 9.2C3.8 6.1 6.2 4.1 8.8 4.1'
+      'C10.4 4.1 11.4 5.0 12 6.1C12.6 5.0 13.6 4.1 15.2 4.1'
+      'C17.8 4.1 20.2 6.1 20.2 9.2C20.2 14.4 12.6 19.2 12 19.6Z',
+    ),
+    GlyphPolyline([
+      GlyphVertex(12.0, 5.4),
+      GlyphVertex(9.8, 10.0),
+      GlyphVertex(13.9, 11.8),
+      GlyphVertex(11.3, 16.4),
+    ], role: GlyphRole.detail),
   ]);
 
   static const history = Glyph([

@@ -328,8 +328,11 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                         subject: subject,
                         corner: 16,
                         compact: true,
-                        statusGlyph: _statusGlyph(entry.status),
-                        statusColor: _statusColor(entry.status, colorScheme),
+                        statusGlyph: konekoStatusGlyph(
+                          entry.status,
+                          forBadge: true,
+                        ),
+                        statusColor: konekoStatusColor(entry.status),
                         statusTooltip: '修改「${subject.title}」的追番状态',
                         onStatusTap: () => _pickStatus(subject, entry),
                         onTap: () => BaseNavigator.push<void>(
@@ -346,21 +349,4 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
       ),
     );
   }
-
-  static Glyph _statusGlyph(CollectionStatus status) => switch (status) {
-    CollectionStatus.watching => KonekoGlyphs.play,
-    CollectionStatus.wish => KonekoGlyphs.heart,
-    CollectionStatus.watched => Glyphs.check,
-    CollectionStatus.onHold => KonekoGlyphs.pause,
-    CollectionStatus.dropped => Glyphs.close,
-  };
-
-  static Color _statusColor(CollectionStatus status, ColorScheme scheme) =>
-      switch (status) {
-        CollectionStatus.watching => scheme.primary,
-        CollectionStatus.wish => const Color(0xFFE07A5F),
-        CollectionStatus.watched => const Color(0xFF2E9E6B),
-        CollectionStatus.onHold => const Color(0xFF5B7C99),
-        CollectionStatus.dropped => const Color(0xFF7B7F8A),
-      };
 }

@@ -1016,19 +1016,36 @@ class UnifiedAnimeCard extends StatelessWidget {
                         label: statusTooltip ?? '修改追番状态',
                         child: Tooltip(
                           message: statusTooltip ?? '修改追番状态',
-                          child: SizedBox.square(
-                            dimension: compact ? 26 : 28,
-                            child: PressSurface(
-                              fill: (statusColor ?? colorScheme.primary)
-                                  .withValues(alpha: 0.9),
-                              shape: AppShape.full,
-                              clipsChild: true,
-                              onPressed: onStatusTap,
-                              child: Center(
-                                child: GlyphIcon(
-                                  statusGlyph!,
-                                  size: compact ? 13 : 14,
-                                  color: Colors.white,
+                          child: DecoratedBox(
+                            decoration: ShapeDecoration(
+                              shape: CircleBorder(
+                                side: BorderSide(
+                                  color: Colors.white.withValues(alpha: 0.28),
+                                  width: 1,
+                                ),
+                              ),
+                              shadows: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.24),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: SizedBox.square(
+                              dimension: compact ? 26 : 28,
+                              child: PressSurface(
+                                fill: statusColor ?? colorScheme.primary,
+                                shape: AppShape.full,
+                                clipsChild: true,
+                                onPressed: onStatusTap,
+                                child: Center(
+                                  child: GlyphIcon(
+                                    statusGlyph!,
+                                    fill: 1,
+                                    size: compact ? 14 : 15,
+                                    color: Colors.white,
+                                  ),
                                 ),
                               ),
                             ),
@@ -1066,10 +1083,11 @@ class UnifiedAnimeCard extends StatelessWidget {
                         fontSize: 10.5,
                         leading: GlyphIcon(
                           KonekoGlyphs.heart,
+                          fill: 1,
                           size: 11,
                           color: colorScheme.onPrimary,
                         ),
-                        backgroundColor: const Color(0xD9D64C7F),
+                        backgroundColor: const Color(0xE0E84C7F),
                         foregroundColor: Colors.white,
                       ),
                     ),
@@ -1157,3 +1175,24 @@ class UnifiedAnimeCard extends StatelessWidget {
     );
   }
 }
+
+/// Unified semantic glyph for each collection status across Library cards,
+/// SubjectDetailPage status chips, and the status picker sheet.
+Glyph konekoStatusGlyph(CollectionStatus status, {bool forBadge = false}) =>
+    switch (status) {
+      CollectionStatus.watching => KonekoGlyphs.heart,
+      CollectionStatus.wish => KonekoGlyphs.bookmark,
+      CollectionStatus.watched =>
+        forBadge ? KonekoGlyphs.checkBold : KonekoGlyphs.checkCircle,
+      CollectionStatus.onHold => KonekoGlyphs.hourglass,
+      CollectionStatus.dropped => KonekoGlyphs.heartBroken,
+    };
+
+/// Unified semantic accent color for each collection status.
+Color konekoStatusColor(CollectionStatus status) => switch (status) {
+  CollectionStatus.watching => const Color(0xFFE84C7F),
+  CollectionStatus.wish => const Color(0xFFF09336),
+  CollectionStatus.watched => const Color(0xFF2DA970),
+  CollectionStatus.onHold => const Color(0xFF5485C2),
+  CollectionStatus.dropped => const Color(0xFF7A8094),
+};

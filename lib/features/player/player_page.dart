@@ -11,7 +11,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:koneko/common/constants.dart';
 import 'package:koneko/common/feature_feedback.dart';
 import 'package:koneko/common/providers.dart';
-import 'package:koneko/features/my/service_settings_page.dart';
 import 'package:koneko/features/player/rule_verify_page.dart';
 import 'package:koneko/features/player/source_race.dart';
 import 'package:koneko/features/rules/rules_page.dart';
@@ -1969,13 +1968,13 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                     label: '弹幕设置',
                     height: 30,
                     fontSize: 12,
+                    backgroundColor: SurfaceLevel.block.colorOf(colorScheme),
+                    foregroundColor: colorScheme.onSurface,
                     leading: GlyphIcon(
                       KonekoGlyphs.tune,
                       size: 13,
-                      color: colorScheme.onPrimary,
+                      color: colorScheme.onSurfaceVariant,
                     ),
-                    backgroundColor: colorScheme.primary,
-                    foregroundColor: colorScheme.onPrimary,
                     onPressed: () =>
                         unawaited(openKonekoDanmakuSettingsPage(context)),
                   ),
@@ -1983,10 +1982,12 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                     label: '重新拉取',
                     height: 30,
                     fontSize: 12,
+                    backgroundColor: SurfaceLevel.block.colorOf(colorScheme),
+                    foregroundColor: colorScheme.onSurface,
                     leading: GlyphIcon(
                       KonekoGlyphs.refresh,
                       size: 13,
-                      color: colorScheme.primary,
+                      color: colorScheme.onSurfaceVariant,
                     ),
                     onPressed: _danmakuLoading ? null : () => _loadDanmaku(),
                   ),
@@ -1994,20 +1995,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                     label: '手动匹配',
                     height: 30,
                     fontSize: 12,
-                    backgroundColor: colorScheme.primary.withValues(
-                      alpha: 0.14,
-                    ),
-                    foregroundColor: colorScheme.primary,
+                    backgroundColor: SurfaceLevel.block.colorOf(colorScheme),
+                    foregroundColor: colorScheme.onSurface,
                     onPressed: _openDanmakuSearchSheet,
-                  ),
-                  KonekoChip(
-                    label: '屏蔽词',
-                    height: 30,
-                    fontSize: 12,
-                    onPressed: () => BaseNavigator.push<void>(
-                      context,
-                      const ServiceSettingsPage(),
-                    ),
                   ),
                 ],
               ),
@@ -2044,21 +2034,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                               : _sourceKeywordController.text.trim(),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 6),
-                    KonekoChip(
-                      label: '规则',
-                      height: 28,
-                      fontSize: 12,
-                      onPressed: () async {
-                        await BaseNavigator.push<void>(
-                          context,
-                          const RulesPage(showBack: true),
-                        );
-                        if (mounted) {
-                          unawaited(_probeAllEnabledRules());
-                        }
-                      },
                     ),
                   ],
                 ),

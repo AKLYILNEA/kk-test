@@ -254,30 +254,96 @@ class _AnimekoHeroCarousel extends StatefulWidget {
 
 class _AnimekoHeroCarouselState extends State<_AnimekoHeroCarousel>
     with SingleTickerProviderStateMixin {
+  static const _autoPlayInterval = Duration(seconds: 5);
+
   late final AnimationController _snapController = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 300),
   )..addListener(_onSnapTick);
+  final ScrollController _wideController = ScrollController();
+  Timer? _autoPlayTimer;
   double _page = 0.0;
   double _snapFrom = 0.0;
   double _snapTo = 0.0;
+  Curve _snapCurve = Curves.easeOutCubic;
+  bool _userDragging = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _restartAutoPlay();
+  }
+
+  @override
+  void didUpdateWidget(covariant _AnimekoHeroCarousel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.subjects.length != widget.subjects.length) {
+      if (widget.subjects.isNotEmpty && _page > widget.subjects.length - 1) {
+        _page = 0.0;
+      }
+      _restartAutoPlay();
+    }
+  }
+
+  void _restartAutoPlay() {
+    _autoPlayTimer?.cancel();
+    if (widget.subjects.length <= 1) return;
+    _autoPlayTimer = Timer.periodic(_autoPlayInterval, (_) => _autoAdvance());
+  }
+
+  void _autoAdvance() {
+    if (!mounted || _userDragging || widget.subjects.length <= 1) return;
+    if (!TickerMode.of(context)) return;
+    final isWide = widget.availableWidth >= 640;
+    if (isWide) {
+      if (!_wideController.hasClients) return;
+      final maxExtent = _wideController.position.maxScrollExtent;
+      if (maxExtent <= 0) return;
+      final current = _wideController.offset;
+      final next = current >= maxExtent - 16
+          ? 0.0
+          : (current + 280.0).clamp(0.0, maxExtent);
+      unawaited(
+        _wideController.animateTo(
+          next,
+          duration: const Duration(milliseconds: 520),
+          curve: Curves.easeInOutCubic,
+        ),
+      );
+      return;
+    }
+    final nextIndex = (_page.round() + 1) % widget.subjects.length;
+    _animateToPage(
+      nextIndex,
+      duration: const Duration(milliseconds: 520),
+      curve: Curves.easeInOutCubic,
+    );
+  }
 
   void _onSnapTick() {
-    final t = Curves.easeOutCubic.transform(_snapController.value);
+    final t = _snapCurve.transform(_snapController.value);
     setState(() {
       _page = lerpDouble(_snapFrom, _snapTo, t)!;
     });
   }
 
-  void _animateToPage(int target) {
+  void _animateToPage(
+    int target, {
+    Duration duration = const Duration(milliseconds: 300),
+    Curve curve = Curves.easeOutCubic,
+  }) {
     final clamped = target.clamp(0, widget.subjects.length - 1).toDouble();
     _snapFrom = _page;
     _snapTo = clamped;
+    _snapCurve = curve;
+    _snapController.duration = duration;
     _snapController.forward(from: 0);
   }
 
   @override
   void dispose() {
+    _autoPlayTimer?.cancel();
+    _wideController.dispose();
     _snapController.dispose();
     super.dispose();
   }
@@ -304,25 +370,43 @@ class _AnimekoHeroCarouselState extends State<_AnimekoHeroCarousel>
         if (isWide)
           SizedBox(
             height: 184,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              clipBehavior: Clip.none,
-              physics: const BouncingScrollPhysics(),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              itemCount: items.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 12),
-              itemBuilder: (context, index) {
-                final subject = items[index];
-                return SizedBox(
-                  width: 268,
-                  child: _AnimekoArtworkCard(
-                    subject: subject,
-                    titleOpacity: 1.0,
-                    corner: 24,
-                    onTap: () => widget.onSelect(subject),
-                  ),
-                );
+            child: NotificationListener<ScrollNotification>(
+              onNotification: (notification) {
+                if (notification is ScrollStartNotification &&
+                    notification.dragDetails != null) {
+                  _userDragging = true;
+                  _autoPlayTimer?.cancel();
+                } else if (notification is ScrollEndNotification &&
+                    _userDragging) {
+                  _userDragging = false;
+                  _restartAutoPlay();
+                }
+                return false;
               },
+              child: ListView.separated(
+                controller: _wideController,
+                scrollDirection: Axis.horizontal,
+                clipBehavior: Clip.none,
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 4,
+                ),
+                itemCount: items.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 12),
+                itemBuilder: (context, index) {
+                  final subject = items[index];
+                  return SizedBox(
+                    width: 268,
+                    child: _AnimekoArtworkCard(
+                      subject: subject,
+                      titleOpacity: 1.0,
+                      corner: 24,
+                      onTap: () => widget.onSelect(subject),
+                    ),
+                  );
+                },
+              ),
             ),
           )
         else
@@ -369,6 +453,8 @@ class _AnimekoHeroCarouselState extends State<_AnimekoHeroCarousel>
       onHorizontalDragStart: single
           ? null
           : (_) {
+              _userDragging = true;
+              _autoPlayTimer?.cancel();
               if (_snapController.isAnimating) {
                 _snapController.stop();
               }
@@ -389,6 +475,7 @@ class _AnimekoHeroCarouselState extends State<_AnimekoHeroCarousel>
       onHorizontalDragEnd: single
           ? null
           : (details) {
+              _userDragging = false;
               final vx = details.primaryVelocity ?? 0;
               int target;
               if (vx < -240) {
@@ -399,8 +486,15 @@ class _AnimekoHeroCarouselState extends State<_AnimekoHeroCarousel>
                 target = _page.round();
               }
               _animateToPage(target);
+              _restartAutoPlay();
             },
-      onHorizontalDragCancel: single ? null : () => _animateToPage(_page.round()),
+      onHorizontalDragCancel: single
+          ? null
+          : () {
+              _userDragging = false;
+              _animateToPage(_page.round());
+              _restartAutoPlay();
+            },
       child: SizedBox(
         height: cardHeight + 12,
         child: Stack(
@@ -424,6 +518,7 @@ class _AnimekoHeroCarouselState extends State<_AnimekoHeroCarousel>
                       widget.onSelect(items[slot.index]);
                     } else {
                       _animateToPage(slot.index);
+                      _restartAutoPlay();
                     }
                   },
                 ),
