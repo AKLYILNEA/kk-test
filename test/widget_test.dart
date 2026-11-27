@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -267,6 +269,78 @@ void main() {
     },
   );
 
+  testWidgets('detail loads one role indicator and retains visited requests', (
+    tester,
+  ) async {
+    _setViewport(tester, const Size(420, 880));
+    final catalog = _PendingCatalog();
+    addTearDown(catalog.events.close);
+    await tester.pumpWidget(_testApp(catalog: catalog));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('星海旅人：北境编年史').first);
+    await tester.pumpAndSettle();
+    expect(catalog.episodeRequests, 1);
+    expect(catalog.characterRequests, 0);
+    expect(catalog.creditRequests, 0);
+    expect(catalog.relationRequests, 0);
+    expect(catalog.commentRequests, 0);
+
+    final indicators = find.descendant(
+      of: find.byType(SubjectDetailPage),
+      matching: find.byType(ActivityIndicator),
+    );
+    await tester.ensureVisible(find.text('角色'));
+    await tester.tap(find.text('角色'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(indicators, findsOneWidget);
+    expect(catalog.characterRequests, 1);
+    expect(catalog.creditRequests, 1);
+
+    catalog.characters.complete(const [
+      SubjectCharacter(id: 1, name: '测试角色', relation: '主角'),
+    ]);
+    await tester.pumpAndSettle();
+    expect(indicators, findsNothing);
+    expect(find.text('测试角色'), findsOneWidget);
+
+    await tester.tap(find.text('播放'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('角色'));
+    await tester.pumpAndSettle();
+    expect(indicators, findsNothing);
+    expect(catalog.characterRequests, 1);
+    expect(catalog.creditRequests, 1);
+
+    catalog.credits.complete(const [SubjectPerson(id: 2, name: '测试制作')]);
+    await tester.pumpAndSettle();
+    expect(find.text('测试制作'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a hidden home tab does not refresh its feed', (tester) async {
+    _setViewport(tester, const Size(420, 880));
+    final catalog = _PendingCatalog();
+    addTearDown(catalog.events.close);
+    await tester.pumpWidget(_testApp(catalog: catalog));
+    await tester.pumpAndSettle();
+
+    final dock = find.byType(NavigationDock);
+    await tester.tap(find.descendant(of: dock, matching: find.text('追番')));
+    await tester.pumpAndSettle();
+    final hiddenReads = catalog.trendingReads;
+    catalog.events.add(null);
+    catalog.events.add(null);
+    await tester.pumpAndSettle();
+    expect(catalog.trendingReads, hiddenReads);
+
+    await tester.tap(find.descendant(of: dock, matching: find.text('推荐')));
+    await tester.pumpAndSettle();
+    expect(catalog.trendingReads, greaterThan(hiddenReads));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'HistoryPage shows latest source with capsule play/next buttons and no multi-source badge',
     (tester) async {
@@ -300,9 +374,11 @@ void _setViewport(WidgetTester tester, Size size) {
   addTearDown(tester.view.resetDevicePixelRatio);
 }
 
-Widget _testApp() => ProviderScope(
+Widget _testApp({CatalogRepository? catalog}) => ProviderScope(
   overrides: [
-    catalogRepositoryProvider.overrideWithValue(MockCatalogRepository()),
+    catalogRepositoryProvider.overrideWithValue(
+      catalog ?? MockCatalogRepository(),
+    ),
     ruleRepositoryProvider.overrideWithValue(MockRuleRepository()),
     libraryProvider.overrideWith(_FixtureLibrary.new),
     historyProvider.overrideWith(_FixtureHistory.new),
@@ -318,4 +394,72 @@ class _FixtureLibrary extends LibraryNotifier {
 class _FixtureHistory extends HistoryNotifier {
   @override
   List<MergedHistoryEntry> build() => MockSeedData.initialMergedHistory();
+}
+
+class _PendingCatalog extends MockCatalogRepository implements OnlineCatalog {
+  final events = StreamController<void>.broadcast();
+  final characters = Completer<List<SubjectCharacter>>();
+  final credits = Completer<List<SubjectPerson>>();
+  int episodeRequests = 0;
+  int characterRequests = 0;
+  int creditRequests = 0;
+  int relationRequests = 0;
+  int commentRequests = 0;
+  int trendingReads = 0;
+
+  @override
+  Stream<void> get changes => events.stream;
+
+  @override
+  Future<void> refresh() async {}
+
+  @override
+  Future<void> loadSubject(int id, {bool includeExtras = true}) async {
+    if (includeExtras) {
+      await loadEpisodes(id);
+      await loadRelations(id);
+    }
+  }
+
+  @override
+  Future<void> loadEpisodes(int id) async {
+    episodeRequests++;
+  }
+
+  @override
+  Future<List<SubjectCharacter>> loadCharacters(int id) {
+    characterRequests++;
+    return characters.future;
+  }
+
+  @override
+  Future<List<SubjectPerson>> loadCredits(int id) {
+    creditRequests++;
+    return credits.future;
+  }
+
+  @override
+  Future<List<SubjectRelation>> loadRelations(int id) async {
+    relationRequests++;
+    return [];
+  }
+
+  @override
+  Future<SubjectCommentsPage> loadComments(
+    int id, {
+    int offset = 0,
+    int limit = 20,
+  }) async {
+    commentRequests++;
+    return const SubjectCommentsPage(items: [], total: 0, hasMore: false);
+  }
+
+  @override
+  List<AnimeSubject> getTrending({String? tag}) {
+    trendingReads++;
+    return super.getTrending(tag: tag);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

@@ -26,9 +26,9 @@ final videoViewportProvider = Provider<Widget Function(PlaybackSession)?>(
   (_) => null,
 );
 final danmakuViewportProvider =
-    Provider<Widget Function(List<DanmakuItem>, PlaybackStatus, DanmakuSettings)?>(
-      (_) => null,
-    );
+    Provider<
+      Widget Function(List<DanmakuItem>, PlaybackStatus, DanmakuSettings)?
+    >((_) => null);
 final verifyWebViewBuilderProvider =
     Provider<
       Widget Function(
@@ -43,8 +43,23 @@ final onlineCatalogProvider = Provider<OnlineCatalog?>((ref) {
   return catalog is OnlineCatalog ? catalog : null;
 });
 
-final catalogUpdatesProvider = StreamProvider<void>((ref) {
-  return ref.watch(onlineCatalogProvider)?.changes ?? const Stream.empty();
+final catalogUpdatesProvider = StreamProvider<int>((ref) async* {
+  final changes = ref.watch(onlineCatalogProvider)?.changes;
+  if (changes == null) return;
+  var version = 0;
+  await for (final _ in changes) {
+    yield ++version;
+  }
+});
+
+final catalogSubjectProvider = Provider.autoDispose.family<AnimeSubject?, int>((
+  ref,
+  id,
+) {
+  final catalog = ref.watch(catalogRepositoryProvider);
+  return ref.watch(
+    catalogUpdatesProvider.select((_) => catalog.getSubjectById(id)),
+  );
 });
 
 final loadHomeCatalogProvider = FutureProvider<void>((ref) async {
@@ -53,9 +68,16 @@ final loadHomeCatalogProvider = FutureProvider<void>((ref) async {
 
 final loadCatalogSubjectProvider = FutureProvider.autoDispose.family<void, int>(
   (ref, id) async {
-    await ref.watch(onlineCatalogProvider)?.loadSubject(id);
+    await ref
+        .watch(onlineCatalogProvider)
+        ?.loadSubject(id, includeExtras: false);
   },
 );
+
+final loadCatalogEpisodesProvider = FutureProvider.autoDispose
+    .family<void, int>((ref, id) async {
+      await ref.watch(onlineCatalogProvider)?.loadEpisodes(id);
+    });
 
 final subjectCommentsProvider = FutureProvider.autoDispose
     .family<SubjectCommentsPage, int>((ref, subjectId) async {

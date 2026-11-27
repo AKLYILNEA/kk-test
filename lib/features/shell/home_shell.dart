@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:koneko/common/constants.dart';
@@ -44,21 +46,16 @@ class HomeShell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final isMobile = ViewScope.isMobileOf(context);
     final colorScheme = context.colorScheme;
-    final settings = ref.watch(themeSettingsProvider);
-    final rawIndex = ref.watch(navIndexProvider);
-    final navNotifier = ref.read(navIndexProvider.notifier);
+    final mode = ref.watch(
+      themeSettingsProvider.select((settings) => settings.tabAnimation),
+    );
 
     if (isMobile) {
-      const mobileIndices = [0, 1, 2, 8];
-      final mobileIndex = rawIndex < 3 ? rawIndex : 3;
-      void select(int index) => navNotifier.select(mobileIndices[index]);
       final dockInset = NavigationDock.insetOf(context) + 8;
-
       final pages = _ShellPages(
-        index: mobileIndex,
         count: _mobileDestinations.length,
-        mode: settings.tabAnimation,
-        pageBuilder: (_, index) => _buildMobilePage(index, dockInset),
+        mode: mode,
+        bottomPadding: dockInset,
       );
 
       return Surface(
@@ -69,11 +66,17 @@ class HomeShell extends ConsumerWidget {
             pages,
             Align(
               alignment: Alignment.bottomCenter,
-              child: BarItemPresence.held(
-                child: NavigationDock(
-                  destinations: _mobileDestinations,
-                  selectedIndex: mobileIndex,
-                  onSelected: select,
+              child: Consumer(
+                builder: (context, ref, _) => BarItemPresence.held(
+                  child: NavigationDock(
+                    destinations: _mobileDestinations,
+                    selectedIndex: ref.watch(
+                      navIndexProvider.select(_mobileIndexOf),
+                    ),
+                    onSelected: (index) => ref
+                        .read(navIndexProvider.notifier)
+                        .select(_mobileIndices[index]),
+                  ),
                 ),
               ),
             ),
@@ -83,7 +86,6 @@ class HomeShell extends ConsumerWidget {
     }
 
     // Desktop / Wide layout with authentic prism_ui NavigationSidebar
-    final desktopIndex = rawIndex.clamp(0, _desktopDestinations.length - 1);
     final canExpandInline = ViewScope.sizeOf(context).width >= 960;
 
     return Surface(
@@ -94,33 +96,103 @@ class HomeShell extends ConsumerWidget {
           Surface(
             color: colorScheme.chromeSurface,
             shape: BorderDirectional(end: Divider.createBorderSide(context)),
-            child: NavigationSidebar(
-              destinations: _desktopDestinations,
-              selectedIndex: desktopIndex,
-              expanded: canExpandInline && settings.sidebarExpanded,
-              onSelected: navNotifier.select,
-              onToggle: canExpandInline
-                  ? () => ref
-                        .read(themeSettingsProvider.notifier)
-                        .update(
-                          (s) =>
-                              s.copyWith(sidebarExpanded: !s.sidebarExpanded),
-                        )
-                  : null,
+            child: Consumer(
+              builder: (context, ref, _) => NavigationSidebar(
+                destinations: _desktopDestinations,
+                selectedIndex: ref
+                    .watch(navIndexProvider)
+                    .clamp(0, _desktopDestinations.length - 1),
+                expanded:
+                    canExpandInline &&
+                    ref.watch(
+                      themeSettingsProvider.select(
+                        (settings) => settings.sidebarExpanded,
+                      ),
+                    ),
+                onSelected: ref.read(navIndexProvider.notifier).select,
+                onToggle: canExpandInline
+                    ? () => ref
+                          .read(themeSettingsProvider.notifier)
+                          .update(
+                            (settings) => settings.copyWith(
+                              sidebarExpanded: !settings.sidebarExpanded,
+                            ),
+                          )
+                    : null,
+              ),
             ),
           ),
           Expanded(
             child: _ShellPages(
-              index: desktopIndex,
               count: _desktopDestinations.length,
-              mode: settings.tabAnimation,
+              mode: mode,
               desktop: true,
-              pageBuilder: (_, index) => _buildDesktopPage(index),
             ),
           ),
         ],
       ),
     );
+  }
+}
+
+const _mobileIndices = [0, 1, 2, 8];
+
+int _mobileIndexOf(int index) => index.clamp(0, 3);
+
+// The PageView preserves each destination. For distant switches it swaps the
+// outgoing page into the adjacent slot so intermediate pages never flash by.
+class _ShellPages extends ConsumerStatefulWidget {
+  const _ShellPages({
+    required this.count,
+    required this.mode,
+    this.desktop = false,
+    this.bottomPadding = 0,
+  });
+
+  final int count;
+  final TabAnimationMode mode;
+  final double bottomPadding;
+  final bool desktop;
+
+  @override
+  ConsumerState<_ShellPages> createState() => _ShellPagesState();
+}
+
+class _ShellPagesState extends ConsumerState<_ShellPages> {
+  late final _controller = PageController(
+    initialPage: _mapIndex(ref.read(navIndexProvider)),
+  );
+  final _pages = <int, Widget>{};
+  List<int>? _order;
+  int _switch = 0;
+
+  int _mapIndex(int index) =>
+      widget.desktop ? index.clamp(0, widget.count - 1) : _mobileIndexOf(index);
+
+  @override
+  void initState() {
+    super.initState();
+    // Read before a selection change can initialize the controller.
+    final controller = _controller;
+    ref.listenManual(navIndexProvider, (previous, next) {
+      final index = _mapIndex(next);
+      if (previous != null && index == _mapIndex(previous)) return;
+      final request = ++_switch;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && controller.hasClients && request == _switch) {
+          unawaited(_showPage(index, request));
+        }
+      });
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _ShellPages oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.bottomPadding != oldWidget.bottomPadding ||
+        widget.desktop != oldWidget.desktop) {
+      _pages.clear();
+    }
   }
 
   Widget _buildMobilePage(int index, double bottomPadding) => switch (index) {
@@ -141,46 +213,6 @@ class HomeShell extends ConsumerWidget {
     7 => const AboutPage(showBack: false),
     _ => const MyPage(),
   };
-}
-
-// The PageView preserves each destination. For distant switches it swaps the
-// outgoing page into the adjacent slot so intermediate pages never flash by.
-class _ShellPages extends StatefulWidget {
-  const _ShellPages({
-    required this.index,
-    required this.count,
-    required this.mode,
-    required this.pageBuilder,
-    this.desktop = false,
-  });
-
-  final int index;
-  final int count;
-  final TabAnimationMode mode;
-  final IndexedWidgetBuilder pageBuilder;
-  final bool desktop;
-
-  @override
-  State<_ShellPages> createState() => _ShellPagesState();
-}
-
-class _ShellPagesState extends State<_ShellPages> {
-  late final _controller = PageController(initialPage: widget.index);
-  List<int>? _order;
-  int _switch = 0;
-
-  @override
-  void didUpdateWidget(covariant _ShellPages oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.index != widget.index) {
-      final request = ++_switch;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && request == _switch) {
-          _showPage(widget.index, request);
-        }
-      });
-    }
-  }
 
   Future<void> _showPage(int index, int request) async {
     if (!_controller.hasClients) return;
@@ -232,25 +264,46 @@ class _ShellPagesState extends State<_ShellPages> {
       },
       itemBuilder: (context, position) {
         final index = _order?[position] ?? position;
-        final active = index == widget.index;
-        Widget page = PageFocusScope(child: widget.pageBuilder(context, index));
-        if (widget.desktop) {
-          page = _DesktopStack(active: active, child: page);
-        }
+        final page = _pages.putIfAbsent(
+          index,
+          () => PageFocusScope(
+            child: widget.desktop
+                ? _buildDesktopPage(index)
+                : _buildMobilePage(index, widget.bottomPadding),
+          ),
+        );
         return KeepScope(
           key: ValueKey(index),
-          child: _TabPage(
-            controller: _controller,
-            position: position,
-            fade: !widget.desktop && widget.mode == TabAnimationMode.fade,
-            active: active,
-            child: PageActivityScope(
-              isActive: active,
-              child: TickerMode(
-                enabled: active,
-                child: ExcludeFocus(excluding: !active, child: page),
-              ),
-            ),
+          child: Consumer(
+            child: page,
+            builder: (context, ref, page) {
+              final active = ref.watch(
+                navIndexProvider.select((value) => _mapIndex(value) == index),
+              );
+              final body = PageActivityScope(
+                isActive: active,
+                child: TickerMode(
+                  enabled: active,
+                  child: ExcludeFocus(
+                    excluding: !active,
+                    child: KeyboardInsetHold(
+                      child: widget.desktop
+                          ? _DesktopStack(active: active, child: page!)
+                          : page!,
+                    ),
+                  ),
+                ),
+              );
+              return widget.desktop
+                  ? body
+                  : _TabPage(
+                      controller: _controller,
+                      position: position,
+                      fade: widget.mode == TabAnimationMode.fade,
+                      active: active,
+                      child: body,
+                    );
+            },
           ),
         );
       },

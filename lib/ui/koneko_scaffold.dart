@@ -6,6 +6,7 @@ import 'package:flutter/physics.dart';
 import 'package:flutter/widgets.dart';
 import 'package:prism_ui/icons/icons.dart';
 import 'package:prism_ui/prism_ui.dart';
+import 'package:prism_ui/route_scope.dart';
 
 /// Configures FlClash's authentic iOS-27 spring/goo inline AppBar search
 /// inside [KonekoScaffold].
@@ -193,7 +194,7 @@ class _KonekoScaffoldState extends State<KonekoScaffold>
     final mobile = context.isMobileView;
     _searchFillsBar = isCompactBar(context, mobile);
     final compactTitle =
-        mobile && ModalRoute.of(context)?.impliesAppBarDismissal == true;
+        mobile && routeOf(context)?.impliesAppBarDismissal == true;
     final search = widget.searchConfig;
     const idle = AlwaysStoppedAnimation(false);
 

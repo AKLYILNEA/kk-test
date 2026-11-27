@@ -177,6 +177,7 @@ abstract interface class OnlineCatalog implements CatalogRepository {
   Future<bool> loadMoreTrending({String? tag});
   Future<BangumiProfile?> loadProfile(String token);
   Future<void> loadSubject(int id, {bool includeExtras = true});
+  Future<void> loadEpisodes(int id);
   Future<List<SubjectCharacter>> loadCharacters(int subjectId);
   Future<List<SubjectPerson>> loadCredits(int subjectId);
   Future<List<SubjectRelation>> loadRelations(int subjectId);

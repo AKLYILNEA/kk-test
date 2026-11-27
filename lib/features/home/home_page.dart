@@ -3,6 +3,7 @@ import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:koneko/common/catalog_page_refresh.dart';
 import 'package:koneko/common/providers.dart';
 import 'package:koneko/features/detail/subject_detail_page.dart';
 import 'package:koneko/features/discover/discover_page.dart';
@@ -23,7 +24,8 @@ class HomePage extends ConsumerStatefulWidget {
   ConsumerState<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends ConsumerState<HomePage> {
+class _HomePageState extends ConsumerState<HomePage>
+    with RouteMotionHoldMixin<HomePage>, CatalogPageRefreshMixin<HomePage> {
   static const _tags = [
     '全部',
     '奇幻',
@@ -101,7 +103,6 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    ref.watch(catalogUpdatesProvider);
     final catalog = ref.watch(catalogRepositoryProvider);
     final loading = ref.watch(loadHomeCatalogProvider);
     final library = ref.watch(libraryProvider);
@@ -128,7 +129,10 @@ class _HomePageState extends ConsumerState<HomePage> {
           glyph: KonekoGlyphs.history,
           tooltip: '观看历史',
           onPressed: () {
-            BaseNavigator.push<void>(context, const HistoryPage(showBack: true));
+            BaseNavigator.push<void>(
+              context,
+              const HistoryPage(showBack: true),
+            );
           },
         ),
       ],
@@ -143,88 +147,90 @@ class _HomePageState extends ConsumerState<HomePage> {
               ? 3
               : 2;
 
-          return CustomScrollView(
-            controller: _scrollController,
-            scrollCacheExtent: const ScrollCacheExtent.pixels(900),
-            slivers: [
-              const KonekoScrollStart(),
-              if (featured.isNotEmpty)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 2, bottom: 10),
-                    child: _AnimekoHeroCarousel(
-                      subjects: featured,
-                      availableWidth: width,
-                      onSelect: _openDetail,
-                    ),
-                  ),
-                ),
-              SliverToBoxAdapter(
-                child: KonekoAutoScrollChipBar(
-                  height: 46,
-                  chipHeight: 34,
-                  fontSize: 13,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 6,
-                  ),
-                  labels: _tags,
-                  selectedIndex: _tags
-                      .indexOf(_selectedTag)
-                      .clamp(0, _tags.length - 1)
-                      .toInt(),
-                  onSelected: (index) => _selectTag(_tags[index]),
-                ),
-              ),
-              if (subjects.isEmpty)
-                SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Center(
-                    child: loading.isLoading || _loadingMore
-                        ? const ActivityIndicator()
-                        : Text(loading.hasError ? '加载失败，请稍后重试' : '暂无番剧'),
-                  ),
-                )
-              else ...[
-                SliverPadding(
-                  padding: EdgeInsets.fromLTRB(
-                    16,
-                    12,
-                    16,
-                    _loadingMore ? 12 : 24 + widget.bottomPadding,
-                  ),
-                  sliver: SliverGrid(
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: crossAxisCount,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 14,
-                      childAspectRatio: 0.56,
-                    ),
-                    delegate: SliverChildBuilderDelegate((context, index) {
-                      final subject = subjects[index];
-                      return UnifiedAnimeCard(
-                        subject: subject,
-                        isTracking: trackingIds.contains(subject.subjectId),
-                        showTopRank: _selectedTag == '全部',
-                        onTap: () => _openDetail(subject),
-                      );
-                    }, childCount: subjects.length),
-                  ),
-                ),
-                if (_loadingMore)
+          return ArrivalCacheExtentBuilder(
+            builder: (context, cacheExtent) => CustomScrollView(
+              controller: _scrollController,
+              scrollCacheExtent: cacheExtent,
+              slivers: [
+                const KonekoScrollStart(),
+                if (featured.isNotEmpty)
                   SliverToBoxAdapter(
                     child: Padding(
-                      padding: EdgeInsets.fromLTRB(
-                        0,
-                        8,
-                        0,
-                        28 + widget.bottomPadding,
+                      padding: const EdgeInsets.only(top: 2, bottom: 10),
+                      child: _AnimekoHeroCarousel(
+                        subjects: featured,
+                        availableWidth: width,
+                        onSelect: _openDetail,
                       ),
-                      child: const Center(child: ActivityIndicator()),
                     ),
                   ),
+                SliverToBoxAdapter(
+                  child: KonekoAutoScrollChipBar(
+                    height: 46,
+                    chipHeight: 34,
+                    fontSize: 13,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 6,
+                    ),
+                    labels: _tags,
+                    selectedIndex: _tags
+                        .indexOf(_selectedTag)
+                        .clamp(0, _tags.length - 1)
+                        .toInt(),
+                    onSelected: (index) => _selectTag(_tags[index]),
+                  ),
+                ),
+                if (subjects.isEmpty)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Center(
+                      child: loading.isLoading || _loadingMore
+                          ? const ActivityIndicator()
+                          : Text(loading.hasError ? '加载失败，请稍后重试' : '暂无番剧'),
+                    ),
+                  )
+                else ...[
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(
+                      16,
+                      12,
+                      16,
+                      _loadingMore ? 12 : 24 + widget.bottomPadding,
+                    ),
+                    sliver: SliverGrid(
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: crossAxisCount,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 14,
+                        childAspectRatio: 0.56,
+                      ),
+                      delegate: SliverChildBuilderDelegate((context, index) {
+                        final subject = subjects[index];
+                        return UnifiedAnimeCard(
+                          subject: subject,
+                          isTracking: trackingIds.contains(subject.subjectId),
+                          showTopRank: _selectedTag == '全部',
+                          onTap: () => _openDetail(subject),
+                        );
+                      }, childCount: subjects.length),
+                    ),
+                  ),
+                  if (_loadingMore)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          0,
+                          8,
+                          0,
+                          28 + widget.bottomPadding,
+                        ),
+                        child: const Center(child: ActivityIndicator()),
+                      ),
+                    ),
+                ],
               ],
-            ],
+            ),
           );
         },
       ),
@@ -267,10 +273,17 @@ class _AnimekoHeroCarouselState extends State<_AnimekoHeroCarousel>
   double _snapTo = 0.0;
   Curve _snapCurve = Curves.easeOutCubic;
   bool _userDragging = false;
+  bool _visible = false;
 
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final visible =
+        TickerMode.valuesOf(context).enabled &&
+        PageActivityScope.isActiveOf(context) &&
+        (ModalRoute.isCurrentOf(context) ?? true);
+    if (_visible == visible) return;
+    _visible = visible;
     _restartAutoPlay();
   }
 
@@ -287,13 +300,12 @@ class _AnimekoHeroCarouselState extends State<_AnimekoHeroCarousel>
 
   void _restartAutoPlay() {
     _autoPlayTimer?.cancel();
-    if (widget.subjects.length <= 1) return;
+    if (!_visible || widget.subjects.length <= 1) return;
     _autoPlayTimer = Timer.periodic(_autoPlayInterval, (_) => _autoAdvance());
   }
 
   void _autoAdvance() {
     if (!mounted || _userDragging || widget.subjects.length <= 1) return;
-    if (!TickerMode.valuesOf(context).enabled) return;
     final isWide = widget.availableWidth >= 640;
     if (isWide) {
       if (!_wideController.hasClients) return;

@@ -30,7 +30,9 @@ void main() {
         client: Dio()..httpClientAdapter = adapter,
       );
       await catalog.refresh();
-      expect(catalog.getTrending().single.subjectId, 414461);
+      final initialSubject = catalog.getTrending().single;
+      expect(initialSubject.subjectId, 414461);
+      expect(identical(initialSubject, catalog.getSubjectById(414461)), isTrue);
       expect(
         catalog.getByWeekday(5).single.coverUrl,
         'https://example.com/cover.jpg',
@@ -39,7 +41,9 @@ void main() {
       await catalog.searchOnline('芙莉莲');
       expect(catalog.search('芙莉莲').single.title, '葬送的芙莉莲');
       await catalog.loadSubject(414461, includeExtras: false);
-      expect(catalog.getSubjectById(414461)?.summary, '详情');
+      final detailSubject = catalog.getSubjectById(414461);
+      expect(detailSubject?.summary, '详情');
+      expect(identical(detailSubject, initialSubject), isFalse);
       await catalog.loadSubject(414461);
       expect(
         catalog.getEpisodes(414461, currentEp: 1).single.state,

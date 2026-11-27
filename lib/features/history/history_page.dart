@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:koneko/common/catalog_page_refresh.dart';
 import 'package:koneko/common/constants.dart';
 import 'package:koneko/common/feature_feedback.dart';
 import 'package:koneko/common/providers.dart';
@@ -29,7 +30,10 @@ class HistoryPage extends ConsumerStatefulWidget {
   ConsumerState<HistoryPage> createState() => _HistoryPageState();
 }
 
-class _HistoryPageState extends ConsumerState<HistoryPage> {
+class _HistoryPageState extends ConsumerState<HistoryPage>
+    with
+        RouteMotionHoldMixin<HistoryPage>,
+        CatalogPageRefreshMixin<HistoryPage> {
   _HistoryFilter _filter = _HistoryFilter.all;
 
   Future<void> _import() async {
@@ -89,7 +93,6 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
-    ref.watch(catalogUpdatesProvider);
     final catalog = ref.watch(catalogRepositoryProvider);
     final entries = ref.watch(historyProvider);
 
@@ -117,81 +120,84 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
           onPressed: entries.isEmpty ? null : _confirmClear,
         ),
       ],
-      body: CustomScrollView(
-        scrollCacheExtent: const ScrollCacheExtent.pixels(600),
-        slivers: [
-          const KonekoScrollStart(),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-              child: KonekoSegmentedBar<_HistoryFilter>(
-                segments: const [
-                  (_HistoryFilter.all, '全部'),
-                  (_HistoryFilter.today, '今天'),
-                  (_HistoryFilter.week, '近 7 天'),
-                ],
-                value: _filter,
-                onChanged: (v) => setState(() => _filter = v),
-              ),
-            ),
-          ),
-          if (visible.isEmpty)
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: Center(
-                child: Text(
-                  '暂无历史记录',
-                  style: AppTextStyle.subheadline
-                      .of(context)
-                      .copyWith(color: colorScheme.onSurfaceVariant),
+      body: ArrivalCacheExtentBuilder(
+        builder: (context, cacheExtent) => CustomScrollView(
+          scrollCacheExtent: cacheExtent,
+          slivers: [
+            const KonekoScrollStart(),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                child: KonekoSegmentedBar<_HistoryFilter>(
+                  segments: const [
+                    (_HistoryFilter.all, '全部'),
+                    (_HistoryFilter.today, '今天'),
+                    (_HistoryFilter.week, '近 7 天'),
+                  ],
+                  value: _filter,
+                  onChanged: (v) => setState(() => _filter = v),
                 ),
               ),
-            )
-          else
-            SliverPadding(
-              padding: EdgeInsets.fromLTRB(
-                16,
-                4,
-                16,
-                24 + widget.bottomPadding,
-              ),
-              sliver: SliverList.separated(
-                itemCount: visible.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 12),
-                itemBuilder: (context, index) {
-                  final item = visible[index];
-                  final subject = catalog.getSubjectById(item.subjectId);
-                  if (subject == null) return const SizedBox.shrink();
-                  return _HistoryCard(
-                    subject: subject,
-                    entry: item,
-                    onOpenDetail: () => BaseNavigator.push<void>(
-                      context,
-                      SubjectDetailPage(subjectId: subject.subjectId),
-                    ),
-                    onResume: () => BaseNavigator.push<void>(
-                      context,
-                      PlayerPage(
-                        subjectId: subject.subjectId,
-                        initialEpisode: item.lastEpisode,
-                        initialRuleId: item.lastRuleId,
-                        initialRuleName: item.lastRuleName,
-                      ),
-                    ),
-                    onPlayNext: () => BaseNavigator.push<void>(
-                      context,
-                      PlayerPage(
-                        subjectId: subject.subjectId,
-                        initialEpisode: item.lastEpisode + 1,
-                        initialRuleId: item.lastRuleId,
-                        initialRuleName: item.lastRuleName,
-                      ),
-                    ),
-                  );
-                },
-              ),
             ),
-        ],
+            if (visible.isEmpty)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(
+                  child: Text(
+                    '暂无历史记录',
+                    style: AppTextStyle.subheadline
+                        .of(context)
+                        .copyWith(color: colorScheme.onSurfaceVariant),
+                  ),
+                ),
+              )
+            else
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  4,
+                  16,
+                  24 + widget.bottomPadding,
+                ),
+                sliver: SliverPrismList(
+                  itemCount: visible.length,
+                  gap: 12,
+                  estimatedItemExtent: 184,
+                  itemBuilder: (context, index) {
+                    final item = visible[index];
+                    final subject = catalog.getSubjectById(item.subjectId);
+                    if (subject == null) return const SizedBox.shrink();
+                    return _HistoryCard(
+                      subject: subject,
+                      entry: item,
+                      onOpenDetail: () => BaseNavigator.push<void>(
+                        context,
+                        SubjectDetailPage(subjectId: subject.subjectId),
+                      ),
+                      onResume: () => BaseNavigator.push<void>(
+                        context,
+                        PlayerPage(
+                          subjectId: subject.subjectId,
+                          initialEpisode: item.lastEpisode,
+                          initialRuleId: item.lastRuleId,
+                          initialRuleName: item.lastRuleName,
+                        ),
+                      ),
+                      onPlayNext: () => BaseNavigator.push<void>(
+                        context,
+                        PlayerPage(
+                          subjectId: subject.subjectId,
+                          initialEpisode: item.lastEpisode + 1,
+                          initialRuleId: item.lastRuleId,
+                          initialRuleName: item.lastRuleName,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -248,176 +254,143 @@ class _HistoryCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              subject.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppTextStyle.callout
-                                  .of(context, emphasized: true)
-                                  .copyWith(color: colorScheme.onSurface),
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                subject.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTextStyle.callout
+                                    .of(context, emphasized: true)
+                                    .copyWith(color: colorScheme.onSurface),
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            formatRelativeTime(entry.updatedAt),
-                            maxLines: 1,
-                            style: AppTextStyle.caption2
-                                .of(context)
-                                .copyWith(color: colorScheme.onSurfaceVariant),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        ruleName.isNotEmpty
-                            ? '第 ${entry.lastEpisode} 话 · $ruleName'
-                            : '第 ${entry.lastEpisode} 话',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTextStyle.caption1
-                            .of(context)
-                            .copyWith(color: colorScheme.onSurfaceVariant),
-                      ),
-                    ],
-                  ),
-                  // Slim FlClash progress track with crisp tabular time & percentage
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    spacing: 5,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              durText.isNotEmpty
-                                  ? '$posText / $durText'
-                                  : '已看 $posText',
+                            const SizedBox(width: 8),
+                            Text(
+                              formatRelativeTime(entry.updatedAt),
                               maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
                               style: AppTextStyle.caption2
                                   .of(context)
                                   .copyWith(
                                     color: colorScheme.onSurfaceVariant,
+                                  ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          ruleName.isNotEmpty
+                              ? '第 ${entry.lastEpisode} 话 · $ruleName'
+                              : '第 ${entry.lastEpisode} 话',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyle.caption1
+                              .of(context)
+                              .copyWith(color: colorScheme.onSurfaceVariant),
+                        ),
+                      ],
+                    ),
+                    // Slim FlClash progress track with crisp tabular time & percentage
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      spacing: 5,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                durText.isNotEmpty
+                                    ? '$posText / $durText'
+                                    : '已看 $posText',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTextStyle.caption2
+                                    .of(context)
+                                    .copyWith(
+                                      color: colorScheme.onSurfaceVariant,
+                                      fontFeatures: const [
+                                        FontFeature.tabularFigures(),
+                                      ],
+                                    ),
+                              ),
+                            ),
+                            Text(
+                              isFinished ? '已看完' : '$pct%',
+                              style: AppTextStyle.caption2
+                                  .of(context, emphasized: true)
+                                  .copyWith(
+                                    color: colorScheme.primary,
                                     fontFeatures: const [
                                       FontFeature.tabularFigures(),
                                     ],
                                   ),
                             ),
-                          ),
-                          Text(
-                            isFinished ? '已看完' : '$pct%',
-                            style: AppTextStyle.caption2
-                                .of(context, emphasized: true)
-                                .copyWith(
-                                  color: colorScheme.primary,
-                                  fontFeatures: const [
-                                    FontFeature.tabularFigures(),
-                                  ],
+                          ],
+                        ),
+                        ClipRRect(
+                          borderRadius: AppRadius.full,
+                          child: SizedBox(
+                            height: 5,
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                ColoredBox(
+                                  color: colorScheme.primary.withValues(
+                                    alpha: 0.14,
+                                  ),
                                 ),
-                          ),
-                        ],
-                      ),
-                      ClipRRect(
-                        borderRadius: AppRadius.full,
-                        child: SizedBox(
-                          height: 5,
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              ColoredBox(
-                                color: colorScheme.primary.withValues(
-                                  alpha: 0.14,
-                                ),
-                              ),
-                              if (ratio > 0)
-                                Align(
-                                  alignment: AlignmentDirectional.centerStart,
-                                  child: FractionallySizedBox(
-                                    widthFactor: isFinished ? 1.0 : ratio,
-                                    heightFactor: 1.0,
-                                    child: DecoratedBox(
-                                      decoration: ShapeDecoration(
-                                        color: colorScheme.primary,
-                                        shape: AppShape.full,
+                                if (ratio > 0)
+                                  Align(
+                                    alignment: AlignmentDirectional.centerStart,
+                                    child: FractionallySizedBox(
+                                      widthFactor: isFinished ? 1.0 : ratio,
+                                      heightFactor: 1.0,
+                                      child: DecoratedBox(
+                                        decoration: ShapeDecoration(
+                                          color: colorScheme.primary,
+                                          shape: AppShape.full,
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  Row(
-                    spacing: 8,
-                    children: [
-                      Expanded(
-                        child: PressSurface(
-                          fill: colorScheme.primary,
-                          shape: AppShape.full,
-                          clipsChild: true,
-                          onPressed: onResume,
-                          child: SizedBox(
-                            height: 32,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              spacing: 5,
-                              children: [
-                                GlyphIcon(
-                                  KonekoGlyphs.play,
-                                  size: 12.5,
-                                  color: colorScheme.onPrimary,
-                                ),
-                                Text(
-                                  isFinished ? '重新播放' : '继续播放',
-                                  style: AppTextStyle.caption1
-                                      .of(context, emphasized: true)
-                                      .copyWith(
-                                        fontSize: 12,
-                                        color: colorScheme.onPrimary,
-                                      ),
-                                ),
                               ],
                             ),
                           ),
                         ),
-                      ),
-                      if (hasNext)
-                        PressSurface(
-                          fill: colorScheme.primary.withValues(alpha: 0.12),
-                          shape: AppShape.full,
-                          clipsChild: true,
-                          onPressed: onPlayNext,
-                          child: SizedBox(
-                            height: 32,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                              ),
+                      ],
+                    ),
+                    Row(
+                      spacing: 8,
+                      children: [
+                        Expanded(
+                          child: PressSurface(
+                            fill: colorScheme.primary,
+                            shape: AppShape.full,
+                            clipsChild: true,
+                            onPressed: onResume,
+                            child: SizedBox(
+                              height: 32,
                               child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                spacing: 3,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                spacing: 5,
                                 children: [
                                   GlyphIcon(
-                                    KonekoGlyphs.skipNext,
-                                    size: 13.5,
-                                    color: colorScheme.primary,
+                                    KonekoGlyphs.play,
+                                    size: 12.5,
+                                    color: colorScheme.onPrimary,
                                   ),
                                   Text(
-                                    '下一话',
+                                    isFinished ? '重新播放' : '继续播放',
                                     style: AppTextStyle.caption1
                                         .of(context, emphasized: true)
                                         .copyWith(
                                           fontSize: 12,
-                                          color: colorScheme.primary,
+                                          color: colorScheme.onPrimary,
                                         ),
                                   ),
                                 ],
@@ -425,11 +398,46 @@ class _HistoryCard extends StatelessWidget {
                             ),
                           ),
                         ),
-                    ],
-                  ),
-                ],
+                        if (hasNext)
+                          PressSurface(
+                            fill: colorScheme.primary.withValues(alpha: 0.12),
+                            shape: AppShape.full,
+                            clipsChild: true,
+                            onPressed: onPlayNext,
+                            child: SizedBox(
+                              height: 32,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  spacing: 3,
+                                  children: [
+                                    GlyphIcon(
+                                      KonekoGlyphs.skipNext,
+                                      size: 13.5,
+                                      color: colorScheme.primary,
+                                    ),
+                                    Text(
+                                      '下一话',
+                                      style: AppTextStyle.caption1
+                                          .of(context, emphasized: true)
+                                          .copyWith(
+                                            fontSize: 12,
+                                            color: colorScheme.primary,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
             ),
           ],
         ),

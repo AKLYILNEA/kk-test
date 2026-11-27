@@ -62,7 +62,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   late String _ruleId = widget.initialRuleId;
   late String _ruleName = widget.initialRuleName;
   PlaybackSession? _session;
-  PlaybackStatus _status = const PlaybackStatus();
+  final _viewportKey = GlobalKey();
+  final _playbackStatus = ValueNotifier(const PlaybackStatus());
+
+  PlaybackStatus get _status => _playbackStatus.value;
   StreamSubscription<PlaybackStatus>? _subscription;
   Timer? _saveTimer;
   Timer? _brightnessTimer;
@@ -157,6 +160,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     _hudTimer?.cancel();
     _sourceKeywordController.dispose();
     unawaited(_subscription?.cancel());
+    _playbackStatus.dispose();
     unawaited(_session?.dispose());
     super.dispose();
   }
@@ -270,10 +274,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
         !status.buffering &&
         status.error == null &&
         (status.position > startingPosition || status.completed);
-    setState(() {
-      _status = status;
-      if (started) _positionAtOpen = null;
-    });
+    if (started) _positionAtOpen = null;
+    _playbackStatus.value = status;
     if (_source case final source? when started) {
       unawaited(
         ref
@@ -311,7 +313,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
         _ruleId = source.ruleId;
         _ruleName = source.ruleName;
       }
-      _status = session.status;
+      _playbackStatus.value = session.status;
       _positionAtOpen = _status.position;
       _loading = false;
       _loadingHint = null;
@@ -374,7 +376,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     if (resolver == null) return;
     var subject = _subject;
     if (subject == null) {
-      await ref.read(onlineCatalogProvider)?.loadSubject(widget.subjectId);
+      await ref
+          .read(onlineCatalogProvider)
+          ?.loadSubject(widget.subjectId, includeExtras: false);
       subject = _subject;
     }
     if (!mounted || subject == null) return;
@@ -595,7 +599,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       if (resolver == null) throw StateError('播放服务不可用');
       var subject = _subject;
       if (subject == null) {
-        await ref.read(onlineCatalogProvider)?.loadSubject(widget.subjectId);
+        await ref
+            .read(onlineCatalogProvider)
+            ?.loadSubject(widget.subjectId, includeExtras: false);
         if (!_isCurrent(request)) return;
         subject = _subject;
       }
@@ -1220,44 +1226,61 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
 
   @override
   Widget build(BuildContext context) {
-    ref.watch(catalogUpdatesProvider);
-    ref.watch(loadCatalogSubjectProvider(widget.subjectId));
+    final id = widget.subjectId;
+    ref.listen(loadCatalogSubjectProvider(id), (_, _) {});
+    if (routeSettled && _panelTab == _PanelTab.episodes) {
+      ref.watch(
+        loadCatalogEpisodesProvider(id).select((result) => result.isLoading),
+      );
+    }
     final catalog = ref.watch(catalogRepositoryProvider);
-    final subject = _subject;
+    final subject = ref.watch(catalogSubjectProvider(id));
     final title = subject?.title ?? widget.offline?.subjectTitle ?? 'Koneko';
     final rules = ref.watch(rulesProvider);
-    final library = ref.watch(libraryProvider);
-    final collection = library
-        .where((e) => e.subjectId == widget.subjectId)
-        .firstOrNull;
+    final collection = ref.watch(
+      libraryProvider.select(
+        (entries) => entries.where((e) => e.subjectId == id).firstOrNull,
+      ),
+    );
     final session = _session;
     final viewport = ref.watch(videoViewportProvider);
     final overlay = ref.watch(danmakuViewportProvider);
     final danmakuSettings = ref.watch(danmakuSettingsProvider);
-    final status = _status;
-    final error =
-        _error ??
-        (_loaded &&
-                status.error != null &&
-                (status.duration == Duration.zero || _positionAtOpen != null)
-            ? '播放失败'
-            : _bufferDelayed
-            ? '缓冲时间较长'
-            : null);
     final offline = widget.offline != null;
-
-    final videoStage = _buildVideoStage(
-      context: context,
-      subject: subject,
-      title: title,
-      rules: rules,
-      session: session,
-      viewport: viewport,
-      overlay: overlay,
-      danmakuSettings: danmakuSettings,
-      status: status,
-      error: error,
-      offline: offline,
+    final videoStage = ValueListenableBuilder<PlaybackStatus>(
+      valueListenable: _playbackStatus,
+      child: RepaintBoundary(
+        key: _viewportKey,
+        child: session != null && viewport != null
+            ? IgnorePointer(child: viewport(session))
+            : subject != null
+            ? Opacity(opacity: .35, child: KonekoPosterArt(subject: subject))
+            : const SizedBox.expand(),
+      ),
+      builder: (context, status, picture) {
+        final error =
+            _error ??
+            (_loaded &&
+                    status.error != null &&
+                    (status.duration == Duration.zero ||
+                        _positionAtOpen != null)
+                ? '播放失败'
+                : _bufferDelayed
+                ? '缓冲时间较长'
+                : null);
+        return _buildVideoStage(
+          context: context,
+          title: title,
+          rules: rules,
+          session: session,
+          picture: picture!,
+          overlay: overlay,
+          danmakuSettings: danmakuSettings,
+          status: status,
+          error: error,
+          offline: offline,
+        );
+      },
     );
 
     return PopScope<void>(
@@ -1270,7 +1293,40 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
         if (didPop) _checkpoint();
       },
       child: _fullscreen
-          ? ColoredBox(color: Colors.black, child: videoStage)
+          ? ColoredBox(
+              color: Colors.black,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final safe = MediaQuery.paddingOf(context);
+                  return Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      videoStage,
+                      AnimatedPositioned(
+                        duration: context.motionDuration(
+                          const Duration(milliseconds: 230),
+                        ),
+                        curve: Curves.easeOutCubic,
+                        top: safe.top + 12,
+                        bottom: safe.bottom + 12,
+                        right: _drawerOpen ? safe.right + 12 : -360,
+                        width: math.min(
+                          330,
+                          MediaQuery.sizeOf(context).width - 24,
+                        ),
+                        child: ExcludeFocus(
+                          excluding: !_drawerOpen,
+                          child: IgnorePointer(
+                            ignoring: !_drawerOpen,
+                            child: _buildDrawer(context, rules, offline),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            )
           : LayoutBuilder(
               builder: (context, constraints) {
                 final colorScheme = context.colorScheme;
@@ -1353,11 +1409,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
 
   Widget _buildVideoStage({
     required BuildContext context,
-    required AnimeSubject? subject,
     required String title,
     required List<RulePluginMeta> rules,
     required PlaybackSession? session,
-    required Widget Function(PlaybackSession)? viewport,
+    required Widget picture,
     required Widget Function(
       List<DanmakuItem>,
       PlaybackStatus,
@@ -1385,10 +1440,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           child: Stack(
             fit: StackFit.expand,
             children: [
-              if (session != null && viewport != null)
-                IgnorePointer(child: viewport(session))
-              else if (subject != null)
-                Opacity(opacity: .35, child: KonekoPosterArt(subject: subject)),
+              picture,
               if (_brightness < 1)
                 IgnorePointer(
                   child: ColoredBox(
@@ -1606,22 +1658,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
             bottom: 0,
             child: _controls(context, status, session, offline, safe),
           ),
-        if (_fullscreen)
-          AnimatedPositioned(
-            duration: context.motionDuration(const Duration(milliseconds: 230)),
-            curve: Curves.easeOutCubic,
-            top: safe.top + 12,
-            bottom: safe.bottom + 12,
-            right: _drawerOpen ? safe.right + 12 : -360,
-            width: math.min(330, MediaQuery.sizeOf(context).width - 24),
-            child: ExcludeFocus(
-              excluding: !_drawerOpen,
-              child: IgnorePointer(
-                ignoring: !_drawerOpen,
-                child: _buildDrawer(context, rules, offline),
-              ),
-            ),
-          ),
       ],
     );
   }
@@ -1636,8 +1672,14 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     required double bottomPadding,
   }) {
     final colorScheme = context.colorScheme;
-    final commentsCount =
-        ref.watch(subjectCommentsProvider(widget.subjectId)).value?.total ?? 0;
+    final commentsCount = _panelTab == _PanelTab.comments
+        ? ref.watch(
+                subjectCommentsProvider(
+                  widget.subjectId,
+                ).select((value) => value.value?.total),
+              ) ??
+              0
+        : catalog.getComments(widget.subjectId).length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

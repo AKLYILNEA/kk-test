@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:koneko/common/catalog_page_refresh.dart';
 import 'package:koneko/common/providers.dart';
 import 'package:koneko/features/detail/subject_detail_page.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
@@ -24,7 +25,10 @@ class DiscoverPage extends ConsumerStatefulWidget {
   ConsumerState<DiscoverPage> createState() => _DiscoverPageState();
 }
 
-class _DiscoverPageState extends ConsumerState<DiscoverPage> {
+class _DiscoverPageState extends ConsumerState<DiscoverPage>
+    with
+        RouteMotionHoldMixin<DiscoverPage>,
+        CatalogPageRefreshMixin<DiscoverPage> {
   static const _hotQueries = [
     '葬送的芙莉莲',
     '败犬女主太多了',
@@ -153,7 +157,10 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
     unawaited(_executeSearch(next));
   }
 
-  Future<void> _executeSearch(SearchFilter filter, {bool append = false}) async {
+  Future<void> _executeSearch(
+    SearchFilter filter, {
+    bool append = false,
+  }) async {
     final online = ref.read(onlineCatalogProvider);
     if (online == null) {
       setState(() {
@@ -310,9 +317,7 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
                                   : SurfaceLevel.block.colorOf(colorScheme),
                               onPressed: () {
                                 final nextTags = draft.tags.contains(tag)
-                                    ? draft.tags
-                                          .where((t) => t != tag)
-                                          .toList()
+                                    ? draft.tags.where((t) => t != tag).toList()
                                     : [...draft.tags, tag];
                                 draft = draft.copyWith(tags: nextTags);
                                 setSheetState(() {});
@@ -569,9 +574,7 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
     final base = catalog.search(_filter.keyword);
     final filtered = base.where((s) {
       if (_filter.tags.isNotEmpty &&
-          !_filter.tags.every(
-            (t) => s.tags.any((st) => st.contains(t)),
-          )) {
+          !_filter.tags.every((t) => s.tags.any((st) => st.contains(t)))) {
         return false;
       }
       if (_filter.year != null && s.year != _filter.year) return false;
@@ -598,7 +601,6 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
-    ref.watch(catalogUpdatesProvider);
     final catalog = ref.watch(catalogRepositoryProvider);
     final library = ref.watch(libraryProvider);
     final statusMap = <int, CollectionStatus>{
@@ -645,291 +647,293 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
               ? 3
               : 2;
 
-          return CustomScrollView(
-            scrollCacheExtent: const ScrollCacheExtent.pixels(600),
-            slivers: [
-              const KonekoScrollStart(),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
-                  child: DecoratedBox(
-                    decoration: ShapeDecoration(
-                      shape: AppShape.full,
-                      shadows: konekoPillShadows(colorScheme),
-                    ),
-                    child: SearchField(
-                      controller: _controller,
-                      fill: SurfaceLevel.card.colorOf(colorScheme),
-                      hintText: '搜索 Bangumi 番名或原名…',
-                      onChanged: _onKeywordChanged,
-                    ),
-                  ),
-                ),
-              ),
-              // Condition search bar & active filter summary (Kazumi parity in FlClash style)
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      KonekoChip(
-                        label: filterCount > 0
-                            ? '按条件查找 · 已选 $filterCount 项'
-                            : '按条件查找',
-                        height: 32,
-                        fontSize: 12.5,
-                        elevated: true,
-                        selected: filterCount > 0,
-                        backgroundColor: filterCount > 0
-                            ? colorScheme.primary
-                            : SurfaceLevel.card.colorOf(colorScheme),
-                        leading: GlyphIcon(
-                          KonekoGlyphs.tune,
-                          size: 13,
-                          color: filterCount > 0
-                              ? colorScheme.onPrimary
-                              : colorScheme.primary,
-                        ),
-                        onPressed: _openFilterSheet,
+          return ArrivalCacheExtentBuilder(
+            builder: (context, cacheExtent) => CustomScrollView(
+              scrollCacheExtent: cacheExtent,
+              slivers: [
+                const KonekoScrollStart(),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+                    child: DecoratedBox(
+                      decoration: ShapeDecoration(
+                        shape: AppShape.full,
+                        shadows: konekoPillShadows(colorScheme),
                       ),
-                      if (_filter.sort != 'heat')
-                        KonekoChip(
-                          label: _sortLabel(_filter.sort),
-                          height: 32,
-                          fontSize: 12,
-                          elevated: true,
-                          backgroundColor: SurfaceLevel.card.colorOf(
-                            colorScheme,
-                          ),
-                          onPressed: _openFilterSheet,
-                        ),
-                      for (final tag in _filter.tags)
-                        KonekoChip(
-                          label: tag,
-                          height: 32,
-                          fontSize: 12,
-                          elevated: true,
-                          backgroundColor: SurfaceLevel.card.colorOf(
-                            colorScheme,
-                          ),
-                          foregroundColor: colorScheme.primary,
-                          onPressed: _openFilterSheet,
-                        ),
-                      if (_filter.season case final season?)
-                        KonekoChip(
-                          label: season.shortLabel,
-                          height: 32,
-                          fontSize: 12,
-                          elevated: true,
-                          backgroundColor: SurfaceLevel.card.colorOf(
-                            colorScheme,
-                          ),
-                          onPressed: _openFilterSheet,
-                        )
-                      else if (_filter.year case final year?)
-                        KonekoChip(
-                          label: '$year 年',
-                          height: 32,
-                          fontSize: 12,
-                          elevated: true,
-                          backgroundColor: SurfaceLevel.card.colorOf(
-                            colorScheme,
-                          ),
-                          onPressed: _openFilterSheet,
-                        ),
-                      if (_filter.minScore case final minScore?)
-                        KonekoChip(
-                          label: '评分 ${minScore.toStringAsFixed(1)}+',
-                          height: 32,
-                          fontSize: 12,
-                          elevated: true,
-                          backgroundColor: SurfaceLevel.card.colorOf(
-                            colorScheme,
-                          ),
-                          onPressed: _openFilterSheet,
-                        ),
-                      if (filterCount > 0)
-                        KonekoChip(
-                          label: '清空条件',
-                          height: 32,
-                          fontSize: 12,
-                          elevated: true,
-                          backgroundColor: SurfaceLevel.card.colorOf(
-                            colorScheme,
-                          ),
-                          onPressed: () {
-                            final reset = SearchFilter(
-                              keyword: _filter.keyword,
-                            );
-                            setState(() {
-                              _filter = reset;
-                              _hideWatched = false;
-                              _hideDropped = false;
-                            });
-                            if (_hasQueryOrFilter) {
-                              unawaited(_executeSearch(reset));
-                            } else {
-                              setState(() {
-                                _remoteResults = null;
-                                _hasMore = false;
-                              });
-                            }
-                          },
-                        ),
-                    ],
+                      child: SearchField(
+                        controller: _controller,
+                        fill: SurfaceLevel.card.colorOf(colorScheme),
+                        hintText: '搜索 Bangumi 番名或原名…',
+                        onChanged: _onKeywordChanged,
+                      ),
+                    ),
                   ),
                 ),
-              ),
-              if (!_hasQueryOrFilter)
+                // Condition search bar & active filter summary (Kazumi parity in FlClash style)
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    child: Wrap(
                       spacing: 8,
+                      runSpacing: 8,
                       children: [
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            for (final hot in _hotQueries)
-                              KonekoChip(
-                                label: '# $hot',
-                                height: 28,
-                                fontSize: 12,
-                                elevated: true,
-                                backgroundColor: SurfaceLevel.card.colorOf(
-                                  colorScheme,
-                                ),
-                                onPressed: () => _applyQuery(hot),
-                              ),
-                          ],
+                        KonekoChip(
+                          label: filterCount > 0
+                              ? '按条件查找 · 已选 $filterCount 项'
+                              : '按条件查找',
+                          height: 32,
+                          fontSize: 12.5,
+                          elevated: true,
+                          selected: filterCount > 0,
+                          backgroundColor: filterCount > 0
+                              ? colorScheme.primary
+                              : SurfaceLevel.card.colorOf(colorScheme),
+                          leading: GlyphIcon(
+                            KonekoGlyphs.tune,
+                            size: 13,
+                            color: filterCount > 0
+                                ? colorScheme.onPrimary
+                                : colorScheme.primary,
+                          ),
+                          onPressed: _openFilterSheet,
                         ),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            for (final tag in const [
-                              '奇幻',
-                              '恋爱',
-                              '日常',
-                              '校园',
-                              '科幻',
-                              '悬疑',
-                              '治愈',
-                              '喜剧',
-                              '动作',
-                              '催泪',
-                              '剧场版',
-                              '京阿尼',
-                            ])
-                              KonekoChip(
-                                label: tag,
-                                height: 28,
-                                fontSize: 12,
-                                elevated: true,
-                                backgroundColor: SurfaceLevel.card.colorOf(
-                                  colorScheme,
-                                ),
-                                foregroundColor: colorScheme.primary,
-                                onPressed: () {
-                                  final next = _filter.copyWith(tags: [tag]);
-                                  setState(() => _filter = next);
-                                  unawaited(_executeSearch(next));
-                                },
-                              ),
-                          ],
-                        ),
+                        if (_filter.sort != 'heat')
+                          KonekoChip(
+                            label: _sortLabel(_filter.sort),
+                            height: 32,
+                            fontSize: 12,
+                            elevated: true,
+                            backgroundColor: SurfaceLevel.card.colorOf(
+                              colorScheme,
+                            ),
+                            onPressed: _openFilterSheet,
+                          ),
+                        for (final tag in _filter.tags)
+                          KonekoChip(
+                            label: tag,
+                            height: 32,
+                            fontSize: 12,
+                            elevated: true,
+                            backgroundColor: SurfaceLevel.card.colorOf(
+                              colorScheme,
+                            ),
+                            foregroundColor: colorScheme.primary,
+                            onPressed: _openFilterSheet,
+                          ),
+                        if (_filter.season case final season?)
+                          KonekoChip(
+                            label: season.shortLabel,
+                            height: 32,
+                            fontSize: 12,
+                            elevated: true,
+                            backgroundColor: SurfaceLevel.card.colorOf(
+                              colorScheme,
+                            ),
+                            onPressed: _openFilterSheet,
+                          )
+                        else if (_filter.year case final year?)
+                          KonekoChip(
+                            label: '$year 年',
+                            height: 32,
+                            fontSize: 12,
+                            elevated: true,
+                            backgroundColor: SurfaceLevel.card.colorOf(
+                              colorScheme,
+                            ),
+                            onPressed: _openFilterSheet,
+                          ),
+                        if (_filter.minScore case final minScore?)
+                          KonekoChip(
+                            label: '评分 ${minScore.toStringAsFixed(1)}+',
+                            height: 32,
+                            fontSize: 12,
+                            elevated: true,
+                            backgroundColor: SurfaceLevel.card.colorOf(
+                              colorScheme,
+                            ),
+                            onPressed: _openFilterSheet,
+                          ),
+                        if (filterCount > 0)
+                          KonekoChip(
+                            label: '清空条件',
+                            height: 32,
+                            fontSize: 12,
+                            elevated: true,
+                            backgroundColor: SurfaceLevel.card.colorOf(
+                              colorScheme,
+                            ),
+                            onPressed: () {
+                              final reset = SearchFilter(
+                                keyword: _filter.keyword,
+                              );
+                              setState(() {
+                                _filter = reset;
+                                _hideWatched = false;
+                                _hideDropped = false;
+                              });
+                              if (_hasQueryOrFilter) {
+                                unawaited(_executeSearch(reset));
+                              } else {
+                                setState(() {
+                                  _remoteResults = null;
+                                  _hasMore = false;
+                                });
+                              }
+                            },
+                          ),
                       ],
                     ),
                   ),
                 ),
-              if (_searching)
-                const SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Center(child: ActivityIndicator()),
-                )
-              else if (_searchError != null && results.isEmpty)
-                SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Center(
-                    child: TextButton(
-                      onPressed: () => unawaited(_executeSearch(_filter)),
-                      child: Text(_searchError!),
-                    ),
-                  ),
-                )
-              else if (results.isEmpty)
-                SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Center(
-                    child: Text(
-                      _hasQueryOrFilter ? '未找到符合条件的番剧' : '输入番名或点击「按条件查找」开始探索',
-                      style: AppTextStyle.subheadline
-                          .of(context)
-                          .copyWith(color: colorScheme.onSurfaceVariant),
-                    ),
-                  ),
-                )
-              else ...[
-                SliverPadding(
-                  padding: EdgeInsets.fromLTRB(
-                    16,
-                    8,
-                    16,
-                    _hasMore ? 12 : 24 + widget.bottomPadding,
-                  ),
-                  sliver: SliverGrid(
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: crossAxisCount,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 14,
-                      childAspectRatio: 0.56,
-                    ),
-                    delegate: SliverChildBuilderDelegate((context, index) {
-                      final subject = results[index];
-                      return UnifiedAnimeCard(
-                        subject: subject,
-                        isTracking: trackingIds.contains(subject.subjectId),
-                        onTap: () => BaseNavigator.push<void>(
-                          context,
-                          SubjectDetailPage(subjectId: subject.subjectId),
-                        ),
-                      );
-                    }, childCount: results.length),
-                  ),
-                ),
-                if (_hasMore)
+                if (!_hasQueryOrFilter)
                   SliverToBoxAdapter(
                     child: Padding(
-                      padding: EdgeInsets.fromLTRB(
-                        16,
-                        4,
-                        16,
-                        24 + widget.bottomPadding,
-                      ),
-                      child: Center(
-                        child: KonekoChip(
-                          label: _loadingMore ? '正在加载...' : '加载更多结果',
-                          height: 36,
-                          fontSize: 13,
-                          backgroundColor: colorScheme.primary.withValues(
-                            alpha: 0.14,
-                          ),
-                          foregroundColor: colorScheme.primary,
-                          onPressed: _loadingMore
-                              ? null
-                              : () => unawaited(
-                                  _executeSearch(_filter, append: true),
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        spacing: 8,
+                        children: [
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              for (final hot in _hotQueries)
+                                KonekoChip(
+                                  label: '# $hot',
+                                  height: 28,
+                                  fontSize: 12,
+                                  elevated: true,
+                                  backgroundColor: SurfaceLevel.card.colorOf(
+                                    colorScheme,
+                                  ),
+                                  onPressed: () => _applyQuery(hot),
                                 ),
-                        ),
+                            ],
+                          ),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              for (final tag in const [
+                                '奇幻',
+                                '恋爱',
+                                '日常',
+                                '校园',
+                                '科幻',
+                                '悬疑',
+                                '治愈',
+                                '喜剧',
+                                '动作',
+                                '催泪',
+                                '剧场版',
+                                '京阿尼',
+                              ])
+                                KonekoChip(
+                                  label: tag,
+                                  height: 28,
+                                  fontSize: 12,
+                                  elevated: true,
+                                  backgroundColor: SurfaceLevel.card.colorOf(
+                                    colorScheme,
+                                  ),
+                                  foregroundColor: colorScheme.primary,
+                                  onPressed: () {
+                                    final next = _filter.copyWith(tags: [tag]);
+                                    setState(() => _filter = next);
+                                    unawaited(_executeSearch(next));
+                                  },
+                                ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
                   ),
+                if (_searching)
+                  const SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Center(child: ActivityIndicator()),
+                  )
+                else if (_searchError != null && results.isEmpty)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Center(
+                      child: TextButton(
+                        onPressed: () => unawaited(_executeSearch(_filter)),
+                        child: Text(_searchError!),
+                      ),
+                    ),
+                  )
+                else if (results.isEmpty)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Center(
+                      child: Text(
+                        _hasQueryOrFilter ? '未找到符合条件的番剧' : '输入番名或点击「按条件查找」开始探索',
+                        style: AppTextStyle.subheadline
+                            .of(context)
+                            .copyWith(color: colorScheme.onSurfaceVariant),
+                      ),
+                    ),
+                  )
+                else ...[
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(
+                      16,
+                      8,
+                      16,
+                      _hasMore ? 12 : 24 + widget.bottomPadding,
+                    ),
+                    sliver: SliverGrid(
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: crossAxisCount,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 14,
+                        childAspectRatio: 0.56,
+                      ),
+                      delegate: SliverChildBuilderDelegate((context, index) {
+                        final subject = results[index];
+                        return UnifiedAnimeCard(
+                          subject: subject,
+                          isTracking: trackingIds.contains(subject.subjectId),
+                          onTap: () => BaseNavigator.push<void>(
+                            context,
+                            SubjectDetailPage(subjectId: subject.subjectId),
+                          ),
+                        );
+                      }, childCount: results.length),
+                    ),
+                  ),
+                  if (_hasMore)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          16,
+                          4,
+                          16,
+                          24 + widget.bottomPadding,
+                        ),
+                        child: Center(
+                          child: KonekoChip(
+                            label: _loadingMore ? '正在加载...' : '加载更多结果',
+                            height: 36,
+                            fontSize: 13,
+                            backgroundColor: colorScheme.primary.withValues(
+                              alpha: 0.14,
+                            ),
+                            foregroundColor: colorScheme.primary,
+                            onPressed: _loadingMore
+                                ? null
+                                : () => unawaited(
+                                    _executeSearch(_filter, append: true),
+                                  ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ],
-            ],
+            ),
           );
         },
       ),

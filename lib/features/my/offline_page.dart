@@ -22,88 +22,89 @@ class OfflinePage extends ConsumerWidget {
     return KonekoScaffold(
       title: '离线缓存',
       showBack: true,
-      body: Builder(
-        builder: (context) => ListView(
+      body: ArrivalCacheExtentBuilder(
+        builder: (context, cacheExtent) => PrismListView(
+          scrollCacheExtent: cacheExtent,
           padding: EdgeInsets.fromLTRB(
             16,
             context.contentTopPadding,
             16,
             28 + context.bottomInset,
           ),
-          children: [
-            if (entries.isEmpty)
-              const KonekoCard(child: Text('暂无离线缓存')),
-            for (final entry in entries)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: KonekoCard(
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
-                    spacing: 8,
-                    children: [
-                      GlyphIcon(
-                        entry.state == OfflineState.ready
-                            ? KonekoGlyphs.play
-                            : KonekoGlyphs.importFile,
-                      ),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              entry.subjectTitle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppTextStyle.headline.of(context),
-                            ),
-                            Text(
-                              '第 ${entry.number} 话 · ${_status(entry)}',
-                              maxLines: 3,
-                              overflow: TextOverflow.ellipsis,
-                              style: context.listSubtitleStyle,
-                            ),
-                          ],
-                        ),
-                      ),
-                      if (entry.state == OfflineState.ready)
-                        IconButton(
-                          tooltip: '播放缓存',
-                          icon: const GlyphIcon(KonekoGlyphs.play),
-                          onPressed: () => BaseNavigator.push<void>(
-                            context,
-                            PlayerPage(
-                              subjectId: entry.subjectId,
-                              initialEpisode: entry.number,
-                              initialRuleId: entry.ruleId,
-                              initialRuleName: entry.ruleName,
-                              offline: entry,
-                            ),
-                          ),
-                        ),
-                      IconButton(
-                        tooltip: entry.state == OfflineState.downloading
-                            ? '取消缓存'
-                            : '移除缓存',
-                        icon: const GlyphIcon(KonekoGlyphs.trash),
-                        onPressed: () async {
-                          try {
-                            await library?.remove(entry.id);
-                          } on Object {
-                            if (context.mounted) {
-                              showKonekoBanner(
-                                context,
-                                '无法移除缓存',
-                                level: BannerLevel.error,
-                              );
-                            }
-                          }
-                        },
-                      ),
-                    ],
+          gap: 8,
+          estimatedItemExtent: 68,
+          itemCount: entries.isEmpty ? 1 : entries.length,
+          itemBuilder: (context, index) {
+            if (entries.isEmpty) return const KonekoCard(child: Text('暂无离线缓存'));
+            final entry = entries[index];
+            return KonekoCard(
+              key: ValueKey(entry.id),
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                spacing: 8,
+                children: [
+                  GlyphIcon(
+                    entry.state == OfflineState.ready
+                        ? KonekoGlyphs.play
+                        : KonekoGlyphs.importFile,
                   ),
-                ),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          entry.subjectTitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyle.headline.of(context),
+                        ),
+                        Text(
+                          '第 ${entry.number} 话 · ${_status(entry)}',
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: context.listSubtitleStyle,
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (entry.state == OfflineState.ready)
+                    IconButton(
+                      tooltip: '播放缓存',
+                      icon: const GlyphIcon(KonekoGlyphs.play),
+                      onPressed: () => BaseNavigator.push<void>(
+                        context,
+                        PlayerPage(
+                          subjectId: entry.subjectId,
+                          initialEpisode: entry.number,
+                          initialRuleId: entry.ruleId,
+                          initialRuleName: entry.ruleName,
+                          offline: entry,
+                        ),
+                      ),
+                    ),
+                  IconButton(
+                    tooltip: entry.state == OfflineState.downloading
+                        ? '取消缓存'
+                        : '移除缓存',
+                    icon: const GlyphIcon(KonekoGlyphs.trash),
+                    onPressed: () async {
+                      try {
+                        await library?.remove(entry.id);
+                      } on Object {
+                        if (context.mounted) {
+                          showKonekoBanner(
+                            context,
+                            '无法移除缓存',
+                            level: BannerLevel.error,
+                          );
+                        }
+                      }
+                    },
+                  ),
+                ],
               ),
-          ],
+            );
+          },
         ),
       ),
     );

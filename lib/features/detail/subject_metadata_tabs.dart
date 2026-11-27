@@ -57,32 +57,67 @@ Future<void> _openBangumi(BuildContext context, String section, int id) async {
   }
 }
 
-class SubjectCharactersSliver extends ConsumerWidget {
-  const SubjectCharactersSliver({super.key, required this.subjectId});
+class SubjectPeopleSliver extends ConsumerWidget {
+  const SubjectPeopleSliver({super.key, required this.subjectId});
 
   final int subjectId;
 
+  static void retain(WidgetRef ref, int subjectId) {
+    ref.listen(_characters(subjectId), (_, _) {});
+    ref.listen(_credits(subjectId), (_, _) {});
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final provider = _characters(subjectId);
-    return _MetadataList(
-      data: ref.watch(provider),
-      label: '角色',
-      onRetry: () => ref.invalidate(provider),
-      itemBuilder: (character) => _MetadataCard(
-        title: character.name,
-        subtitle: [
-          if (character.relation.isNotEmpty) character.relation,
-          if (character.actors.isNotEmpty)
-            '声优  ${character.actors.map((actor) => actor.name).join('、')}',
-        ].join('\n'),
-        leading: KonekoAvatar(
-          name: character.name,
-          avatarUrl: character.imageUrl,
-          size: 46,
+    final charactersProvider = _characters(subjectId);
+    final creditsProvider = _credits(subjectId);
+    final characters = ref.watch(charactersProvider);
+    final credits = ref.watch(creditsProvider);
+    if ((characters.isLoading || credits.isLoading) &&
+        !characters.hasValue &&
+        !credits.hasValue &&
+        !characters.hasError &&
+        !credits.hasError) {
+      return const _MetadataProgress();
+    }
+    return SliverMainAxisGroup(
+      slivers: [
+        _MetadataList(
+          data: characters,
+          label: '角色',
+          onRetry: () => ref.invalidate(charactersProvider),
+          itemBuilder: (character) => _MetadataCard(
+            title: character.name,
+            subtitle: [
+              if (character.relation.isNotEmpty) character.relation,
+              if (character.actors.isNotEmpty)
+                '声优  ${character.actors.map((actor) => actor.name).join('、')}',
+            ].join('\n'),
+            leading: KonekoAvatar(
+              name: character.name,
+              avatarUrl: character.imageUrl,
+              size: 46,
+            ),
+            onTap: () => _openBangumi(context, 'character', character.id),
+          ),
         ),
-        onTap: () => _openBangumi(context, 'character', character.id),
-      ),
+        const SliverToBoxAdapter(child: SizedBox(height: 12)),
+        _MetadataList(
+          data: credits,
+          label: '制作人员',
+          onRetry: () => ref.invalidate(creditsProvider),
+          itemBuilder: (person) => _MetadataCard(
+            title: person.name,
+            subtitle: person.credits.join('、'),
+            leading: KonekoAvatar(
+              name: person.name,
+              avatarUrl: person.imageUrl,
+              size: 46,
+            ),
+            onTap: () => _openBangumi(context, 'person', person.id),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -103,6 +138,7 @@ class SubjectRelationsSliver extends ConsumerWidget {
     return _MetadataList(
       data: ref.watch(provider),
       label: '关联条目',
+      showProgress: true,
       onRetry: () => ref.invalidate(provider),
       itemBuilder: (related) => _MetadataCard(
         title: related.title,
@@ -133,30 +169,16 @@ class SubjectRelationsSliver extends ConsumerWidget {
   }
 }
 
-class SubjectCreditsSliver extends ConsumerWidget {
-  const SubjectCreditsSliver({super.key, required this.subjectId});
-
-  final int subjectId;
+class _MetadataProgress extends StatelessWidget {
+  const _MetadataProgress();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final provider = _credits(subjectId);
-    return _MetadataList(
-      data: ref.watch(provider),
-      label: '制作人员',
-      onRetry: () => ref.invalidate(provider),
-      itemBuilder: (person) => _MetadataCard(
-        title: person.name,
-        subtitle: person.credits.join('、'),
-        leading: KonekoAvatar(
-          name: person.name,
-          avatarUrl: person.imageUrl,
-          size: 46,
-        ),
-        onTap: () => _openBangumi(context, 'person', person.id),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => const SliverToBoxAdapter(
+    child: Padding(
+      padding: EdgeInsets.all(24),
+      child: Center(child: ActivityIndicator()),
+    ),
+  );
 }
 
 class _MetadataList<T> extends StatelessWidget {
@@ -165,21 +187,19 @@ class _MetadataList<T> extends StatelessWidget {
     required this.label,
     required this.onRetry,
     required this.itemBuilder,
+    this.showProgress = false,
   });
 
   final AsyncValue<List<T>> data;
   final String label;
   final VoidCallback onRetry;
   final Widget Function(T) itemBuilder;
+  final bool showProgress;
 
   @override
   Widget build(BuildContext context) => data.when(
-    loading: () => const SliverToBoxAdapter(
-      child: Padding(
-        padding: EdgeInsets.all(24),
-        child: Center(child: ActivityIndicator()),
-      ),
-    ),
+    loading: () =>
+        showProgress ? const _MetadataProgress() : const SliverToBoxAdapter(),
     error: (_, _) => SliverToBoxAdapter(
       child: KonekoCard(
         onPressed: onRetry,
@@ -192,10 +212,11 @@ class _MetadataList<T> extends StatelessWidget {
               child: Text('暂无$label', textAlign: TextAlign.center),
             ),
           )
-        : SliverList.separated(
+        : SliverPrismList(
             itemCount: items.length,
             itemBuilder: (_, index) => itemBuilder(items[index]),
-            separatorBuilder: (_, _) => const SizedBox(height: 8),
+            gap: 8,
+            estimatedItemExtent: 78,
           ),
   );
 }

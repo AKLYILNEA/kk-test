@@ -89,17 +89,23 @@ class _RulesPageState extends ConsumerState<RulesPage> {
           onPressed: entries.isEmpty ? null : _test,
         ),
       ],
-      body: Builder(
-        builder: (context) => ListView(
+      body: ArrivalCacheExtentBuilder(
+        builder: (context, cacheExtent) => PrismListView(
+          scrollCacheExtent: cacheExtent,
           padding: EdgeInsets.fromLTRB(
             16,
             context.contentTopPadding + 4,
             16,
             28 + context.bottomInset,
           ),
-          children: [
-            if (managed != null) ...[
-              KonekoGroup(
+          estimatedItemExtent: 72,
+          gap: 10,
+          itemCount:
+              (managed == null ? 0 : 1) +
+              (entries.isEmpty ? 1 : entries.length + 1),
+          itemBuilder: (context, index) {
+            if (managed != null && index == 0)
+              return KonekoGroup(
                 items: [
                   DecorationListItem(
                     leading: GlyphIcon(
@@ -126,11 +132,9 @@ class _RulesPageState extends ConsumerState<RulesPage> {
                     ),
                   ),
                 ],
-              ),
-              const SizedBox(height: 14),
-            ],
+              );
             if (entries.isEmpty)
-              KonekoCard(
+              return KonekoCard(
                 corner: 24,
                 padding: const EdgeInsets.all(20),
                 child: Text(
@@ -139,103 +143,89 @@ class _RulesPageState extends ConsumerState<RulesPage> {
                       .of(context)
                       .copyWith(color: colorScheme.onSurfaceVariant),
                 ),
-              )
-            else ...[
-              ListHeader(title: '已安装规则 (${entries.length})'),
-              Column(
+              );
+            final rowIndex = index - (managed == null ? 0 : 1);
+            if (rowIndex == 0)
+              return ListHeader(title: '已安装规则 (${entries.length})');
+            final rule = entries[rowIndex - 1];
+            return KonekoCard(
+              key: ValueKey(rule.id),
+              corner: 24,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+              child: Row(
                 spacing: 10,
                 children: [
-                  for (final rule in entries)
-                    KonekoCard(
-                      corner: 24,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 11,
-                      ),
-                      child: Row(
-                        spacing: 10,
-                        children: [
-                          GlyphIcon(
-                            KonekoGlyphs.puzzle,
-                            size: 20,
-                            color: rule.enabled
-                                ? colorScheme.primary
-                                : colorScheme.onSurfaceVariant,
-                          ),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              spacing: 3,
-                              children: [
-                                Row(
-                                  spacing: 6,
-                                  children: [
-                                    Flexible(
-                                      child: Text(
-                                        rule.name,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: AppTextStyle.headline
-                                            .of(context, emphasized: true)
-                                            .copyWith(
-                                              color: colorScheme.onSurface,
-                                            ),
-                                      ),
-                                    ),
-                                    if (rule.latencyMs > 0)
-                                      KonekoChip(
-                                        label: '${rule.latencyMs} ms',
-                                        height: 20,
-                                        fontSize: 10.5,
-                                        backgroundColor: rule.latencyMs < 150
-                                            ? colorScheme.successContainer
-                                            : colorScheme.warningContainer,
-                                        foregroundColor: rule.latencyMs < 150
-                                            ? colorScheme.onSuccessContainer
-                                            : colorScheme.onWarningContainer,
-                                      ),
-                                  ],
-                                ),
-                                Text(
-                                  '${rule.apiType} · v${rule.version} · ${rule.lastCheckedLabel}',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: AppTextStyle.caption1
-                                      .of(context)
-                                      .copyWith(
-                                        color: colorScheme.onSurfaceVariant,
-                                      ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          if (managed != null)
-                            KonekoCircleButton(
-                              size: 34,
-                              iconSize: 15,
-                              glyph: KonekoGlyphs.code,
-                              tooltip: '编辑 ${rule.name}',
-                              onPressed: () => BaseNavigator.push<void>(
-                                context,
-                                _RuleEditorPage(
-                                  repository: managed,
-                                  id: rule.id,
-                                ),
+                  GlyphIcon(
+                    KonekoGlyphs.puzzle,
+                    size: 20,
+                    color: rule.enabled
+                        ? colorScheme.primary
+                        : colorScheme.onSurfaceVariant,
+                  ),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      spacing: 3,
+                      children: [
+                        Row(
+                          spacing: 6,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                rule.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTextStyle.headline
+                                    .of(context, emphasized: true)
+                                    .copyWith(color: colorScheme.onSurface),
                               ),
                             ),
-                          Switch(
-                            value: rule.enabled,
-                            onChanged: (enabled) => ref
-                                .read(rulesProvider.notifier)
-                                .toggle(rule.id, enabled),
-                          ),
-                        ],
+                            if (rule.latencyMs > 0)
+                              KonekoChip(
+                                label: '${rule.latencyMs} ms',
+                                height: 20,
+                                fontSize: 10.5,
+                                backgroundColor: rule.latencyMs < 150
+                                    ? colorScheme.successContainer
+                                    : colorScheme.warningContainer,
+                                foregroundColor: rule.latencyMs < 150
+                                    ? colorScheme.onSuccessContainer
+                                    : colorScheme.onWarningContainer,
+                              ),
+                          ],
+                        ),
+                        Text(
+                          '${rule.apiType} · v${rule.version} · ${rule.lastCheckedLabel}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyle.caption1
+                              .of(context)
+                              .copyWith(color: colorScheme.onSurfaceVariant),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (managed != null)
+                    KonekoCircleButton(
+                      size: 34,
+                      iconSize: 15,
+                      glyph: KonekoGlyphs.code,
+                      tooltip: '编辑 ${rule.name}',
+                      onPressed: () => BaseNavigator.push<void>(
+                        context,
+                        _RuleEditorPage(repository: managed, id: rule.id),
                       ),
                     ),
+                  Switch(
+                    value: rule.enabled,
+                    onChanged: (enabled) => ref
+                        .read(rulesProvider.notifier)
+                        .toggle(rule.id, enabled),
+                  ),
                 ],
               ),
-            ],
-          ],
+            );
+          },
         ),
       ),
     );
@@ -263,13 +253,11 @@ const _ruleStorePresets = <_RuleStorePreset>[
   ),
   _RuleStorePreset(
     label: 'GitCode',
-    repository:
-        'https://raw.gitcode.com/gh_mirrors/ka/KazumiRules/raw/main/',
+    repository: 'https://raw.gitcode.com/gh_mirrors/ka/KazumiRules/raw/main/',
   ),
   _RuleStorePreset(
     label: 'GitHub 直连',
-    repository:
-        'https://raw.githubusercontent.com/Predidit/KazumiRules/main/',
+    repository: 'https://raw.githubusercontent.com/Predidit/KazumiRules/main/',
   ),
 ];
 
@@ -393,9 +381,7 @@ class _RuleStorePageState extends ConsumerState<_RuleStorePage> {
                 controller: _customRepoController,
                 keyboardType: TextInputType.url,
                 autocorrect: false,
-                decoration: const InputDecoration(
-                  hintText: '输入仓库地址，留空恢复默认',
-                ),
+                decoration: const InputDecoration(hintText: '输入仓库地址，留空恢复默认'),
                 onSubmitted: (_) => _applyCustomRepo(),
               ),
               Row(
@@ -563,8 +549,7 @@ class _RuleStorePageState extends ConsumerState<_RuleStorePage> {
                       ? allItems
                       : allItems
                             .where(
-                              (item) =>
-                                  item.name.toLowerCase().contains(query),
+                              (item) => item.name.toLowerCase().contains(query),
                             )
                             .toList();
                   if (items.isEmpty) {
@@ -664,9 +649,7 @@ class _RuleStorePageState extends ConsumerState<_RuleStorePage> {
               16,
               30 + MediaQuery.paddingOf(context).bottom,
             ),
-            sliver: SliverToBoxAdapter(
-              child: _buildCustomRepoSection(context),
-            ),
+            sliver: SliverToBoxAdapter(child: _buildCustomRepoSection(context)),
           ),
         ],
       ),
@@ -811,9 +794,7 @@ class _RuleEditorPageState extends ConsumerState<_RuleEditorPage> {
               minLines: 14,
               autocorrect: false,
               enableSuggestions: false,
-              decoration: const InputDecoration(
-                hintText: '粘贴规则 JSON 或链接',
-              ),
+              decoration: const InputDecoration(hintText: '粘贴规则 JSON 或链接'),
             ),
           ),
         ],

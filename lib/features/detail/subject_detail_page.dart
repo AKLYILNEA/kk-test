@@ -28,13 +28,14 @@ class SubjectDetailPage extends ConsumerStatefulWidget {
   ConsumerState<SubjectDetailPage> createState() => _SubjectDetailPageState();
 }
 
-class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
+class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
+    with RouteSettledMixin<SubjectDetailPage> {
   String _selectedRuleId = '';
   String _selectedRuleName = '';
   _DetailSection _section = _DetailSection.play;
-
-  // Live parallel probe results per enabled rule (mirrors PlayerPage).
-  final Map<String, RuleProbeResult> _liveProbes = {};
+  bool _sectionsReady = false;
+  bool _peopleVisited = false;
+  final _liveProbes = ValueNotifier<Map<String, RuleProbeResult>>(const {});
   int _probeGeneration = 0;
   int? _probedSubjectId;
 
@@ -45,13 +46,34 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
   bool _loadingMoreComments = false;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _sectionsReady = true);
+    });
+  }
+
+  @override
+  void didSettleRoute() {
+    final subject = ref.read(catalogSubjectProvider(widget.subjectId));
+    if (subject != null && _section == _DetailSection.play) {
+      _ensureProbed(subject);
+    }
+  }
+
+  @override
   void dispose() {
     _probeGeneration++;
+    _liveProbes.dispose();
     super.dispose();
   }
 
   void _ensureProbed(AnimeSubject subject) {
-    if (_probedSubjectId == subject.subjectId) return;
+    if (!routeSettled ||
+        _probedSubjectId == subject.subjectId ||
+        ref.read(playbackSourcesProvider) == null) {
+      return;
+    }
     _probedSubjectId = subject.subjectId;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_probeAllEnabledRules(subject));
@@ -66,34 +88,26 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
         .where((r) => r.enabled)
         .toList();
     if (enabledRules.isEmpty) {
-      if (mounted) setState(() => _liveProbes.clear());
+      _liveProbes.value = const {};
       return;
     }
 
     final gen = ++_probeGeneration;
-    setState(() {
-      _liveProbes
-        ..clear()
-        ..addEntries(
-          enabledRules.map(
-            (r) => MapEntry(
-              r.id,
-              RuleProbeResult(
-                ruleId: r.id,
-                ruleName: r.name,
-                state: RuleProbeState.searching,
-                message: '正在检测可用性...',
-              ),
-            ),
-          ),
-        );
-    });
+    _liveProbes.value = {
+      for (final rule in enabledRules)
+        rule.id: RuleProbeResult(
+          ruleId: rule.id,
+          ruleName: rule.name,
+          state: RuleProbeState.searching,
+          message: '正在检测可用性...',
+        ),
+    };
 
     await Future.wait(
       enabledRules.map((rule) async {
         final result = await resolver.probeRule(subject, rule.id);
         if (!mounted || gen != _probeGeneration) return;
-        setState(() => _liveProbes[rule.id] = result);
+        _liveProbes.value = {..._liveProbes.value, rule.id: result};
       }),
     );
   }
@@ -118,17 +132,18 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
     );
     final resolver = ref.read(playbackSourcesProvider);
     if (resolver == null) return;
-    setState(() {
-      _liveProbes[ruleId] = RuleProbeResult(
+    _liveProbes.value = {
+      ..._liveProbes.value,
+      ruleId: RuleProbeResult(
         ruleId: ruleId,
         ruleName: ruleName,
         state: RuleProbeState.searching,
         message: '验证通过，重新检索中...',
-      );
-    });
+      ),
+    };
     final result = await resolver.probeRule(subject, ruleId);
     if (!mounted) return;
-    setState(() => _liveProbes[ruleId] = result);
+    _liveProbes.value = {..._liveProbes.value, ruleId: result};
   }
 
   void _playEpisode(AnimeSubject subject, int episodeNumber) {
@@ -173,15 +188,11 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
 
   @override
   Widget build(BuildContext context) {
-    ref.watch(catalogUpdatesProvider);
-    final catalog = ref.watch(catalogRepositoryProvider);
-    final library = ref.watch(libraryProvider);
-    final history = ref.watch(historyProvider);
-
-    final load = ref.watch(loadCatalogSubjectProvider(widget.subjectId));
-    final commentsAsync = ref.watch(subjectCommentsProvider(widget.subjectId));
-    final subject = catalog.getSubjectById(widget.subjectId);
+    final id = widget.subjectId;
+    final subject = ref.watch(catalogSubjectProvider(id));
+    final subjectLoad = loadCatalogSubjectProvider(id);
     if (subject == null) {
+      final load = ref.watch(subjectLoad);
       return KonekoScaffold(
         title: '番剧详情',
         showBack: true,
@@ -189,44 +200,29 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
           child: load.isLoading
               ? const ActivityIndicator()
               : TextButton(
-                  onPressed: () => ref.invalidate(
-                    loadCatalogSubjectProvider(widget.subjectId),
-                  ),
+                  onPressed: () => ref.invalidate(subjectLoad),
                   child: const Text('番剧资料暂不可用，点此重试'),
                 ),
         ),
       );
     }
+    ref.listen(subjectLoad, (_, _) {});
+    if (_peopleVisited) SubjectPeopleSliver.retain(ref, id);
 
-    final hasLiveResolver = ref.watch(playbackSourcesProvider) != null;
-    if (hasLiveResolver) {
-      _ensureProbed(subject);
-    }
-
-    final entry = library
-        .where((e) => e.subjectId == subject.subjectId)
-        .firstOrNull;
-    final hist = history
-        .where((h) => h.subjectId == subject.subjectId)
-        .firstOrNull;
-
+    final entry = ref.watch(
+      libraryProvider.select(
+        (list) => list.firstWhereOrNull((item) => item.subjectId == id),
+      ),
+    );
+    final hist = ref.watch(
+      historyProvider.select(
+        (list) => list.firstWhereOrNull((item) => item.subjectId == id),
+      ),
+    );
     final currentEp =
         hist?.lastEpisode ??
         ((entry?.watchedEpisodes ?? 0) > 0 ? entry!.watchedEpisodes : 1);
     final hasHistory = hist != null || (entry?.watchedEpisodes ?? 0) > 0;
-    final episodes = catalog.getEpisodes(
-      subject.subjectId,
-      watchedCount: entry?.watchedEpisodes ?? 0,
-      currentEp: currentEp,
-    );
-    final enabledRules = ref
-        .watch(rulesProvider)
-        .where((rule) => rule.enabled)
-        .toList();
-    final mockProbes = hasLiveResolver
-        ? const <RuleSourceProbe>[]
-        : catalog.probeSources(subject.subjectId);
-
     return KonekoScaffold(
       title: '番剧详情',
       showBack: true,
@@ -237,168 +233,232 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage> {
           onPressed: () => _playEpisode(subject, currentEp),
         ),
       ],
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final isWide = constraints.maxWidth >= 900;
-          final heroCard = _HeroCard(
-            subject: subject,
-            entry: entry,
-            currentEp: currentEp,
-            hasHistory: hasHistory,
-            onPlay: () => _playEpisode(subject, currentEp),
-            onStatusChanged: (status) {
-              ref
-                  .read(libraryProvider.notifier)
-                  .setStatus(subject.subjectId, status);
-              showKonekoBanner(
-                context,
-                '已将《${subject.title}》标记为「${status.label}」',
-                level: BannerLevel.success,
-              );
-            },
-          );
-          final episodeCard = _EpisodeMatrixCard(
-            episodes: episodes,
-            isLoading: load.isLoading,
-            onRetry: () =>
-                ref.invalidate(loadCatalogSubjectProvider(widget.subjectId)),
-            onSelect: (ep) => _playEpisode(subject, ep.episodeNumber),
-          );
-          final sourcesCard = _RuleSourcesCard(
-            hasLiveResolver: hasLiveResolver,
-            enabledRules: enabledRules,
-            liveProbes: _liveProbes,
-            mockProbes: mockProbes,
-            selectedRuleId: _selectedRuleId,
-            selectedRuleName: _selectedRuleName,
-            onRefresh: () => unawaited(_probeAllEnabledRules(subject)),
-            onManage: () async {
-              await BaseNavigator.push<void>(
-                context,
-                const RulesPage(showBack: true),
-              );
-              if (mounted && hasLiveResolver) {
-                unawaited(_probeAllEnabledRules(subject));
-              }
-            },
-            onVerify: (ruleId, ruleName, verifyUrl) =>
-                unawaited(_verifyRule(subject, ruleId, ruleName, verifyUrl)),
-            onToggleSelect: (ruleId, ruleName) {
-              if (_selectedRuleId == ruleId) {
-                setState(() {
-                  _selectedRuleId = '';
-                  _selectedRuleName = '';
-                });
-                showKonekoBanner(context, '已取消指定播放源，将自动沿用上次线路');
-              } else {
-                setState(() {
-                  _selectedRuleId = ruleId;
-                  _selectedRuleName = ruleName;
-                });
-                showKonekoBanner(context, '已指定播放源：$ruleName（再次点击可取消）');
-              }
-            },
-          );
-          final commentsCard = _CommentsSectionCard(
-            commentsAsync: commentsAsync,
-            overrideItems: _extraComments,
-            overrideTotal: _extraTotal,
-            overrideHasMore: _extraComments != null ? _extraHasMore : null,
-            loadingMore: _loadingMoreComments,
-            onRefresh: () {
-              setState(() {
-                _extraComments = null;
-                _extraTotal = null;
-                _extraHasMore = false;
-              });
-              ref.invalidate(subjectCommentsProvider(widget.subjectId));
-            },
-            onLoadMore: (count) => _loadMoreComments(count),
-          );
-
-          final sectionSwitcher = KonekoSegmentedBar<_DetailSection>(
-            segments: const [
-              (_DetailSection.play, '播放'),
-              (_DetailSection.characters, '角色'),
-              (_DetailSection.relations, '关联'),
-              (_DetailSection.comments, '评论'),
-            ],
-            value: _section,
-            onChanged: (value) => setState(() => _section = value),
-          );
-
-          final playCards = isWide
-              ? Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  spacing: 16,
-                  children: [
-                    Expanded(flex: 12, child: episodeCard),
-                    Expanded(flex: 7, child: sourcesCard),
-                  ],
-                )
-              : Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  spacing: 14,
-                  children: [episodeCard, sourcesCard],
+      body: ArrivalHold(
+        ready: _sectionsReady,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final isWide = constraints.maxWidth >= 900;
+            final heroCard = _HeroCard(
+              subject: subject,
+              entry: entry,
+              currentEp: currentEp,
+              hasHistory: hasHistory,
+              onPlay: () => _playEpisode(subject, currentEp),
+              onStatusChanged: (status) {
+                ref
+                    .read(libraryProvider.notifier)
+                    .setStatus(subject.subjectId, status);
+                showKonekoBanner(
+                  context,
+                  '已将《${subject.title}》标记为「${status.label}」',
+                  level: BannerLevel.success,
                 );
+              },
+            );
+            final sectionSwitcher = KonekoSegmentedBar<_DetailSection>(
+              segments: const [
+                (_DetailSection.play, '播放'),
+                (_DetailSection.characters, '角色'),
+                (_DetailSection.relations, '关联'),
+                (_DetailSection.comments, '评论'),
+              ],
+              value: _section,
+              onChanged: (value) => setState(() {
+                _section = value;
+                if (value == _DetailSection.characters) _peopleVisited = true;
+              }),
+            );
 
-          final bottomPad = 28 + MediaQuery.paddingOf(context).bottom;
+            final bottomPad = 28 + MediaQuery.paddingOf(context).bottom;
 
-          return CustomScrollView(
-            scrollCacheExtent: const ScrollCacheExtent.pixels(600),
-            slivers: [
-              const KonekoScrollStart(),
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-                sliver: SliverToBoxAdapter(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    spacing: 14,
-                    children: [heroCard, sectionSwitcher],
-                  ),
-                ),
-              ),
-              ...switch (_section) {
-                _DetailSection.play => [
+            return ArrivalCacheExtentBuilder(
+              builder: (context, cacheExtent) => CustomScrollView(
+                scrollCacheExtent: cacheExtent,
+                slivers: [
+                  const KonekoScrollStart(),
                   SliverPadding(
-                    padding: EdgeInsets.fromLTRB(16, 14, 16, bottomPad),
-                    sliver: SliverToBoxAdapter(child: playCards),
-                  ),
-                ],
-                _DetailSection.characters => [
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-                    sliver: SubjectCharactersSliver(
-                      subjectId: subject.subjectId,
-                    ),
-                  ),
-                  SliverPadding(
-                    padding: EdgeInsets.fromLTRB(16, 0, 16, bottomPad),
-                    sliver: SubjectCreditsSliver(subjectId: subject.subjectId),
-                  ),
-                ],
-                _DetailSection.relations => [
-                  SliverPadding(
-                    padding: EdgeInsets.fromLTRB(16, 14, 16, bottomPad),
-                    sliver: SubjectRelationsSliver(
-                      subjectId: subject.subjectId,
-                      onOpenAnime: (id) => BaseNavigator.push<void>(
-                        context,
-                        SubjectDetailPage(subjectId: id),
+                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+                    sliver: SliverToBoxAdapter(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        spacing: 14,
+                        children: [heroCard, sectionSwitcher],
                       ),
                     ),
                   ),
+                  if (_sectionsReady)
+                    ...switch (_section) {
+                      _DetailSection.play => [
+                        SliverPadding(
+                          padding: EdgeInsets.fromLTRB(16, 14, 16, bottomPad),
+                          sliver: SliverToBoxAdapter(
+                            child: Consumer(
+                              builder: (context, ref, _) {
+                                final catalog = ref.watch(
+                                  catalogRepositoryProvider,
+                                );
+                                final episodeProvider =
+                                    loadCatalogEpisodesProvider(id);
+                                final episodeLoad = ref.watch(episodeProvider);
+                                final hasLiveResolver =
+                                    ref.watch(playbackSourcesProvider) != null;
+                                final enabledRules = ref
+                                    .watch(rulesProvider)
+                                    .where((rule) => rule.enabled)
+                                    .toList();
+                                final mockProbes = hasLiveResolver
+                                    ? const <RuleSourceProbe>[]
+                                    : catalog.probeSources(id);
+                                _ensureProbed(subject);
+                                final episodeCard = _EpisodeMatrixCard(
+                                  episodes: catalog.getEpisodes(
+                                    id,
+                                    watchedCount: entry?.watchedEpisodes ?? 0,
+                                    currentEp: currentEp,
+                                  ),
+                                  isLoading: episodeLoad.isLoading,
+                                  onRetry: () =>
+                                      ref.invalidate(episodeProvider),
+                                  onSelect: (ep) =>
+                                      _playEpisode(subject, ep.episodeNumber),
+                                );
+                                final sourcesCard = ValueListenableBuilder(
+                                  valueListenable: _liveProbes,
+                                  builder: (context, probes, _) =>
+                                      _RuleSourcesCard(
+                                        hasLiveResolver: hasLiveResolver,
+                                        enabledRules: enabledRules,
+                                        liveProbes: probes,
+                                        mockProbes: mockProbes,
+                                        selectedRuleId: _selectedRuleId,
+                                        selectedRuleName: _selectedRuleName,
+                                        onRefresh: () => unawaited(
+                                          _probeAllEnabledRules(subject),
+                                        ),
+                                        onManage: () async {
+                                          await BaseNavigator.push<void>(
+                                            context,
+                                            const RulesPage(showBack: true),
+                                          );
+                                          if (mounted && hasLiveResolver) {
+                                            unawaited(
+                                              _probeAllEnabledRules(subject),
+                                            );
+                                          }
+                                        },
+                                        onVerify:
+                                            (ruleId, ruleName, verifyUrl) =>
+                                                unawaited(
+                                                  _verifyRule(
+                                                    subject,
+                                                    ruleId,
+                                                    ruleName,
+                                                    verifyUrl,
+                                                  ),
+                                                ),
+                                        onToggleSelect: (ruleId, ruleName) {
+                                          if (_selectedRuleId == ruleId) {
+                                            setState(() {
+                                              _selectedRuleId = '';
+                                              _selectedRuleName = '';
+                                            });
+                                            showKonekoBanner(
+                                              context,
+                                              '已取消指定播放源，将自动沿用上次线路',
+                                            );
+                                          } else {
+                                            setState(() {
+                                              _selectedRuleId = ruleId;
+                                              _selectedRuleName = ruleName;
+                                            });
+                                            showKonekoBanner(
+                                              context,
+                                              '已指定播放源：$ruleName（再次点击可取消）',
+                                            );
+                                          }
+                                        },
+                                      ),
+                                );
+                                return isWide
+                                    ? Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        spacing: 16,
+                                        children: [
+                                          Expanded(
+                                            flex: 12,
+                                            child: episodeCard,
+                                          ),
+                                          Expanded(flex: 7, child: sourcesCard),
+                                        ],
+                                      )
+                                    : Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.stretch,
+                                        spacing: 14,
+                                        children: [episodeCard, sourcesCard],
+                                      );
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
+                      _DetailSection.characters => [
+                        SliverPadding(
+                          padding: EdgeInsets.fromLTRB(16, 14, 16, bottomPad),
+                          sliver: SubjectPeopleSliver(subjectId: id),
+                        ),
+                      ],
+                      _DetailSection.relations => [
+                        SliverPadding(
+                          padding: EdgeInsets.fromLTRB(16, 14, 16, bottomPad),
+                          sliver: SubjectRelationsSliver(
+                            subjectId: subject.subjectId,
+                            onOpenAnime: (id) => BaseNavigator.push<void>(
+                              context,
+                              SubjectDetailPage(subjectId: id),
+                            ),
+                          ),
+                        ),
+                      ],
+                      _DetailSection.comments => [
+                        SliverPadding(
+                          padding: EdgeInsets.fromLTRB(16, 14, 16, bottomPad),
+                          sliver: Consumer(
+                            builder: (context, ref, _) {
+                              final commentsAsync = ref.watch(
+                                subjectCommentsProvider(id),
+                              );
+                              return _CommentsSectionSliver(
+                                commentsAsync: commentsAsync,
+                                overrideItems: _extraComments,
+                                overrideTotal: _extraTotal,
+                                overrideHasMore: _extraComments != null
+                                    ? _extraHasMore
+                                    : null,
+                                loadingMore: _loadingMoreComments,
+                                onRefresh: () {
+                                  setState(() {
+                                    _extraComments = null;
+                                    _extraTotal = null;
+                                    _extraHasMore = false;
+                                  });
+                                  ref.invalidate(
+                                    subjectCommentsProvider(widget.subjectId),
+                                  );
+                                },
+                                onLoadMore: (count) => _loadMoreComments(count),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    },
                 ],
-                _DetailSection.comments => [
-                  SliverPadding(
-                    padding: EdgeInsets.fromLTRB(16, 14, 16, bottomPad),
-                    sliver: SliverToBoxAdapter(child: commentsCard),
-                  ),
-                ],
-              },
-            ],
-          );
-        },
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -836,8 +896,8 @@ class _EpisodeMatrixCardState extends State<_EpisodeMatrixCard> {
   }
 }
 
-class _CommentsSectionCard extends StatelessWidget {
-  const _CommentsSectionCard({
+class _CommentsSectionSliver extends StatelessWidget {
+  const _CommentsSectionSliver({
     required this.commentsAsync,
     required this.overrideItems,
     required this.overrideTotal,
@@ -863,103 +923,125 @@ class _CommentsSectionCard extends StatelessWidget {
     final total = overrideTotal ?? basePage?.total ?? items.length;
     final hasMore = overrideHasMore ?? basePage?.hasMore ?? false;
 
-    return KonekoCard(
-      corner: 30,
-      padding: const EdgeInsets.all(18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
+    final Widget? status;
+    if (commentsAsync.isLoading && items.isEmpty) {
+      status = const Padding(
+        padding: EdgeInsets.symmetric(vertical: 28),
+        child: Center(child: ActivityIndicator()),
+      );
+    } else if (commentsAsync.hasError && items.isEmpty) {
+      status = Padding(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        child: Center(
+          child: Column(
+            spacing: 8,
             children: [
-              Expanded(
-                child: Text(
-                  total > 0 ? 'Bangumi 吐槽箱 ($total)' : 'Bangumi 吐槽箱',
-                  style: AppTextStyle.headline
-                      .of(context, emphasized: true)
-                      .copyWith(color: colorScheme.onSurface),
-                ),
+              Text(
+                '评论加载失败，请检查网络后重试',
+                style: AppTextStyle.footnote
+                    .of(context)
+                    .copyWith(color: colorScheme.onSurfaceVariant),
               ),
               KonekoChip(
-                label: '刷新',
-                height: 28,
-                fontSize: 12,
-                leading: GlyphIcon(
-                  KonekoGlyphs.refresh,
-                  size: 13,
-                  color: colorScheme.primary,
-                ),
+                label: '重新加载',
+                height: 32,
+                fontSize: 12.5,
+                backgroundColor: colorScheme.primary,
+                foregroundColor: colorScheme.onPrimary,
                 onPressed: onRefresh,
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          if (commentsAsync.isLoading && items.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 28),
-              child: Center(child: ActivityIndicator()),
-            )
-          else if (commentsAsync.hasError && items.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 20),
-              child: Center(
-                child: Column(
-                  spacing: 8,
+        ),
+      );
+    } else if (items.isEmpty) {
+      status = Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Center(
+          child: Text(
+            '暂时还没有吐槽评论',
+            style: AppTextStyle.subheadline
+                .of(context)
+                .copyWith(color: colorScheme.onSurfaceVariant),
+          ),
+        ),
+      );
+    } else {
+      status = null;
+    }
+
+    return SurfaceScope(
+      level: SurfaceLevel.card,
+      child: DecoratedSliver(
+        decoration: ShapeDecoration(
+          color: SurfaceLevel.card.colorOf(colorScheme),
+          shape: SuperellipseBorder(borderRadius: AppRadius.all(30)),
+          shadows: konekoCardShadows(colorScheme),
+        ),
+        sliver: SliverPadding(
+          padding: const EdgeInsets.all(18),
+          sliver: SliverMainAxisGroup(
+            slivers: [
+              SliverToBoxAdapter(
+                child: Row(
                   children: [
-                    Text(
-                      '评论加载失败，请检查网络后重试',
-                      style: AppTextStyle.footnote
-                          .of(context)
-                          .copyWith(color: colorScheme.onSurfaceVariant),
+                    Expanded(
+                      child: Text(
+                        total > 0 ? 'Bangumi 吐槽箱 ($total)' : 'Bangumi 吐槽箱',
+                        style: AppTextStyle.headline
+                            .of(context, emphasized: true)
+                            .copyWith(color: colorScheme.onSurface),
+                      ),
                     ),
                     KonekoChip(
-                      label: '重新加载',
-                      height: 32,
-                      fontSize: 12.5,
-                      backgroundColor: colorScheme.primary,
-                      foregroundColor: colorScheme.onPrimary,
+                      label: '刷新',
+                      height: 28,
+                      fontSize: 12,
+                      leading: GlyphIcon(
+                        KonekoGlyphs.refresh,
+                        size: 13,
+                        color: colorScheme.primary,
+                      ),
                       onPressed: onRefresh,
                     ),
                   ],
                 ),
               ),
-            )
-          else if (items.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 24),
-              child: Center(
-                child: Text(
-                  '暂时还没有吐槽评论',
-                  style: AppTextStyle.subheadline
-                      .of(context)
-                      .copyWith(color: colorScheme.onSurfaceVariant),
+              const SliverToBoxAdapter(child: SizedBox(height: 12)),
+              if (status != null)
+                SliverToBoxAdapter(child: status)
+              else ...[
+                SliverPrismList(
+                  itemCount: items.length,
+                  gap: 10,
+                  estimatedItemExtent: 112,
+                  itemBuilder: (_, index) =>
+                      _CommentTile(comment: items[index]),
                 ),
-              ),
-            )
-          else ...[
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              spacing: 10,
-              children: [
-                for (final comment in items) _CommentTile(comment: comment),
+                if (hasMore)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 14),
+                      child: Center(
+                        child: KonekoChip(
+                          label: loadingMore ? '正在加载...' : '加载更多评论',
+                          height: 36,
+                          fontSize: 13,
+                          backgroundColor: colorScheme.primary.withValues(
+                            alpha: 0.14,
+                          ),
+                          foregroundColor: colorScheme.primary,
+                          onPressed: loadingMore
+                              ? null
+                              : () => onLoadMore(items.length),
+                        ),
+                      ),
+                    ),
+                  ),
               ],
-            ),
-            if (hasMore) ...[
-              const SizedBox(height: 14),
-              Center(
-                child: KonekoChip(
-                  label: loadingMore ? '正在加载...' : '加载更多评论',
-                  height: 36,
-                  fontSize: 13,
-                  backgroundColor: colorScheme.primary.withValues(alpha: 0.14),
-                  foregroundColor: colorScheme.primary,
-                  onPressed: loadingMore
-                      ? null
-                      : () => onLoadMore(items.length),
-                ),
-              ),
             ],
-          ],
-        ],
+          ),
+        ),
       ),
     );
   }

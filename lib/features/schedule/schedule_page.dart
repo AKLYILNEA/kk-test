@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:koneko/common/catalog_page_refresh.dart';
 import 'package:koneko/common/providers.dart';
 import 'package:koneko/features/detail/subject_detail_page.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
@@ -30,7 +31,10 @@ class SchedulePage extends ConsumerStatefulWidget {
   ConsumerState<SchedulePage> createState() => _SchedulePageState();
 }
 
-class _SchedulePageState extends ConsumerState<SchedulePage> {
+class _SchedulePageState extends ConsumerState<SchedulePage>
+    with
+        RouteMotionHoldMixin<SchedulePage>,
+        CatalogPageRefreshMixin<SchedulePage> {
   static const _weekdays = [
     (1, '月', '周一'),
     (2, '火', '周二'),
@@ -354,7 +358,6 @@ class _SchedulePageState extends ConsumerState<SchedulePage> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
-    ref.watch(catalogUpdatesProvider);
     final catalog = ref.watch(catalogRepositoryProvider);
     final loading = ref.watch(loadHomeCatalogProvider);
     final library = ref.watch(libraryProvider);
@@ -385,144 +388,167 @@ class _SchedulePageState extends ConsumerState<SchedulePage> {
       body: LayoutBuilder(
         builder: (context, constraints) {
           final isWide = constraints.maxWidth >= 760;
-          return CustomScrollView(
-            scrollCacheExtent: const ScrollCacheExtent.pixels(600),
-            slivers: [
-              const KonekoScrollStart(),
-              SliverToBoxAdapter(
-                child: KonekoAutoScrollChipBar(
-                  height: 48,
-                  chipHeight: 36,
-                  fontSize: 13,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 6,
-                  ),
-                  labels: [
-                    for (final (dayNum, jp, cn) in _weekdays)
-                      '$jp · $cn  ${_subjectsForDay(catalog, dayNum, statusMap).length}',
-                  ],
-                  selectedIndex: (_selectedDay - 1).clamp(0, 6).toInt(),
-                  onSelected: (index) =>
-                      setState(() => _selectedDay = _weekdays[index].$1),
-                ),
-              ),
-              if (_activeOptionCount > 0)
+          return ArrivalCacheExtentBuilder(
+            builder: (context, cacheExtent) => CustomScrollView(
+              scrollCacheExtent: cacheExtent,
+              slivers: [
+                const KonekoScrollStart(),
                 SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 6,
-                      children: [
-                        if (!_season.isCurrent)
-                          KonekoChip(
-                            label: '${_season.shortLabel} · 回到本季',
-                            height: 28,
-                            fontSize: 12,
-                            elevated: true,
-                            backgroundColor: colorScheme.primary,
-                            foregroundColor: colorScheme.onPrimary,
-                            onPressed: () =>
-                                unawaited(_selectSeason(AnimeSeason.current())),
-                          ),
-                        if (_sort != _ScheduleSort.defaultOrder)
-                          KonekoChip(
-                            label: _sort.label,
-                            height: 28,
-                            fontSize: 12,
-                            elevated: true,
-                            backgroundColor: SurfaceLevel.card.colorOf(
-                              colorScheme,
+                  child: KonekoAutoScrollChipBar(
+                    height: 48,
+                    chipHeight: 36,
+                    fontSize: 13,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 6,
+                    ),
+                    labels: [
+                      for (final (dayNum, jp, cn) in _weekdays)
+                        '$jp · $cn  ${_subjectsForDay(catalog, dayNum, statusMap).length}',
+                    ],
+                    selectedIndex: (_selectedDay - 1).clamp(0, 6).toInt(),
+                    onSelected: (index) =>
+                        setState(() => _selectedDay = _weekdays[index].$1),
+                  ),
+                ),
+                if (_activeOptionCount > 0)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: [
+                          if (!_season.isCurrent)
+                            KonekoChip(
+                              label: '${_season.shortLabel} · 回到本季',
+                              height: 28,
+                              fontSize: 12,
+                              elevated: true,
+                              backgroundColor: colorScheme.primary,
+                              foregroundColor: colorScheme.onPrimary,
+                              onPressed: () => unawaited(
+                                _selectSeason(AnimeSeason.current()),
+                              ),
                             ),
-                            onPressed: _openSettingsSheet,
-                          ),
-                        if (_onlyWatching)
-                          KonekoChip(
-                            label: '仅看在追',
-                            height: 28,
-                            fontSize: 12,
-                            elevated: true,
-                            backgroundColor: SurfaceLevel.card.colorOf(
-                              colorScheme,
+                          if (_sort != _ScheduleSort.defaultOrder)
+                            KonekoChip(
+                              label: _sort.label,
+                              height: 28,
+                              fontSize: 12,
+                              elevated: true,
+                              backgroundColor: SurfaceLevel.card.colorOf(
+                                colorScheme,
+                              ),
+                              onPressed: _openSettingsSheet,
                             ),
-                            onPressed: () =>
-                                setState(() => _onlyWatching = false),
-                          ),
-                        if (_hideWatched)
-                          KonekoChip(
-                            label: '隐藏看过',
-                            height: 28,
-                            fontSize: 12,
-                            elevated: true,
-                            backgroundColor: SurfaceLevel.card.colorOf(
-                              colorScheme,
+                          if (_onlyWatching)
+                            KonekoChip(
+                              label: '仅看在追',
+                              height: 28,
+                              fontSize: 12,
+                              elevated: true,
+                              backgroundColor: SurfaceLevel.card.colorOf(
+                                colorScheme,
+                              ),
+                              onPressed: () =>
+                                  setState(() => _onlyWatching = false),
                             ),
-                            onPressed: () =>
-                                setState(() => _hideWatched = false),
-                          ),
-                        if (_hideDropped)
-                          KonekoChip(
-                            label: '隐藏抛弃',
-                            height: 28,
-                            fontSize: 12,
-                            elevated: true,
-                            backgroundColor: SurfaceLevel.card.colorOf(
-                              colorScheme,
+                          if (_hideWatched)
+                            KonekoChip(
+                              label: '隐藏看过',
+                              height: 28,
+                              fontSize: 12,
+                              elevated: true,
+                              backgroundColor: SurfaceLevel.card.colorOf(
+                                colorScheme,
+                              ),
+                              onPressed: () =>
+                                  setState(() => _hideWatched = false),
                             ),
-                            onPressed: () =>
-                                setState(() => _hideDropped = false),
-                          ),
-                      ],
+                          if (_hideDropped)
+                            KonekoChip(
+                              label: '隐藏抛弃',
+                              height: 28,
+                              fontSize: 12,
+                              elevated: true,
+                              backgroundColor: SurfaceLevel.card.colorOf(
+                                colorScheme,
+                              ),
+                              onPressed: () =>
+                                  setState(() => _hideDropped = false),
+                            ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              if (items.isEmpty)
-                SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Center(
-                    child: isLoading
-                        ? const ActivityIndicator()
-                        : hasError
-                        ? TextButton(
-                            onPressed: () {
-                              if (_season.isCurrent) {
-                                ref.invalidate(loadHomeCatalogProvider);
-                              } else {
-                                unawaited(_selectSeason(_season));
-                              }
-                            },
-                            child: Text(_seasonError ?? '时间表加载失败，点此重试'),
-                          )
-                        : Text(
-                            _activeOptionCount > 0
-                                ? '当前筛选条件下暂无放送条目'
-                                : '当天暂无放送条目',
-                            style: AppTextStyle.subheadline
-                                .of(context)
-                                .copyWith(color: colorScheme.onSurfaceVariant),
-                          ),
-                  ),
-                )
-              else
-                SliverPadding(
-                  padding: EdgeInsets.fromLTRB(
-                    16,
-                    12,
-                    16,
-                    24 + widget.bottomPadding,
-                  ),
-                  sliver: isWide
-                      ? SliverGrid(
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 2,
-                                crossAxisSpacing: 14,
-                                mainAxisSpacing: 14,
-                                mainAxisExtent: 124,
+                if (items.isEmpty)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Center(
+                      child: isLoading
+                          ? const ActivityIndicator()
+                          : hasError
+                          ? TextButton(
+                              onPressed: () {
+                                if (_season.isCurrent) {
+                                  ref.invalidate(loadHomeCatalogProvider);
+                                } else {
+                                  unawaited(_selectSeason(_season));
+                                }
+                              },
+                              child: Text(_seasonError ?? '时间表加载失败，点此重试'),
+                            )
+                          : Text(
+                              _activeOptionCount > 0
+                                  ? '当前筛选条件下暂无放送条目'
+                                  : '当天暂无放送条目',
+                              style: AppTextStyle.subheadline
+                                  .of(context)
+                                  .copyWith(
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                            ),
+                    ),
+                  )
+                else
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(
+                      16,
+                      12,
+                      16,
+                      24 + widget.bottomPadding,
+                    ),
+                    sliver: isWide
+                        ? SliverGrid(
+                            gridDelegate:
+                                const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 2,
+                                  crossAxisSpacing: 14,
+                                  mainAxisSpacing: 14,
+                                  mainAxisExtent: 124,
+                                ),
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) => _ScheduleCard(
+                                subject: items[index],
+                                isWatching:
+                                    statusMap[items[index].subjectId] ==
+                                    CollectionStatus.watching,
+                                onTap: () => BaseNavigator.push<void>(
+                                  context,
+                                  SubjectDetailPage(
+                                    subjectId: items[index].subjectId,
+                                  ),
+                                ),
                               ),
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) => _ScheduleCard(
+                              childCount: items.length,
+                            ),
+                          )
+                        : SliverList.separated(
+                            itemCount: items.length,
+                            separatorBuilder: (_, _) =>
+                                const SizedBox(height: 12),
+                            itemBuilder: (context, index) => _ScheduleCard(
                               subject: items[index],
                               isWatching:
                                   statusMap[items[index].subjectId] ==
@@ -534,28 +560,10 @@ class _SchedulePageState extends ConsumerState<SchedulePage> {
                                 ),
                               ),
                             ),
-                            childCount: items.length,
                           ),
-                        )
-                      : SliverList.separated(
-                          itemCount: items.length,
-                          separatorBuilder: (_, _) =>
-                              const SizedBox(height: 12),
-                          itemBuilder: (context, index) => _ScheduleCard(
-                            subject: items[index],
-                            isWatching:
-                                statusMap[items[index].subjectId] ==
-                                CollectionStatus.watching,
-                            onTap: () => BaseNavigator.push<void>(
-                              context,
-                              SubjectDetailPage(
-                                subjectId: items[index].subjectId,
-                              ),
-                            ),
-                          ),
-                        ),
-                ),
-            ],
+                  ),
+              ],
+            ),
           );
         },
       ),

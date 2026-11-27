@@ -5,6 +5,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 import 'package:prism_ui/navigator.dart';
 import 'package:prism_ui/sheet_navigator.dart';
+import 'package:prism_ui/route_scope.dart';
 
 class _RouteMotion {
   _RouteMotion(BuildContext context)
@@ -89,7 +90,7 @@ mixin RouteMotionHoldMixin<T extends StatefulWidget> on State<T> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final route = ModalRoute.of(context);
+    final route = routeOf(context);
     if (_motion != null && identical(route, _route)) {
       return;
     }
@@ -185,7 +186,8 @@ mixin RouteSettledMixin<T extends StatefulWidget> on State<T> {
 class ArrivalCacheExtentBuilder extends StatefulWidget {
   const ArrivalCacheExtentBuilder({super.key, required this.builder});
 
-  final Widget Function(ScrollCacheExtent? cacheExtent) builder;
+  final Widget Function(BuildContext context, ScrollCacheExtent? cacheExtent)
+  builder;
 
   @override
   State<ArrivalCacheExtentBuilder> createState() =>
@@ -195,16 +197,22 @@ class ArrivalCacheExtentBuilder extends StatefulWidget {
 class _ArrivalCacheExtentBuilderState extends State<ArrivalCacheExtentBuilder>
     with ArrivalCacheExtentMixin<ArrivalCacheExtentBuilder> {
   @override
-  Widget build(BuildContext context) => widget.builder(arrivalCacheExtent);
+  Widget build(BuildContext context) =>
+      widget.builder(context, arrivalCacheExtent);
 }
 
-/// A list's cache extent: none until its route settles and nothing animates.
+/// A list's cache extent: none until its route settles, then widened by steps.
 mixin ArrivalCacheExtentMixin<T extends StatefulWidget> on State<T> {
-  var _widenScheduled = false;
-  var _widened = false;
+  static const _steps = <ScrollCacheExtent?>[
+    ScrollCacheExtent.pixels(0),
+    ScrollCacheExtent.pixels(120),
+    null,
+  ];
 
-  ScrollCacheExtent? get arrivalCacheExtent =>
-      _widened ? null : const ScrollCacheExtent.pixels(0);
+  var _widenScheduled = false;
+  var _step = 0;
+
+  ScrollCacheExtent? get arrivalCacheExtent => _steps[_step];
 
   @override
   void didChangeDependencies() {
@@ -222,8 +230,14 @@ mixin ArrivalCacheExtentMixin<T extends StatefulWidget> on State<T> {
       return;
     }
     await whenNothingAnimates();
-    if (mounted) {
-      setState(() => _widened = true);
+    for (var step = 1; step < _steps.length; step++) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _step = step);
+      if (step + 1 < _steps.length) {
+        await SchedulerBinding.instance.endOfFrame;
+      }
     }
   }
 }

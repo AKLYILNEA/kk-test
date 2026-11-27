@@ -62,8 +62,8 @@ class KonekoApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(themeSettingsProvider);
-    ref.watch(loadHomeCatalogProvider);
-    ref.watch(loadTrackedSubjectsProvider);
+    ref.listen(loadHomeCatalogProvider, (_, _) {});
+    ref.listen(loadTrackedSubjectsProvider, (_, _) {});
 
     return ValueListenableBuilder<String?>(
       valueListenable: FontManager.fontFamilyNotifier,

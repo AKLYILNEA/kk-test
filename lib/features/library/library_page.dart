@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:koneko/common/catalog_page_refresh.dart';
 import 'package:koneko/common/feature_feedback.dart';
 import 'package:koneko/common/providers.dart';
 import 'package:koneko/features/detail/subject_detail_page.dart';
@@ -32,7 +33,10 @@ class LibraryPage extends ConsumerStatefulWidget {
   ConsumerState<LibraryPage> createState() => _LibraryPageState();
 }
 
-class _LibraryPageState extends ConsumerState<LibraryPage> {
+class _LibraryPageState extends ConsumerState<LibraryPage>
+    with
+        RouteMotionHoldMixin<LibraryPage>,
+        CatalogPageRefreshMixin<LibraryPage> {
   int _selectedTabIndex = 0;
   _LibrarySort _sort = _LibrarySort.recent;
   String _query = '';
@@ -211,7 +215,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
-    ref.watch(catalogUpdatesProvider);
     final catalog = ref.watch(catalogRepositoryProvider);
     final entries = ref.watch(libraryProvider);
 
@@ -272,78 +275,82 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
               ? 4
               : 3;
 
-          return CustomScrollView(
-            scrollCacheExtent: const ScrollCacheExtent.pixels(600),
-            slivers: [
-              const KonekoScrollStart(),
-              SliverToBoxAdapter(
-                child: KonekoAutoScrollChipBar(
-                  height: 46,
-                  chipHeight: 34,
-                  fontSize: 13,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 6,
-                  ),
-                  labels: [
-                    for (final (status, label) in _tabs)
-                      '$label  ${countOf(status)}',
-                  ],
-                  selectedIndex: _selectedTabIndex,
-                  onSelected: (index) =>
-                      setState(() => _selectedTabIndex = index),
-                ),
-              ),
-              if (filtered.isEmpty)
-                SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Center(
-                    child: Text(
-                      _query.trim().isNotEmpty ? '没有匹配的追番记录' : '该分类下暂无番剧',
-                      style: AppTextStyle.subheadline
-                          .of(context)
-                          .copyWith(color: colorScheme.onSurfaceVariant),
+          return ArrivalCacheExtentBuilder(
+            builder: (context, cacheExtent) => CustomScrollView(
+              scrollCacheExtent: cacheExtent,
+              slivers: [
+                const KonekoScrollStart(),
+                SliverToBoxAdapter(
+                  child: KonekoAutoScrollChipBar(
+                    height: 46,
+                    chipHeight: 34,
+                    fontSize: 13,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 6,
                     ),
-                  ),
-                )
-              else
-                SliverPadding(
-                  padding: EdgeInsets.fromLTRB(
-                    12,
-                    10,
-                    12,
-                    24 + widget.bottomPadding,
-                  ),
-                  sliver: SliverGrid(
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: columns,
-                      crossAxisSpacing: 10,
-                      mainAxisSpacing: 12,
-                      childAspectRatio: 0.56,
-                    ),
-                    delegate: SliverChildBuilderDelegate((context, index) {
-                      final entry = filtered[index];
-                      final subject = catalog.getSubjectById(entry.subjectId)!;
-                      return UnifiedAnimeCard(
-                        subject: subject,
-                        corner: 16,
-                        compact: true,
-                        statusGlyph: konekoStatusGlyph(
-                          entry.status,
-                          forBadge: true,
-                        ),
-                        statusColor: konekoStatusColor(entry.status),
-                        statusTooltip: '修改「${subject.title}」的追番状态',
-                        onStatusTap: () => _pickStatus(subject, entry),
-                        onTap: () => BaseNavigator.push<void>(
-                          context,
-                          SubjectDetailPage(subjectId: subject.subjectId),
-                        ),
-                      );
-                    }, childCount: filtered.length),
+                    labels: [
+                      for (final (status, label) in _tabs)
+                        '$label  ${countOf(status)}',
+                    ],
+                    selectedIndex: _selectedTabIndex,
+                    onSelected: (index) =>
+                        setState(() => _selectedTabIndex = index),
                   ),
                 ),
-            ],
+                if (filtered.isEmpty)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Center(
+                      child: Text(
+                        _query.trim().isNotEmpty ? '没有匹配的追番记录' : '该分类下暂无番剧',
+                        style: AppTextStyle.subheadline
+                            .of(context)
+                            .copyWith(color: colorScheme.onSurfaceVariant),
+                      ),
+                    ),
+                  )
+                else
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(
+                      12,
+                      10,
+                      12,
+                      24 + widget.bottomPadding,
+                    ),
+                    sliver: SliverGrid(
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: columns,
+                        crossAxisSpacing: 10,
+                        mainAxisSpacing: 12,
+                        childAspectRatio: 0.56,
+                      ),
+                      delegate: SliverChildBuilderDelegate((context, index) {
+                        final entry = filtered[index];
+                        final subject = catalog.getSubjectById(
+                          entry.subjectId,
+                        )!;
+                        return UnifiedAnimeCard(
+                          subject: subject,
+                          corner: 16,
+                          compact: true,
+                          statusGlyph: konekoStatusGlyph(
+                            entry.status,
+                            forBadge: true,
+                          ),
+                          statusColor: konekoStatusColor(entry.status),
+                          statusTooltip: '修改「${subject.title}」的追番状态',
+                          onStatusTap: () => _pickStatus(subject, entry),
+                          onTap: () => BaseNavigator.push<void>(
+                            context,
+                            SubjectDetailPage(subjectId: subject.subjectId),
+                          ),
+                        );
+                      }, childCount: filtered.length),
+                    ),
+                  ),
+              ],
+            ),
           );
         },
       ),

@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
+import 'package:collection/collection.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show compute;
 import 'package:koneko_contract/koneko_contract.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -13,7 +15,7 @@ Dio networkClient() => Dio(
     sendTimeout: const Duration(seconds: 12),
     headers: {
       'user-agent':
-          'AKLYILNEA/Koneko/0.0.12 (https://github.com/AKLYILNEA/kk-test)',
+          'AKLYILNEA/Koneko/0.0.13 (https://github.com/AKLYILNEA/kk-test)',
     },
   ),
 );
@@ -41,6 +43,8 @@ class BangumiCatalog implements OnlineCatalog {
       for (final day in jsonObject(cache['week']).entries) {
         _week[jsonInt(day.key)] = jsonList(day.value).map(jsonInt).toList();
       }
+      _indexTrending();
+      _indexWeek();
     } on FormatException {
       // A damaged cache never prevents an online refresh.
     }
@@ -54,6 +58,10 @@ class BangumiCatalog implements OnlineCatalog {
   final Dio _client;
   final _changes = StreamController<void>.broadcast();
   final _subjects = <int, Map<String, dynamic>>{};
+  final _subjectViews =
+      <int, ({int day, int rank, int? weekday, AnimeSubject subject})>{};
+  final _trendingRanks = <int, int>{};
+  final _weekdays = <int, int>{};
   final _details = <int, Future<void>>{};
   final _episodeLoads = <int, Future<void>>{};
   final _episodesLoaded = <int>{};
@@ -73,6 +81,8 @@ class BangumiCatalog implements OnlineCatalog {
   int _trendingOffset = 0;
   bool _usedNextTrending = true;
   Future<void>? _refresh;
+  bool _saving = false;
+  bool _savePending = false;
 
   @override
   Stream<void> get changes => _changes.stream;
@@ -128,6 +138,7 @@ class BangumiCatalog implements OnlineCatalog {
       _fetchTrendingPage(offset: 0, limit: 36).then<void>((ids) {
         if (ids.isNotEmpty) {
           _trending = ids;
+          _indexTrending();
           _trendingOffset = ids.length;
         }
       }),
@@ -136,6 +147,7 @@ class BangumiCatalog implements OnlineCatalog {
           _week
             ..clear()
             ..addAll(days);
+          _indexWeek();
         }
       }),
     ];
@@ -205,6 +217,7 @@ class BangumiCatalog implements OnlineCatalog {
       if (page.isEmpty) return false;
       final merged = <int>{..._trending, ...page}.toList();
       _trending = merged;
+      _indexTrending();
       _trendingOffset = offset + page.length;
       _notify();
       return page.length >= 16;
@@ -460,10 +473,12 @@ class BangumiCatalog implements OnlineCatalog {
   Future<void> loadSubject(int id, {bool includeExtras = true}) async {
     await _ensureSubjectCore(id);
     if (!includeExtras) return;
-    await _ensureEpisodesSafe(id);
-    _notify();
-    await _ensureRelationsSafe(id);
-    _notify();
+    await Future.wait<void>([
+      loadEpisodes(id).onError((Object _, StackTrace _) {}),
+      loadRelations(
+        id,
+      ).then<void>((_) {}, onError: (Object _, StackTrace _) {}),
+    ]);
   }
 
   Future<void> _ensureSubjectCore(int id) async {
@@ -492,23 +507,8 @@ class BangumiCatalog implements OnlineCatalog {
     _notify();
   }
 
-  Future<void> _ensureEpisodesSafe(int id) async {
-    try {
-      await _ensureEpisodes(id);
-    } on Object {
-      // Keep subject detail usable when episode fetch fails; revisit retries.
-    }
-  }
-
-  Future<void> _ensureRelationsSafe(int id) async {
-    try {
-      await loadRelations(id);
-    } on Object {
-      // Keep subject detail usable when relations fetch fails.
-    }
-  }
-
-  Future<void> _ensureEpisodes(int id) async {
+  @override
+  Future<void> loadEpisodes(int id) async {
     if (_episodesLoaded.contains(id) && (_episodes[id]?.isNotEmpty ?? false)) {
       return;
     }
@@ -536,7 +536,12 @@ class BangumiCatalog implements OnlineCatalog {
         final response = jsonObject(
           await get(
             '/v0/episodes',
-            query: {'subject_id': id, 'type': 0, 'limit': 100, 'offset': offset},
+            query: {
+              'subject_id': id,
+              'type': 0,
+              'limit': 100,
+              'offset': offset,
+            },
           ),
         );
         final page = jsonList(response['data']);
@@ -583,6 +588,8 @@ class BangumiCatalog implements OnlineCatalog {
     }
     _episodes[id] = items;
     _episodesLoaded.add(id);
+    _subjectViews.remove(id);
+    _changes.add(null);
   }
 
   Future<List<T>> _loadSubjectItems<T>(
@@ -687,6 +694,8 @@ class BangumiCatalog implements OnlineCatalog {
         _related[id] = _readSubjects(
           rows.where((row) => jsonInt(row['type']) == 2).toList(),
         );
+        _subjectViews.remove(id);
+        _notify();
         return [
           for (final row in rows)
             SubjectRelation(
@@ -715,7 +724,13 @@ class BangumiCatalog implements OnlineCatalog {
     if (id == 0) return;
     final old = _subjects.remove(id);
     // The calendar and search responses omit some of the fields in detail.
-    _subjects[id] = {...?old, ...item};
+    final merged = {...?old, ...item};
+    if (old != null && const DeepCollectionEquality().equals(old, merged)) {
+      _subjects[id] = old;
+    } else {
+      _subjects[id] = merged;
+      _subjectViews.remove(id);
+    }
   }
 
   List<int> _readSubjects(Object? data) {
@@ -730,29 +745,52 @@ class BangumiCatalog implements OnlineCatalog {
     return ids.toList();
   }
 
+  void _indexTrending() {
+    _trendingRanks.clear();
+    for (var index = 0; index < _trending.length; index++) {
+      _trendingRanks.putIfAbsent(_trending[index], () => index + 1);
+    }
+  }
+
+  void _indexWeek() {
+    _weekdays.clear();
+    for (final entry in _week.entries) {
+      for (final id in entry.value) {
+        _weekdays.putIfAbsent(id, () => entry.key);
+      }
+    }
+  }
+
   void _notify() {
     _changes.add(null);
-    unawaited(_saveCache());
+    _savePending = true;
+    if (!_saving) unawaited(_saveCache());
   }
 
   Future<void> _saveCache() async {
+    _saving = true;
     try {
-      await _preferences.setString(
-        _cacheKey,
-        jsonEncode({
-          'subjects': _subjects.values
-              .toList()
-              .reversed
-              .take(600)
-              .toList()
-              .reversed
-              .toList(),
-          'trending': _trending,
+      while (_savePending) {
+        _savePending = false;
+        final subjects = _subjects.values.skip(
+          math.max(0, _subjects.length - 600),
+        );
+        final payload = {
+          'subjects': subjects.toList(growable: false),
+          'trending': List<int>.of(_trending),
           'week': _week.map((day, ids) => MapEntry('$day', ids)),
-        }),
-      );
-    } catch (_) {
-      // Reads remain available in memory when only the cache write failed.
+        };
+        try {
+          final encoded = _subjects.length <= 64
+              ? jsonEncode(payload)
+              : await compute(jsonEncode, payload);
+          await _preferences.setString(_cacheKey, encoded);
+        } on Object {
+          // The catalog is still available in memory.
+        }
+      }
+    } finally {
+      _saving = false;
     }
   }
 
@@ -781,6 +819,7 @@ class BangumiCatalog implements OnlineCatalog {
       tag,
     );
   }
+
   @override
   List<AnimeSubject> getByWeekday(int weekday) =>
       _items(_week[weekday] ?? const []);
@@ -795,6 +834,17 @@ class BangumiCatalog implements OnlineCatalog {
   AnimeSubject? getSubjectById(int id) {
     final data = _subjects[id];
     if (data == null) return null;
+    final now = DateTime.now();
+    final today = now.year * 10000 + now.month * 100 + now.day;
+    final rank = math.max(4, _trendingRanks[id] ?? 0);
+    final weekday = _weekdays[id];
+    final cached = _subjectViews[id];
+    if (cached != null &&
+        cached.day == today &&
+        cached.rank == rank &&
+        cached.weekday == weekday) {
+      return cached.subject;
+    }
     final rating = jsonObject(data['rating']);
     final cover = jsonObject(data['images']);
     // Exact Kazumi cover resolution: normalize http:// -> https://, prefer
@@ -842,16 +892,13 @@ class BangumiCatalog implements OnlineCatalog {
     final episodes = _episodes[id] ?? const [];
     final aired = episodes.where((ep) {
       final air = DateTime.tryParse(jsonString(ep['airdate']));
-      return air != null && air.isBefore(DateTime.now());
+      return air != null && air.isBefore(now);
     }).length;
     final tags = jsonList(data['tags'])
         .map((tag) => jsonString(jsonObject(tag)['name']))
         .where((tag) => tag.isNotEmpty)
         .toList();
-    final weekday = _week.keys
-        .where((day) => _week[day]!.contains(id))
-        .firstOrNull;
-    return AnimeSubject(
+    final subject = AnimeSubject(
       subjectId: id,
       title: chinese.isEmpty
           ? (original.isEmpty ? 'Bangumi #$id' : original)
@@ -859,15 +906,13 @@ class BangumiCatalog implements OnlineCatalog {
       originalTitle: original,
       summary: jsonString(data['summary']),
       score: (rating['score'] as num?)?.toDouble() ?? 0,
-      rank: jsonInt(rating['rank']) > 0
-          ? jsonInt(rating['rank'])
-          : math.max(4, _trending.indexOf(id) + 1),
+      rank: jsonInt(rating['rank']) > 0 ? jsonInt(rating['rank']) : rank,
       year: date?.year ?? 0,
       seasonLabel: date == null ? '' : '${date.year} 年 ${date.month} 月',
       weekday: weekday ?? date?.weekday ?? 1,
       airedEpisodes: aired,
       totalEpisodes: total,
-      tags: tags.isEmpty ? const ['动画'] : tags,
+      tags: tags.isEmpty ? const ['动画'] : List.unmodifiable(tags),
       studio: studio,
       poster: const PosterPalette(
         primaryHex: 0xff35426a,
@@ -876,8 +921,15 @@ class BangumiCatalog implements OnlineCatalog {
         motifIndex: 6,
       ),
       coverUrl: url.isEmpty ? null : url,
-      relatedIds: _related[id] ?? const [],
+      relatedIds: List.unmodifiable(_related[id] ?? const []),
     );
+    _subjectViews[id] = (
+      day: today,
+      rank: rank,
+      weekday: weekday,
+      subject: subject,
+    );
+    return subject;
   }
 
   @override
@@ -887,6 +939,7 @@ class BangumiCatalog implements OnlineCatalog {
     int? currentEp,
   }) {
     final result = <EpisodeItem>[];
+    final now = DateTime.now();
     for (final item in _episodes[subjectId] ?? const <Map<String, dynamic>>[]) {
       final rawSort = item['sort'];
       if (rawSort is num && rawSort % 1 != 0) continue;
@@ -909,7 +962,7 @@ class BangumiCatalog implements OnlineCatalog {
               ? EpisodeWatchState.current
               : number <= watchedCount
               ? EpisodeWatchState.watched
-              : air != null && air.isAfter(DateTime.now())
+              : air != null && air.isAfter(now)
               ? EpisodeWatchState.unaired
               : EpisodeWatchState.aired,
         ),
