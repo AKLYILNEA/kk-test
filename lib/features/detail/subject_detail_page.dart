@@ -10,6 +10,7 @@ import 'package:koneko/features/player/player_page.dart';
 import 'package:koneko/features/player/rule_verify_page.dart';
 import 'package:koneko/features/rules/rules_page.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
+import 'package:koneko/ui/koneko_image.dart';
 import 'package:koneko/ui/koneko_scaffold.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:koneko_contract/koneko_contract.dart';
