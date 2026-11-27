@@ -740,6 +740,7 @@ void main() {
             theme: buildKonekoTheme(
               settings: const ThemeSettings(),
               brightness: Brightness.light,
+              customFontFamily: null,
             ),
             home: Builder(
               builder: (context) => Center(

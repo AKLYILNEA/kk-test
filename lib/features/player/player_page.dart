@@ -3858,7 +3858,7 @@ class _HudAction extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         spacing: 5,
         children: [
-          if (leading != null) leading!,
+          ?leading,
           Flexible(
             child: Text(
               label,
@@ -4109,7 +4109,9 @@ class _VideoProgressPainter extends CustomPainter {
 
     // Soft outer halo while dragging + crisp white thumb
     final thumbR = scrubbing ? 6.5 : 4.5;
-    final thumbX = playedX.clamp(thumbR, math.max(thumbR, size.width - thumbR));
+    final thumbX = playedX
+        .clamp(thumbR, math.max(thumbR, size.width - thumbR))
+        .toDouble();
     if (scrubbing) {
       canvas.drawCircle(
         Offset(thumbX, cy),
