@@ -117,6 +117,52 @@ Future<Color> _behind(WidgetTester tester, _Pane pane, Offset point) async {
   );
 }
 
+List<Widget> _stripes() => [
+  const Positioned.fill(child: ColoredBox(color: Colors.white)),
+  for (var stripe = 0; stripe < 56; stripe++)
+    Positioned(
+      left: stripe * 14.3,
+      top: stripe.isEven ? 0 : 40,
+      width: 5 + stripe % 4 * 2.5,
+      bottom: 0,
+      child: ColoredBox(color: [_red, _green, _blue][stripe % 3]),
+    ),
+  for (var stripe = 0; stripe < 40; stripe++)
+    Positioned(
+      left: 0,
+      top: stripe * 15.7,
+      right: stripe.isEven ? 0 : 90,
+      height: 4,
+      child: const ColoredBox(color: Color(0xB3000000)),
+    ),
+];
+
+// The first panes of a run ask for the shaders, which come after their frame.
+Future<void> _shadersLoaded(WidgetTester tester) => tester.pump();
+
+int _furthest(List<int> one, List<int> other) {
+  expect(one.length, other.length);
+  var furthest = 0;
+  for (var index = 0; index < one.length; index++) {
+    final apart = (one[index] - other[index]).abs();
+    if (apart > furthest) {
+      furthest = apart;
+    }
+  }
+  return furthest;
+}
+
+/// The frame as the view shows it, a channel at a time.
+Future<List<int>> _frame(WidgetTester tester) async {
+  final layer = tester.binding.renderViews.first.debugLayer! as OffsetLayer;
+  final image = (await tester.runAsync(
+    () => layer.toImage(Offset.zero & tester.view.physicalSize),
+  ))!;
+  final bytes = (await tester.runAsync(image.toByteData))!;
+  image.dispose();
+  return bytes.buffer.asUint8List();
+}
+
 void main() {
   setUp(() => LiquidGlassHost.debugLastCapture = null);
 
