@@ -857,36 +857,40 @@ class _BangumiRankLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Container(
-          width: 3,
-          height: 12,
-          decoration: BoxDecoration(
-            color: colorScheme.primary,
-            borderRadius: BorderRadius.circular(2),
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: AlignmentDirectional.centerStart,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            width: 3,
+            height: 12,
+            decoration: BoxDecoration(
+              color: colorScheme.primary,
+              borderRadius: BorderRadius.circular(2),
+            ),
           ),
-        ),
-        const SizedBox(width: 6),
-        Text(
-          'Bangumi 排名',
-          style: AppTextStyle.caption1
-              .of(context)
-              .copyWith(color: colorScheme.onSurfaceVariant),
-        ),
-        const SizedBox(width: 5),
-        Text(
-          '#$rank',
-          style: AppTextStyle.subheadline
-              .of(context, emphasized: true)
-              .copyWith(
-                color: colorScheme.primary,
-                fontFeatures: const [FontFeature.tabularFigures()],
-              ),
-        ),
-      ],
+          const SizedBox(width: 6),
+          Text(
+            'Bangumi 排名',
+            style: AppTextStyle.caption1
+                .of(context)
+                .copyWith(color: colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            '#$rank',
+            style: AppTextStyle.subheadline
+                .of(context, emphasized: true)
+                .copyWith(
+                  color: colorScheme.primary,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+          ),
+        ],
+      ),
     );
   }
 }
