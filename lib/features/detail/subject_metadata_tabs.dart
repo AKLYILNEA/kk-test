@@ -200,34 +200,36 @@ class _MetadataSkeletonSliver extends StatelessWidget {
       itemBuilder: (_, index) {
         final titleFraction = index.isEven ? 0.56 : 0.44;
         final subFraction = index.isEven ? 0.72 : 0.62;
-        return KonekoCard(
-          corner: 18,
-          padding: const EdgeInsets.fromLTRB(12, 10, 14, 10),
-          child: Row(
-            spacing: 12,
-            children: [
-              if (isPoster)
-                const KonekoSkeletonBox(width: 42, height: 58, corner: 7)
-              else
-                const KonekoSkeletonBox(width: 46, height: 46, circle: true),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  spacing: 7,
-                  children: [
-                    FractionallySizedBox(
-                      widthFactor: titleFraction,
-                      child: const KonekoSkeletonBox(height: 15, corner: 6),
-                    ),
-                    FractionallySizedBox(
-                      widthFactor: subFraction,
-                      child: const KonekoSkeletonBox(height: 12, corner: 5),
-                    ),
-                  ],
+        return KonekoSkeletonPulse(
+          child: KonekoCard(
+            corner: 18,
+            padding: const EdgeInsets.fromLTRB(12, 10, 14, 10),
+            child: Row(
+              spacing: 12,
+              children: [
+                if (isPoster)
+                  const KonekoSkeletonBox(width: 42, height: 58, corner: 7)
+                else
+                  const KonekoSkeletonBox(width: 46, height: 46, circle: true),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    spacing: 7,
+                    children: [
+                      FractionallySizedBox(
+                        widthFactor: titleFraction,
+                        child: const KonekoSkeletonBox(height: 15, corner: 6),
+                      ),
+                      FractionallySizedBox(
+                        widthFactor: subFraction,
+                        child: const KonekoSkeletonBox(height: 12, corner: 5),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              GlyphIcon(Glyphs.chevronForward, size: 15, color: chevronColor),
-            ],
+                GlyphIcon(Glyphs.chevronForward, size: 15, color: chevronColor),
+              ],
+            ),
           ),
         );
       },

@@ -1,14 +1,16 @@
-import 'dart:ui' as ui;
+import 'dart:math' as math;
 
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 import 'package:prism_ui/prism_ui.dart';
 
-/// Coordinates a single shimmer [AnimationController] across all descendant
-/// [KonekoSkeletonBox] widgets.
+/// Coordinates a single shared breathing [AnimationController] across all
+/// descendant [KonekoSkeletonPulse] and [KonekoSkeletonBox] widgets.
 ///
-/// The ticker runs ONLY when [animate] is true (e.g. after the route push
-/// animation settles) AND at least one [KonekoSkeletonBox] is mounted. When
-/// no skeletons are visible, zero tickers run and tests settle immediately.
+/// Zero shaders and zero `CustomPaint` calls per frame: Impeller composites
+/// a single hardware opacity uniform over each static [RepaintBoundary] group.
+/// The ticker runs ONLY while [animate] is true AND at least one skeleton is
+/// mounted, so idle pages and settled tests run zero tickers.
 class KonekoSkeletonScope extends StatefulWidget {
   const KonekoSkeletonScope({
     super.key,
@@ -30,6 +32,9 @@ class _KonekoSkeletonScopeState extends State<KonekoSkeletonScope>
   late final AnimationController _controller = AnimationController(
     vsync: this,
     duration: _period,
+  );
+  late final Animation<double> _opacity = _controller.drive(
+    const _BreathPulse(),
   );
   int _consumers = 0;
   bool _disableAnimations = false;
@@ -85,31 +90,103 @@ class _KonekoSkeletonScopeState extends State<KonekoSkeletonScope>
     return _KonekoSkeletonInherited(
       scope: this,
       animate: widget.animate && !_disableAnimations,
+      inPulseGroup: false,
       child: widget.child,
     );
   }
+}
+
+class _BreathPulse extends Animatable<double> {
+  const _BreathPulse();
+
+  @override
+  double transform(double t) => 0.68 + 0.32 * math.cos(2 * math.pi * t);
 }
 
 class _KonekoSkeletonInherited extends InheritedWidget {
   const _KonekoSkeletonInherited({
     required this.scope,
     required this.animate,
+    required this.inPulseGroup,
     required super.child,
   });
 
   final _KonekoSkeletonScopeState scope;
   final bool animate;
+  final bool inPulseGroup;
 
   static _KonekoSkeletonInherited? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<_KonekoSkeletonInherited>();
 
   @override
   bool updateShouldNotify(covariant _KonekoSkeletonInherited oldWidget) =>
-      !identical(oldWidget.scope, scope) || oldWidget.animate != animate;
+      !identical(oldWidget.scope, scope) ||
+      oldWidget.animate != animate ||
+      oldWidget.inPulseGroup != inPulseGroup;
 }
 
-/// A superellipse (or circular) shimmering placeholder block matching
-/// Koneko / prism_ui surface geometry.
+/// Groups multiple [KonekoSkeletonBox] descendants under a single cached
+/// [RepaintBoundary] + hardware-composited [FadeTransition], eliminating per-box
+/// animation layers and shader allocations.
+class KonekoSkeletonPulse extends StatefulWidget {
+  const KonekoSkeletonPulse({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<KonekoSkeletonPulse> createState() => _KonekoSkeletonPulseState();
+}
+
+class _KonekoSkeletonPulseState extends State<KonekoSkeletonPulse> {
+  _KonekoSkeletonScopeState? _scope;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final inherited = _KonekoSkeletonInherited.maybeOf(context);
+    final nextScope = inherited != null && !inherited.inPulseGroup
+        ? inherited.scope
+        : null;
+    if (!identical(nextScope, _scope)) {
+      _scope?._detach();
+      _scope = nextScope;
+      _scope?._attach();
+    }
+  }
+
+  @override
+  void dispose() {
+    _scope?._detach();
+    _scope = null;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final inherited = _KonekoSkeletonInherited.maybeOf(context);
+    if (inherited != null && inherited.inPulseGroup) {
+      return widget.child;
+    }
+    final staticChild = inherited == null
+        ? widget.child
+        : _KonekoSkeletonInherited(
+            scope: inherited.scope,
+            animate: inherited.animate,
+            inPulseGroup: true,
+            child: widget.child,
+          );
+    if (inherited == null || !inherited.animate) {
+      return RepaintBoundary(child: staticChild);
+    }
+    return FadeTransition(
+      opacity: inherited.scope._opacity,
+      child: RepaintBoundary(child: staticChild),
+    );
+  }
+}
+
+/// A lightweight superellipse (or circular) placeholder block matching
+/// Koneko / prism_ui surface geometry with zero shader allocations.
 class KonekoSkeletonBox extends StatefulWidget {
   const KonekoSkeletonBox({
     super.key,
@@ -118,7 +195,6 @@ class KonekoSkeletonBox extends StatefulWidget {
     this.corner = 10,
     this.circle = false,
     this.baseColor,
-    this.highlightColor,
   });
 
   final double? width;
@@ -126,7 +202,6 @@ class KonekoSkeletonBox extends StatefulWidget {
   final double corner;
   final bool circle;
   final Color? baseColor;
-  final Color? highlightColor;
 
   @override
   State<KonekoSkeletonBox> createState() => _KonekoSkeletonBoxState();
@@ -138,7 +213,10 @@ class _KonekoSkeletonBoxState extends State<KonekoSkeletonBox> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final nextScope = _KonekoSkeletonInherited.maybeOf(context)?.scope;
+    final inherited = _KonekoSkeletonInherited.maybeOf(context);
+    final nextScope = inherited != null && !inherited.inPulseGroup
+        ? inherited.scope
+        : null;
     if (!identical(nextScope, _scope)) {
       _scope?._detach();
       _scope = nextScope;
@@ -161,88 +239,27 @@ class _KonekoSkeletonBoxState extends State<KonekoSkeletonBox> {
     final base =
         widget.baseColor ??
         colors.surfaceContainerHighest.withValues(alpha: isDark ? 0.56 : 0.72);
-    final highlight =
-        widget.highlightColor ??
-        (isDark
-            ? colors.onSurface.withValues(alpha: 0.14)
-            : colors.surfaceContainerLowest.withValues(alpha: 0.88));
-    final animate = inherited?.animate == true;
-    final progress = animate ? inherited!.scope._controller : null;
-
-    return ExcludeSemantics(
-      child: SizedBox(
-        width: widget.width ?? double.infinity,
-        height: widget.height,
-        child: CustomPaint(
-          painter: _SkeletonShimmerPainter(
-            progress: progress,
-            baseColor: base,
-            highlightColor: highlight,
-            corner: widget.corner,
-            circle: widget.circle,
-          ),
-        ),
+    final box = DecoratedBox(
+      decoration: ShapeDecoration(
+        color: base,
+        shape: widget.circle
+            ? const CircleBorder()
+            : SuperellipseBorder(borderRadius: AppRadius.all(widget.corner)),
       ),
     );
+    final sized = SizedBox(
+      width: widget.width ?? double.infinity,
+      height: widget.height,
+      child: box,
+    );
+    final animateSelf =
+        inherited != null && inherited.animate && !inherited.inPulseGroup;
+    return ExcludeSemantics(
+      child: animateSelf
+          ? FadeTransition(opacity: inherited.scope._opacity, child: sized)
+          : sized,
+    );
   }
-}
-
-class _SkeletonShimmerPainter extends CustomPainter {
-  _SkeletonShimmerPainter({
-    required this.progress,
-    required this.baseColor,
-    required this.highlightColor,
-    required this.corner,
-    required this.circle,
-  }) : super(repaint: progress);
-
-  final Animation<double>? progress;
-  final Color baseColor;
-  final Color highlightColor;
-  final double corner;
-  final bool circle;
-
-  final Paint _paint = Paint()..isAntiAlias = true;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (size.isEmpty) return;
-    final rect = Offset.zero & size;
-    final anim = progress;
-    if (anim == null) {
-      _paint
-        ..shader = null
-        ..color = baseColor;
-    } else {
-      final t = anim.value;
-      final bandWidth = (size.width * 0.68).clamp(64.0, 220.0);
-      final startX = -bandWidth + (size.width + bandWidth * 2) * t;
-      _paint
-        ..color = const Color(0xFFFFFFFF)
-        ..shader = ui.Gradient.linear(
-          Offset(startX - bandWidth * 0.5, 0),
-          Offset(startX + bandWidth * 0.5, size.height * 0.18),
-          [baseColor, highlightColor, baseColor],
-          const [0.0, 0.5, 1.0],
-        );
-    }
-
-    if (circle) {
-      canvas.drawOval(rect, _paint);
-    } else {
-      SuperellipseBorder(
-        borderRadius: AppRadius.all(corner),
-      ).paintInterior(canvas, rect, _paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _SkeletonShimmerPainter oldDelegate) =>
-      !identical(oldDelegate.progress, progress) ||
-      oldDelegate.baseColor != baseColor ||
-      oldDelegate.highlightColor != highlightColor ||
-      oldDelegate.corner != corner ||
-      oldDelegate.circle != circle;
 }
 
 /// Top-aligned fade transition used when replacing a skeleton placeholder
@@ -264,10 +281,7 @@ class KonekoSkeletonFade extends StatelessWidget {
     return Stack(
       alignment: AlignmentDirectional.topStart,
       fit: StackFit.passthrough,
-      children: [
-        ...previousChildren,
-        ?currentChild,
-      ],
+      children: [...previousChildren, ?currentChild],
     );
   }
 
@@ -282,5 +296,53 @@ class KonekoSkeletonFade extends StatelessWidget {
       layoutBuilder: _topLayoutBuilder,
       child: child,
     );
+  }
+}
+
+/// Kazumi-style first-entrance gate for bottom-dock / sidebar tab pages.
+///
+/// On the very first switch into a tab, keeps the initial transition frames
+/// ultra-light by showing static placeholders while the tab animation runs,
+/// then flips [tabEntered] once so subsequent visits stay live with zero flash.
+/// Driven by a [Ticker] (not a raw Timer) so Flutter's frame scheduler and
+/// `pumpAndSettle` settle deterministically with zero dangling timers.
+mixin TabEntranceMixin<T extends StatefulWidget>
+    on State<T>, TickerProvider {
+  static const _entranceDuration = Duration(milliseconds: 160);
+
+  bool _tabEntered = false;
+  Ticker? _entranceTicker;
+
+  bool get tabEntered => _tabEntered;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_tabEntered) return;
+    if (!PageActivityScope.isActiveOf(context)) {
+      _entranceTicker?.stop();
+      return;
+    }
+    if (context.disableAnimations) {
+      _tabEntered = true;
+      return;
+    }
+    _entranceTicker ??= createTicker((elapsed) {
+      if (elapsed >= _entranceDuration) {
+        _entranceTicker?.stop();
+        if (mounted && !_tabEntered) {
+          setState(() => _tabEntered = true);
+        }
+      }
+    });
+    if (!_entranceTicker!.isActive) {
+      _entranceTicker!.start();
+    }
+  }
+
+  @override
+  void dispose() {
+    _entranceTicker?.dispose();
+    super.dispose();
   }
 }

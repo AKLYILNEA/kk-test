@@ -15,7 +15,7 @@ Dio networkClient() => Dio(
     sendTimeout: const Duration(seconds: 12),
     headers: {
       'user-agent':
-          'AKLYILNEA/Koneko/0.0.17 (https://github.com/AKLYILNEA/kk-test)',
+          'AKLYILNEA/Koneko/0.0.18 (https://github.com/AKLYILNEA/kk-test)',
     },
   ),
 );
@@ -1020,7 +1020,7 @@ class BangumiCatalog implements OnlineCatalog {
         ),
       );
     }
-    if (result.isEmpty) {
+    if (result.isEmpty && _episodesLoaded.contains(subjectId)) {
       final total = _episodeCount(_subjects[subjectId]);
       if (total > 0 && total <= 500) {
         for (var i = 1; i <= total; i++) {

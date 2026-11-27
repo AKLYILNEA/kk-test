@@ -8,6 +8,7 @@ import 'package:koneko/features/detail/subject_detail_page.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
 import 'package:koneko/ui/koneko_scaffold.dart';
 import 'package:koneko/ui/koneko_sheet.dart';
+import 'package:koneko/ui/koneko_skeleton.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:koneko_contract/koneko_contract.dart';
 import 'package:prism_ui/icons/icons.dart';
@@ -33,8 +34,10 @@ class SchedulePage extends ConsumerStatefulWidget {
 
 class _SchedulePageState extends ConsumerState<SchedulePage>
     with
+        SingleTickerProviderStateMixin,
         RouteMotionHoldMixin<SchedulePage>,
-        CatalogPageRefreshMixin<SchedulePage> {
+        CatalogPageRefreshMixin<SchedulePage>,
+        TabEntranceMixin<SchedulePage> {
   static const _weekdays = [
     (1, '月', '周一'),
     (2, '火', '周二'),
@@ -347,6 +350,33 @@ class _SchedulePageState extends ConsumerState<SchedulePage>
     );
   }
 
+  bool _matchesFilters(
+    AnimeSubject subject,
+    Map<int, CollectionStatus> statusMap,
+  ) {
+    final status = statusMap[subject.subjectId];
+    if (_onlyWatching && status != CollectionStatus.watching) return false;
+    if (_hideWatched && status == CollectionStatus.watched) return false;
+    if (_hideDropped && status == CollectionStatus.dropped) return false;
+    return true;
+  }
+
+  int _countForDay(
+    CatalogRepository catalog,
+    int day,
+    Map<int, CollectionStatus> statusMap,
+  ) {
+    final raw = _season.isCurrent
+        ? catalog.getByWeekday(day)
+        : (_seasonCalendar?[day] ?? const <AnimeSubject>[]);
+    if (!_onlyWatching && !_hideWatched && !_hideDropped) return raw.length;
+    var count = 0;
+    for (final subject in raw) {
+      if (_matchesFilters(subject, statusMap)) count++;
+    }
+    return count;
+  }
+
   List<AnimeSubject> _subjectsForDay(
     CatalogRepository catalog,
     int day,
@@ -355,13 +385,10 @@ class _SchedulePageState extends ConsumerState<SchedulePage>
     final raw = _season.isCurrent
         ? catalog.getByWeekday(day)
         : (_seasonCalendar?[day] ?? const <AnimeSubject>[]);
-    final filtered = raw.where((subject) {
-      final status = statusMap[subject.subjectId];
-      if (_onlyWatching && status != CollectionStatus.watching) return false;
-      if (_hideWatched && status == CollectionStatus.watched) return false;
-      if (_hideDropped && status == CollectionStatus.dropped) return false;
-      return true;
-    }).toList();
+    final filtered = [
+      for (final subject in raw)
+        if (_matchesFilters(subject, statusMap)) subject,
+    ];
 
     switch (_sort) {
       case _ScheduleSort.defaultOrder:
@@ -388,11 +415,14 @@ class _SchedulePageState extends ConsumerState<SchedulePage>
       for (final e in library) e.subjectId: e.status,
     };
 
-    final items = _subjectsForDay(catalog, _selectedDay, statusMap);
     final isLoading = _season.isCurrent ? loading.isLoading : _seasonLoading;
     final hasError = _season.isCurrent
         ? loading.hasError
         : _seasonError != null;
+    final items = tabEntered
+        ? _subjectsForDay(catalog, _selectedDay, statusMap)
+        : const <AnimeSubject>[];
+    final showSkeleton = !tabEntered || (isLoading && items.isEmpty);
     final title = _season.isCurrent
         ? (ref.watch(onlineCatalogProvider)?.seasonTitle ?? _season.label)
         : _season.label;
@@ -408,32 +438,36 @@ class _SchedulePageState extends ConsumerState<SchedulePage>
           onPressed: _openSettingsSheet,
         ),
       ],
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final isWide = constraints.maxWidth >= 760;
-          return ArrivalCacheExtentBuilder(
-            builder: (context, cacheExtent) => CustomScrollView(
-              scrollCacheExtent: cacheExtent,
-              slivers: [
-                const KonekoScrollStart(),
-                SliverToBoxAdapter(
-                  child: KonekoAutoScrollChipBar(
-                    height: 48,
-                    chipHeight: 36,
-                    fontSize: 13,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 6,
+      body: KonekoSkeletonScope(
+        animate: tabEntered && PageActivityScope.isActiveOf(context),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final isWide = constraints.maxWidth >= 760;
+            return ArrivalCacheExtentBuilder(
+              builder: (context, cacheExtent) => CustomScrollView(
+                scrollCacheExtent: cacheExtent,
+                slivers: [
+                  const KonekoScrollStart(),
+                  SliverToBoxAdapter(
+                    child: KonekoAutoScrollChipBar(
+                      height: 48,
+                      chipHeight: 36,
+                      fontSize: 13,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 6,
+                      ),
+                      labels: [
+                        for (final (dayNum, jp, cn) in _weekdays)
+                          isLoading && _countForDay(catalog, dayNum, statusMap) == 0
+                              ? '$jp · $cn  —'
+                              : '$jp · $cn  ${_countForDay(catalog, dayNum, statusMap)}',
+                      ],
+                      selectedIndex: (_selectedDay - 1).clamp(0, 6).toInt(),
+                      onSelected: (index) =>
+                          setState(() => _selectedDay = _weekdays[index].$1),
                     ),
-                    labels: [
-                      for (final (dayNum, jp, cn) in _weekdays)
-                        '$jp · $cn  ${_subjectsForDay(catalog, dayNum, statusMap).length}',
-                    ],
-                    selectedIndex: (_selectedDay - 1).clamp(0, 6).toInt(),
-                    onSelected: (index) =>
-                        setState(() => _selectedDay = _weekdays[index].$1),
                   ),
-                ),
                 if (_activeOptionCount > 0)
                   SliverToBoxAdapter(
                     child: Padding(
@@ -505,13 +539,43 @@ class _SchedulePageState extends ConsumerState<SchedulePage>
                       ),
                     ),
                   ),
-                if (items.isEmpty)
+                if (showSkeleton)
+                  SliverPadding(
+                    key: const ValueKey('schedule-loading-skeleton'),
+                    padding: EdgeInsets.fromLTRB(
+                      16,
+                      12,
+                      16,
+                      24 + widget.bottomPadding,
+                    ),
+                    sliver: isWide
+                        ? SliverGrid(
+                            gridDelegate:
+                                const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 2,
+                                  crossAxisSpacing: 14,
+                                  mainAxisSpacing: 14,
+                                  mainAxisExtent: 124,
+                                ),
+                            delegate: SliverChildBuilderDelegate(
+                              (_, index) =>
+                                  _ScheduleCardSkeleton(compact: index.isOdd),
+                              childCount: 8,
+                            ),
+                          )
+                        : SliverList.separated(
+                            itemCount: 6,
+                            separatorBuilder: (_, _) =>
+                                const SizedBox(height: 12),
+                            itemBuilder: (_, index) =>
+                                _ScheduleCardSkeleton(compact: index.isOdd),
+                          ),
+                  )
+                else if (items.isEmpty)
                   SliverFillRemaining(
                     hasScrollBody: false,
                     child: Center(
-                      child: isLoading
-                          ? const ActivityIndicator()
-                          : hasError
+                      child: hasError
                           ? TextButton(
                               onPressed: () {
                                 if (_season.isCurrent) {
@@ -552,7 +616,29 @@ class _SchedulePageState extends ConsumerState<SchedulePage>
                                   mainAxisExtent: 124,
                                 ),
                             delegate: SliverChildBuilderDelegate(
-                              (context, index) => _ScheduleCard(
+                              (context, index) => RepaintBoundary(
+                                child: _ScheduleCard(
+                                  subject: items[index],
+                                  isWatching:
+                                      statusMap[items[index].subjectId] ==
+                                      CollectionStatus.watching,
+                                  onTap: () => BaseNavigator.push<void>(
+                                    context,
+                                    SubjectDetailPage(
+                                      subjectId: items[index].subjectId,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              childCount: items.length,
+                            ),
+                          )
+                        : SliverList.separated(
+                            itemCount: items.length,
+                            separatorBuilder: (_, _) =>
+                                const SizedBox(height: 12),
+                            itemBuilder: (context, index) => RepaintBoundary(
+                              child: _ScheduleCard(
                                 subject: items[index],
                                 isWatching:
                                     statusMap[items[index].subjectId] ==
@@ -564,31 +650,61 @@ class _SchedulePageState extends ConsumerState<SchedulePage>
                                   ),
                                 ),
                               ),
-                              childCount: items.length,
-                            ),
-                          )
-                        : SliverList.separated(
-                            itemCount: items.length,
-                            separatorBuilder: (_, _) =>
-                                const SizedBox(height: 12),
-                            itemBuilder: (context, index) => _ScheduleCard(
-                              subject: items[index],
-                              isWatching:
-                                  statusMap[items[index].subjectId] ==
-                                  CollectionStatus.watching,
-                              onTap: () => BaseNavigator.push<void>(
-                                context,
-                                SubjectDetailPage(
-                                  subjectId: items[index].subjectId,
-                                ),
-                              ),
                             ),
                           ),
                   ),
               ],
             ),
           );
-        },
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _ScheduleCardSkeleton extends StatelessWidget {
+  const _ScheduleCardSkeleton({this.compact = false});
+
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    return KonekoSkeletonPulse(
+      child: KonekoCard(
+        corner: 26,
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            const KonekoSkeletonBox(width: 72, height: 100, corner: 16),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  FractionallySizedBox(
+                    widthFactor: compact ? 0.68 : 0.84,
+                    child: const KonekoSkeletonBox(height: 17, corner: 7),
+                  ),
+                  const SizedBox(height: 6),
+                  FractionallySizedBox(
+                    widthFactor: compact ? 0.48 : 0.62,
+                    child: const KonekoSkeletonBox(height: 12, corner: 5),
+                  ),
+                  const SizedBox(height: 12),
+                  const Row(
+                    spacing: 6,
+                    children: [
+                      KonekoSkeletonBox(width: 48, height: 24, corner: 12),
+                      KonekoSkeletonBox(width: 72, height: 24, corner: 12),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

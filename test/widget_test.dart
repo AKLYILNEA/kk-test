@@ -622,6 +622,44 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'schedule and library tabs render entrance skeletons before settling live',
+    (tester) async {
+      _setViewport(tester, const Size(420, 880));
+      await tester.pumpWidget(_testApp());
+      await tester.pumpAndSettle();
+
+      final dock = find.byType(NavigationDock);
+      await tester.tap(find.descendant(of: dock, matching: find.text('时间表')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(
+        find.byKey(const ValueKey('schedule-loading-skeleton')),
+        findsOneWidget,
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('schedule-loading-skeleton')),
+        findsNothing,
+      );
+
+      await tester.tap(find.descendant(of: dock, matching: find.text('追番')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(
+        find.byKey(const ValueKey('library-loading-skeleton')),
+        findsOneWidget,
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('library-loading-skeleton')),
+        findsNothing,
+      );
+      expect(find.text('星海旅人：北境编年史'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
 
 Finder _barAction(String tooltip) => find.byWidgetPredicate(

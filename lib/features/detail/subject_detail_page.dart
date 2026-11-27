@@ -43,6 +43,8 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
   final _scroll = ScrollController(keepScrollOffset: false);
   final _liveProbes = ValueNotifier<Map<String, RuleProbeResult>>(const {});
   late final _sourceChanges = Listenable.merge([_selectedRule, _liveProbes]);
+  Map<String, RuleProbeResult>? _pendingProbes;
+  Timer? _probeFlushTimer;
   int _probeGeneration = 0;
   int? _probedSubjectId;
 
@@ -80,6 +82,7 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
   @override
   void dispose() {
     _probeGeneration++;
+    _probeFlushTimer?.cancel();
     _liveProbes.dispose();
     _selectedRule.dispose();
     _scroll.dispose();
@@ -117,7 +120,8 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
     }
 
     final gen = ++_probeGeneration;
-    _liveProbes.value = {
+    _probeFlushTimer?.cancel();
+    final initial = {
       for (final rule in enabledRules)
         rule.id: RuleProbeResult(
           ruleId: rule.id,
@@ -126,14 +130,31 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
           message: '正在检测可用性...',
         ),
     };
+    _pendingProbes = Map<String, RuleProbeResult>.of(initial);
+    _liveProbes.value = initial;
+
+    void flushProbes() {
+      _probeFlushTimer?.cancel();
+      _probeFlushTimer = null;
+      final snapshot = _pendingProbes;
+      if (!mounted || gen != _probeGeneration || snapshot == null) return;
+      _liveProbes.value = Map<String, RuleProbeResult>.unmodifiable(snapshot);
+    }
 
     await Future.wait(
       enabledRules.map((rule) async {
         final result = await resolver.probeRule(subject, rule.id);
         if (!mounted || gen != _probeGeneration) return;
-        _liveProbes.value = {..._liveProbes.value, rule.id: result};
+        (_pendingProbes ??= Map<String, RuleProbeResult>.of(
+          _liveProbes.value,
+        ))[rule.id] = result;
+        _probeFlushTimer ??= Timer(
+          const Duration(milliseconds: 80),
+          flushProbes,
+        );
       }),
     );
+    flushProbes();
   }
 
   Future<void> _verifyRule(
@@ -266,6 +287,7 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
           builder: (context, _) {
             final (selectedId, selectedName) = _selectedRule.value;
             return _RuleSourcesCard(
+              ready: _sectionsReady,
               hasLiveResolver: hasLiveResolver,
               enabledRules: enabledRules,
               liveProbes: _liveProbes.value,
@@ -434,13 +456,15 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
 
           final bottomPad = 28 + MediaQuery.paddingOf(context).bottom;
 
-          return KonekoSkeletonScope(
-            animate: routeSettled,
-            child: ArrivalCacheExtentBuilder(
-              builder: (context, cacheExtent) => CustomScrollView(
-                controller: _scroll,
-                scrollCacheExtent: cacheExtent,
-                slivers: [
+          return TickerMode(
+            enabled: routeSettled,
+            child: KonekoSkeletonScope(
+              animate: routeSettled,
+              child: ArrivalCacheExtentBuilder(
+                builder: (context, cacheExtent) => CustomScrollView(
+                  controller: _scroll,
+                  scrollCacheExtent: cacheExtent,
+                  slivers: [
                 const KonekoScrollStart(),
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
@@ -516,6 +540,7 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
                   ],
                 },
               ],
+                ),
               ),
             ),
           );
@@ -639,22 +664,25 @@ class _HeroCard extends StatelessWidget {
                                       ),
                                   ],
                                 )
-                              : const Column(
+                              : const KonekoSkeletonPulse(
                                   key: ValueKey('hero-rating-skeleton'),
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  spacing: 6,
-                                  children: [
-                                    KonekoSkeletonBox(
-                                      width: 124,
-                                      height: 18,
-                                      corner: 7,
-                                    ),
-                                    KonekoSkeletonBox(
-                                      width: 102,
-                                      height: 22,
-                                      corner: 11,
-                                    ),
-                                  ],
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    spacing: 6,
+                                    children: [
+                                      KonekoSkeletonBox(
+                                        width: 124,
+                                        height: 18,
+                                        corner: 7,
+                                      ),
+                                      KonekoSkeletonBox(
+                                        width: 102,
+                                        height: 22,
+                                        corner: 11,
+                                      ),
+                                    ],
+                                  ),
                                 ),
                         ),
                       ],
@@ -685,15 +713,17 @@ class _HeroCard extends StatelessWidget {
                           KonekoChip(label: '共 ${subject.totalEpisodes} 话'),
                       ],
                     )
-                  : const Wrap(
+                  : const KonekoSkeletonPulse(
                       key: ValueKey('hero-meta-skeleton'),
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: [
-                        KonekoSkeletonBox(width: 68, height: 26, corner: 13),
-                        KonekoSkeletonBox(width: 88, height: 26, corner: 13),
-                        KonekoSkeletonBox(width: 60, height: 26, corner: 13),
-                      ],
+                      child: Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          KonekoSkeletonBox(width: 68, height: 26, corner: 13),
+                          KonekoSkeletonBox(width: 88, height: 26, corner: 13),
+                          KonekoSkeletonBox(width: 60, height: 26, corner: 13),
+                        ],
+                      ),
                     ),
             ),
           ],
@@ -887,73 +917,86 @@ class _EpisodeMatrixCardState extends State<_EpisodeMatrixCard> {
                 const KonekoSkeletonBox(width: 52, height: 14, corner: 7),
             ],
           ),
-          if (totalPages > 1) ...[
-            const SizedBox(height: 10),
-            KonekoAutoScrollChipBar(
-              height: 32,
-              chipHeight: 28,
-              fontSize: 11.5,
-              elevated: false,
-              padding: EdgeInsets.zero,
-              unselectedColor: SurfaceLevel.block.colorOf(colorScheme),
-              labels: [
-                for (var idx = 0; idx < totalPages; idx++)
-                  '${idx * _pageSize + 1}-${((idx + 1) * _pageSize).clamp(1, episodes.length)}',
-              ],
-              selectedIndex: safePage,
-              onSelected: (idx) {
-                _revealLiveCard();
-                setState(() => _pageIndex = idx);
-              },
-            ),
-          ],
-          const SizedBox(height: 12),
-          KonekoSkeletonFade(
-            child: episodes.isNotEmpty
-                ? Listener(
-                    key: const ValueKey('episodes-live'),
-                    onPointerDown: (_) => _revealLiveCard(),
-                    child: SnapshotWidget(
-                      key: const ValueKey('episode-arrival-snapshot'),
-                      controller: _arrivalSnapshot,
-                      mode: SnapshotMode.permissive,
-                      autoresize: true,
-                      child: Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          for (final ep in visible) _episodeCell(context, ep),
-                        ],
-                      ),
-                    ),
-                  )
-                : widget.isLoading
-                ? _EpisodeGridSkeleton(
-                    key: const ValueKey('episodes-skeleton'),
-                    count: widget.expectedCount > 0
-                        ? widget.expectedCount.clamp(6, 12)
-                        : 12,
-                  )
-                : Row(
-                    key: const ValueKey('episodes-empty'),
-                    children: [
-                      Expanded(
-                        child: Text(
-                          '暂无剧集资料，可在播放器内选集',
-                          style: AppTextStyle.footnote
-                              .of(context)
-                              .copyWith(color: colorScheme.onSurfaceVariant),
-                        ),
-                      ),
-                      if (widget.onRetry != null)
-                        KonekoChip(
-                          label: '重试',
-                          height: 28,
-                          fontSize: 12,
-                          onPressed: widget.onRetry,
-                        ),
+          AnimatedSize(
+            duration: context.motionDuration(const Duration(milliseconds: 220)),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (totalPages > 1) ...[
+                  const SizedBox(height: 10),
+                  KonekoAutoScrollChipBar(
+                    height: 32,
+                    chipHeight: 28,
+                    fontSize: 11.5,
+                    elevated: false,
+                    padding: EdgeInsets.zero,
+                    unselectedColor: SurfaceLevel.block.colorOf(colorScheme),
+                    labels: [
+                      for (var idx = 0; idx < totalPages; idx++)
+                        '${idx * _pageSize + 1}-${((idx + 1) * _pageSize).clamp(1, episodes.length)}',
                     ],
+                    selectedIndex: safePage,
+                    onSelected: (idx) {
+                      _revealLiveCard();
+                      setState(() => _pageIndex = idx);
+                    },
                   ),
+                ],
+                const SizedBox(height: 12),
+                KonekoSkeletonFade(
+                  child: episodes.isNotEmpty
+                      ? Listener(
+                          key: const ValueKey('episodes-live'),
+                          onPointerDown: (_) => _revealLiveCard(),
+                          child: SnapshotWidget(
+                            key: const ValueKey('episode-arrival-snapshot'),
+                            controller: _arrivalSnapshot,
+                            mode: SnapshotMode.permissive,
+                            autoresize: true,
+                            child: Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                for (final ep in visible)
+                                  _episodeCell(context, ep),
+                              ],
+                            ),
+                          ),
+                        )
+                      : widget.isLoading
+                      ? _EpisodeGridSkeleton(
+                          key: const ValueKey('episodes-skeleton'),
+                          count: widget.expectedCount > 0
+                              ? widget.expectedCount.clamp(1, 24)
+                              : 12,
+                        )
+                      : Row(
+                          key: const ValueKey('episodes-empty'),
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '暂无剧集资料，可在播放器内选集',
+                                style: AppTextStyle.footnote
+                                    .of(context)
+                                    .copyWith(
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
+                              ),
+                            ),
+                            if (widget.onRetry != null)
+                              KonekoChip(
+                                label: '重试',
+                                height: 28,
+                                fontSize: 12,
+                                onPressed: widget.onRetry,
+                              ),
+                          ],
+                        ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -1266,6 +1309,7 @@ class _CommentTileState extends State<_CommentTile> {
 
 class _RuleSourcesCard extends StatelessWidget {
   const _RuleSourcesCard({
+    required this.ready,
     required this.hasLiveResolver,
     required this.enabledRules,
     required this.liveProbes,
@@ -1278,6 +1322,7 @@ class _RuleSourcesCard extends StatelessWidget {
     required this.onToggleSelect,
   });
 
+  final bool ready;
   final bool hasLiveResolver;
   final List<RulePluginMeta> enabledRules;
   final Map<String, RuleProbeResult> liveProbes;
@@ -1339,6 +1384,17 @@ class _RuleSourcesCard extends StatelessWidget {
           const SizedBox(height: 12),
           if (!hasAny)
             TextButton(onPressed: onManage, child: const Text('添加播放规则'))
+          else if (hasLiveResolver && !ready)
+            const KonekoSkeletonPulse(
+              child: Column(
+                spacing: 8,
+                children: [
+                  _SourceSkeletonTile(),
+                  _SourceSkeletonTile(),
+                  _SourceSkeletonTile(),
+                ],
+              ),
+            )
           else if (hasLiveResolver)
             Column(
               spacing: 8,
@@ -1564,7 +1620,7 @@ class _SynopsisSkeletonBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const RepaintBoundary(
+    return const KonekoSkeletonPulse(
       child: KonekoBlock(
         corner: 18,
         padding: EdgeInsets.fromLTRB(14, 12, 14, 12),
@@ -1601,7 +1657,7 @@ class _EpisodeGridSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return RepaintBoundary(
+    return KonekoSkeletonPulse(
       child: Wrap(
         spacing: 8,
         runSpacing: 8,
@@ -1621,7 +1677,7 @@ class _CommentSkeletonTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return RepaintBoundary(
+    return KonekoSkeletonPulse(
       child: KonekoBlock(
         corner: 18,
         padding: const EdgeInsets.all(13),
@@ -1704,22 +1760,24 @@ class _SubjectDetailSkeletonView extends StatelessWidget {
           const sourcesCard = KonekoCard(
             corner: 30,
             padding: EdgeInsets.all(18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                KonekoSkeletonBox(width: 62, height: 18, corner: 7),
-                SizedBox(height: 6),
-                KonekoSkeletonBox(width: 148, height: 12, corner: 5),
-                SizedBox(height: 12),
-                Column(
-                  spacing: 8,
-                  children: [
-                    _SourceSkeletonTile(),
-                    _SourceSkeletonTile(),
-                    _SourceSkeletonTile(),
-                  ],
-                ),
-              ],
+            child: KonekoSkeletonPulse(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  KonekoSkeletonBox(width: 62, height: 18, corner: 7),
+                  SizedBox(height: 6),
+                  KonekoSkeletonBox(width: 148, height: 12, corner: 5),
+                  SizedBox(height: 12),
+                  Column(
+                    spacing: 8,
+                    children: [
+                      _SourceSkeletonTile(),
+                      _SourceSkeletonTile(),
+                      _SourceSkeletonTile(),
+                    ],
+                  ),
+                ],
+              ),
             ),
           );
 
@@ -1732,7 +1790,7 @@ class _SubjectDetailSkeletonView extends StatelessWidget {
                 padding: EdgeInsets.fromLTRB(16, 6, 16, bottomPad),
                 sliver: SliverList.list(
                   children: [
-                    const RepaintBoundary(
+                    const KonekoSkeletonPulse(
                       child: KonekoCard(
                         corner: 30,
                         padding: EdgeInsets.all(18),

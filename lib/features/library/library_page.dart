@@ -10,6 +10,7 @@ import 'package:koneko/features/my/service_settings_page.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
 import 'package:koneko/ui/koneko_scaffold.dart';
 import 'package:koneko/ui/koneko_sheet.dart';
+import 'package:koneko/ui/koneko_skeleton.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:koneko_contract/koneko_contract.dart';
 import 'package:prism_ui/icons/icons.dart';
@@ -35,8 +36,10 @@ class LibraryPage extends ConsumerStatefulWidget {
 
 class _LibraryPageState extends ConsumerState<LibraryPage>
     with
+        SingleTickerProviderStateMixin,
         RouteMotionHoldMixin<LibraryPage>,
-        CatalogPageRefreshMixin<LibraryPage> {
+        CatalogPageRefreshMixin<LibraryPage>,
+        TabEntranceMixin<LibraryPage> {
   int _selectedTabIndex = 0;
   _LibrarySort _sort = _LibrarySort.recent;
   String _query = '';
@@ -217,17 +220,23 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
     final colorScheme = context.colorScheme;
     final catalog = ref.watch(catalogRepositoryProvider);
     final entries = ref.watch(libraryProvider);
+    final trackedLoad = ref.watch(loadTrackedSubjectsProvider);
+    final loadingSubjects = trackedLoad.isLoading || _syncing;
 
     int countOf(CollectionStatus? status) => status == null
         ? entries.length
         : entries.where((e) => e.status == status).length;
 
-    final filtered = entries.where((entry) {
-      if (_filter != null && entry.status != _filter) return false;
+    final tabEntries = entries
+        .where((entry) => _filter == null || entry.status == _filter)
+        .toList();
+    final q = _query.trim().toLowerCase();
+    final filtered = tabEntries.where((entry) {
       final subject = catalog.getSubjectById(entry.subjectId);
-      if (subject == null) return false;
-      if (_query.trim().isEmpty) return true;
-      final q = _query.trim().toLowerCase();
+      if (subject == null) {
+        return q.isEmpty && loadingSubjects;
+      }
+      if (q.isEmpty) return true;
       return subject.title.toLowerCase().contains(q) ||
           subject.originalTitle.toLowerCase().contains(q);
     }).toList();
@@ -237,17 +246,20 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
         filtered.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
       case _LibrarySort.score:
         filtered.sort((a, b) {
-          final sa = catalog.getSubjectById(a.subjectId)?.score ?? 0;
-          final sb = catalog.getSubjectById(b.subjectId)?.score ?? 0;
+          final sa = catalog.getSubjectById(a.subjectId)?.score ?? -1;
+          final sb = catalog.getSubjectById(b.subjectId)?.score ?? -1;
           return sb.compareTo(sa);
         });
       case _LibrarySort.title:
         filtered.sort((a, b) {
-          final ta = catalog.getSubjectById(a.subjectId)?.title ?? '';
-          final tb = catalog.getSubjectById(b.subjectId)?.title ?? '';
+          final ta = catalog.getSubjectById(a.subjectId)?.title ?? '\uffff';
+          final tb = catalog.getSubjectById(b.subjectId)?.title ?? '\uffff';
           return ta.compareTo(tb);
         });
     }
+
+    final showEntranceSkeleton =
+        !tabEntered || (_syncing && tabEntries.isEmpty);
 
     return KonekoScaffold(
       title: '追番',
@@ -264,95 +276,157 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
           onPressed: _openManageSheet,
         ),
       ],
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final width = constraints.maxWidth;
-          final columns = width >= 1120
-              ? 6
-              : width >= 860
-              ? 5
-              : width >= 600
-              ? 4
-              : 3;
+      body: KonekoSkeletonScope(
+        animate: tabEntered && PageActivityScope.isActiveOf(context),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final width = constraints.maxWidth;
+            final columns = width >= 1120
+                ? 6
+                : width >= 860
+                ? 5
+                : width >= 600
+                ? 4
+                : 3;
 
-          return ArrivalCacheExtentBuilder(
-            builder: (context, cacheExtent) => CustomScrollView(
-              scrollCacheExtent: cacheExtent,
-              slivers: [
-                const KonekoScrollStart(),
-                SliverToBoxAdapter(
-                  child: KonekoAutoScrollChipBar(
-                    height: 46,
-                    chipHeight: 34,
-                    fontSize: 13,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 6,
-                    ),
-                    labels: [
-                      for (final (status, label) in _tabs)
-                        '$label  ${countOf(status)}',
-                    ],
-                    selectedIndex: _selectedTabIndex,
-                    onSelected: (index) =>
-                        setState(() => _selectedTabIndex = index),
-                  ),
-                ),
-                if (filtered.isEmpty)
-                  SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: Center(
-                      child: Text(
-                        _query.trim().isNotEmpty ? '没有匹配的追番记录' : '该分类下暂无番剧',
-                        style: AppTextStyle.subheadline
-                            .of(context)
-                            .copyWith(color: colorScheme.onSurfaceVariant),
+            return ArrivalCacheExtentBuilder(
+              builder: (context, cacheExtent) => CustomScrollView(
+                scrollCacheExtent: cacheExtent,
+                slivers: [
+                  const KonekoScrollStart(),
+                  SliverToBoxAdapter(
+                    child: KonekoAutoScrollChipBar(
+                      height: 46,
+                      chipHeight: 34,
+                      fontSize: 13,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 6,
                       ),
-                    ),
-                  )
-                else
-                  SliverPadding(
-                    padding: EdgeInsets.fromLTRB(
-                      12,
-                      10,
-                      12,
-                      24 + widget.bottomPadding,
-                    ),
-                    sliver: SliverGrid(
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: columns,
-                        crossAxisSpacing: 10,
-                        mainAxisSpacing: 12,
-                        childAspectRatio: 0.56,
-                      ),
-                      delegate: SliverChildBuilderDelegate((context, index) {
-                        final entry = filtered[index];
-                        final subject = catalog.getSubjectById(
-                          entry.subjectId,
-                        )!;
-                        return UnifiedAnimeCard(
-                          subject: subject,
-                          corner: 16,
-                          compact: true,
-                          statusGlyph: konekoStatusGlyph(
-                            entry.status,
-                            forBadge: true,
-                          ),
-                          statusColor: konekoStatusColor(entry.status),
-                          statusTooltip: '修改「${subject.title}」的追番状态',
-                          onStatusTap: () => _pickStatus(subject, entry),
-                          onTap: () => BaseNavigator.push<void>(
-                            context,
-                            SubjectDetailPage(subjectId: subject.subjectId),
-                          ),
-                        );
-                      }, childCount: filtered.length),
+                      labels: [
+                        for (final (status, label) in _tabs)
+                          '$label  ${countOf(status)}',
+                      ],
+                      selectedIndex: _selectedTabIndex,
+                      onSelected: (index) =>
+                          setState(() => _selectedTabIndex = index),
                     ),
                   ),
-              ],
+                  if (showEntranceSkeleton)
+                    SliverPadding(
+                      key: const ValueKey('library-loading-skeleton'),
+                      padding: EdgeInsets.fromLTRB(
+                        12,
+                        10,
+                        12,
+                        24 + widget.bottomPadding,
+                      ),
+                      sliver: SliverGrid(
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: columns,
+                          crossAxisSpacing: 10,
+                          mainAxisSpacing: 12,
+                          childAspectRatio: 0.56,
+                        ),
+                        delegate: SliverChildBuilderDelegate(
+                          (_, _) => const _LibraryCardSkeleton(),
+                          childCount: tabEntries.isNotEmpty
+                              ? tabEntries.length.clamp(3, columns * 3)
+                              : columns * 2,
+                        ),
+                      ),
+                    )
+                  else if (filtered.isEmpty)
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: Center(
+                        child: Text(
+                          _query.trim().isNotEmpty ? '没有匹配的追番记录' : '该分类下暂无番剧',
+                          style: AppTextStyle.subheadline
+                              .of(context)
+                              .copyWith(color: colorScheme.onSurfaceVariant),
+                        ),
+                      ),
+                    )
+                  else
+                    SliverPadding(
+                      padding: EdgeInsets.fromLTRB(
+                        12,
+                        10,
+                        12,
+                        24 + widget.bottomPadding,
+                      ),
+                      sliver: SliverGrid(
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: columns,
+                          crossAxisSpacing: 10,
+                          mainAxisSpacing: 12,
+                          childAspectRatio: 0.56,
+                        ),
+                        delegate: SliverChildBuilderDelegate((context, index) {
+                          final entry = filtered[index];
+                          final subject = catalog.getSubjectById(
+                            entry.subjectId,
+                          );
+                          if (subject == null) {
+                            return _LibraryCardSkeleton(
+                              key: ValueKey('library-slot-${entry.subjectId}'),
+                            );
+                          }
+                          return RepaintBoundary(
+                            child: UnifiedAnimeCard(
+                              subject: subject,
+                              corner: 16,
+                              compact: true,
+                              statusGlyph: konekoStatusGlyph(
+                                entry.status,
+                                forBadge: true,
+                              ),
+                              statusColor: konekoStatusColor(entry.status),
+                              statusTooltip: '修改「${subject.title}」的追番状态',
+                              onStatusTap: () => _pickStatus(subject, entry),
+                              onTap: () => BaseNavigator.push<void>(
+                                context,
+                                SubjectDetailPage(subjectId: subject.subjectId),
+                              ),
+                            ),
+                          );
+                        }, childCount: filtered.length),
+                      ),
+                    ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _LibraryCardSkeleton extends StatelessWidget {
+  const _LibraryCardSkeleton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const KonekoSkeletonPulse(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: KonekoSkeletonBox(height: double.infinity, corner: 16),
+          ),
+          SizedBox(height: 7),
+          KonekoSkeletonBox(height: 13, corner: 5),
+          SizedBox(height: 5),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: FractionallySizedBox(
+              widthFactor: 0.62,
+              child: KonekoSkeletonBox(height: 11, corner: 5),
             ),
-          );
-        },
+          ),
+        ],
       ),
     );
   }

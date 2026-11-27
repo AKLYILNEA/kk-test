@@ -44,6 +44,8 @@ void main() {
       final detailSubject = catalog.getSubjectById(414461);
       expect(detailSubject?.summary, '详情');
       expect(identical(detailSubject, initialSubject), isFalse);
+      // Before loadEpisodes runs, do not emit premature synthetic episodes.
+      expect(catalog.getEpisodes(414461, currentEp: 1), isEmpty);
       await catalog.loadSubject(414461);
       final episodes = catalog.getEpisodes(414461, currentEp: 1);
       expect(episodes.single.state, EpisodeWatchState.current);
