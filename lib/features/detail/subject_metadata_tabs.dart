@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:koneko/common/providers.dart';
 import 'package:koneko/ui/koneko_image.dart';
+import 'package:koneko/ui/koneko_skeleton.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:koneko_contract/koneko_contract.dart';
 import 'package:prism_ui/icons/icons.dart';
@@ -78,7 +79,11 @@ class SubjectPeopleSliver extends ConsumerWidget {
         !credits.hasValue &&
         !characters.hasError &&
         !credits.hasError) {
-      return const _MetadataProgress();
+      return const _MetadataSkeletonSliver(
+        key: ValueKey('people-loading-skeleton'),
+        count: 5,
+        isPoster: false,
+      );
     }
     return SliverMainAxisGroup(
       slivers: [
@@ -138,7 +143,11 @@ class SubjectRelationsSliver extends ConsumerWidget {
     return _MetadataList(
       data: ref.watch(provider),
       label: '关联条目',
-      showProgress: true,
+      loadingSliver: const _MetadataSkeletonSliver(
+        key: ValueKey('relations-loading-skeleton'),
+        count: 4,
+        isPoster: true,
+      ),
       onRetry: () => ref.invalidate(provider),
       itemBuilder: (related) => _MetadataCard(
         title: related.title,
@@ -169,16 +178,61 @@ class SubjectRelationsSliver extends ConsumerWidget {
   }
 }
 
-class _MetadataProgress extends StatelessWidget {
-  const _MetadataProgress();
+class _MetadataSkeletonSliver extends StatelessWidget {
+  const _MetadataSkeletonSliver({
+    super.key,
+    required this.count,
+    required this.isPoster,
+  });
+
+  final int count;
+  final bool isPoster;
 
   @override
-  Widget build(BuildContext context) => const SliverToBoxAdapter(
-    child: Padding(
-      padding: EdgeInsets.all(24),
-      child: Center(child: ActivityIndicator()),
-    ),
-  );
+  Widget build(BuildContext context) {
+    final chevronColor = context.colorScheme.onSurfaceVariant.withValues(
+      alpha: 0.28,
+    );
+    return SliverPrismList(
+      itemCount: count,
+      gap: 8,
+      estimatedItemExtent: isPoster ? 78 : 66,
+      itemBuilder: (_, index) {
+        final titleFraction = index.isEven ? 0.56 : 0.44;
+        final subFraction = index.isEven ? 0.72 : 0.62;
+        return KonekoCard(
+          corner: 18,
+          padding: const EdgeInsets.fromLTRB(12, 10, 14, 10),
+          child: Row(
+            spacing: 12,
+            children: [
+              if (isPoster)
+                const KonekoSkeletonBox(width: 42, height: 58, corner: 7)
+              else
+                const KonekoSkeletonBox(width: 46, height: 46, circle: true),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  spacing: 7,
+                  children: [
+                    FractionallySizedBox(
+                      widthFactor: titleFraction,
+                      child: const KonekoSkeletonBox(height: 15, corner: 6),
+                    ),
+                    FractionallySizedBox(
+                      widthFactor: subFraction,
+                      child: const KonekoSkeletonBox(height: 12, corner: 5),
+                    ),
+                  ],
+                ),
+              ),
+              GlyphIcon(Glyphs.chevronForward, size: 15, color: chevronColor),
+            ],
+          ),
+        );
+      },
+    );
+  }
 }
 
 class _MetadataList<T> extends StatelessWidget {
@@ -187,19 +241,18 @@ class _MetadataList<T> extends StatelessWidget {
     required this.label,
     required this.onRetry,
     required this.itemBuilder,
-    this.showProgress = false,
+    this.loadingSliver,
   });
 
   final AsyncValue<List<T>> data;
   final String label;
   final VoidCallback onRetry;
   final Widget Function(T) itemBuilder;
-  final bool showProgress;
+  final Widget? loadingSliver;
 
   @override
   Widget build(BuildContext context) => data.when(
-    loading: () =>
-        showProgress ? const _MetadataProgress() : const SliverToBoxAdapter(),
+    loading: () => loadingSliver ?? const SliverToBoxAdapter(),
     error: (_, _) => SliverToBoxAdapter(
       child: KonekoCard(
         onPressed: onRetry,

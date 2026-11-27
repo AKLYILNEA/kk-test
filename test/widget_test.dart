@@ -394,15 +394,15 @@ void main() {
     expect(catalog.relationRequests, 0);
     expect(catalog.commentRequests, 0);
 
-    final indicators = find.descendant(
+    final peopleSkeleton = find.descendant(
       of: find.byType(SubjectDetailPage),
-      matching: find.byType(ActivityIndicator),
+      matching: find.byKey(const ValueKey('people-loading-skeleton')),
     );
     await tester.ensureVisible(find.text('角色'));
     await tester.tap(find.text('角色'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 150));
-    expect(indicators, findsOneWidget);
+    expect(peopleSkeleton, findsOneWidget);
     expect(catalog.characterRequests, 1);
     expect(catalog.creditRequests, 1);
 
@@ -410,14 +410,14 @@ void main() {
       SubjectCharacter(id: 1, name: '测试角色', relation: '主角'),
     ]);
     await tester.pumpAndSettle();
-    expect(indicators, findsNothing);
+    expect(peopleSkeleton, findsNothing);
     expect(find.text('测试角色'), findsOneWidget);
 
     await tester.tap(find.text('播放'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('角色'));
     await tester.pumpAndSettle();
-    expect(indicators, findsNothing);
+    expect(peopleSkeleton, findsNothing);
     expect(catalog.characterRequests, 1);
     expect(catalog.creditRequests, 1);
 
@@ -567,6 +567,58 @@ void main() {
       await tester.drag(aboutScroll, const Offset(0, -180));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'detail renders placeholder skeletons for partial subjects without layout jumping',
+    (tester) async {
+      _setViewport(tester, const Size(420, 880));
+      final catalog = _PartialDetailCatalog();
+      addTearDown(catalog.events.close);
+      await tester.pumpWidget(_testApp(catalog: catalog));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text(_PartialDetailCatalog.title).first);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pump();
+
+      final detail = find.byType(SubjectDetailPage);
+      expect(detail, findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('hero-rating-skeleton')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('hero-meta-skeleton')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('hero-synopsis-skeleton')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('episodes-skeleton')), findsOneWidget);
+
+      final tabBar = find.descendant(
+        of: detail,
+        matching: find.text('评论'),
+      );
+      final beforeTabY = tester.getTopLeft(tabBar).dy;
+
+      catalog.completeAll();
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('hero-rating-skeleton')), findsNothing);
+      expect(find.byKey(const ValueKey('hero-meta-skeleton')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('hero-synopsis-skeleton')),
+        findsNothing,
+      );
+      expect(find.byKey(const ValueKey('episodes-skeleton')), findsNothing);
+      expect(find.text('共 12 话'), findsWidgets);
+      expect(find.byType(KonekoStarRating), findsOneWidget);
+
+      final afterTabY = tester.getTopLeft(tabBar).dy;
+      expect((afterTabY - beforeTabY).abs(), lessThan(20));
       expect(tester.takeException(), isNull);
     },
   );
@@ -729,5 +781,86 @@ class _LongTitleCatalog extends _PendingCatalog {
     await detail.future;
     _loaded = true;
     events.add(null);
+  }
+}
+
+class _PartialDetailCatalog extends _PendingCatalog {
+  static const title = '占位骨架测试番剧';
+  static const id = 777001;
+  final detail = Completer<void>();
+  final episodesGate = Completer<void>();
+  bool _detailLoaded = false;
+  bool _episodesLoaded = false;
+
+  void completeAll() {
+    _detailLoaded = true;
+    _episodesLoaded = true;
+    if (!detail.isCompleted) detail.complete();
+    if (!episodesGate.isCompleted) episodesGate.complete();
+    events.add(null);
+  }
+
+  @override
+  List<AnimeSubject> getTrending({String? tag}) => [getSubjectById(id)!];
+
+  @override
+  AnimeSubject? getSubjectById(int subjectId) {
+    if (subjectId != id) return super.getSubjectById(subjectId);
+    final seed = super.getSubjectById(1001)!;
+    return AnimeSubject(
+      subjectId: id,
+      title: title,
+      originalTitle: '',
+      summary: _detailLoaded
+          ? List.filled(18, '这是一段用于校验详情页占位骨架无缝切换的简介文本。').join()
+          : '',
+      score: _detailLoaded ? 8.4 : 0,
+      rank: _detailLoaded ? 215 : 0,
+      year: _detailLoaded ? 2026 : 0,
+      seasonLabel: _detailLoaded ? '2026 年 4 月' : '',
+      weekday: 5,
+      airedEpisodes: _episodesLoaded ? 12 : 0,
+      totalEpisodes: _detailLoaded ? 12 : 0,
+      tags: const ['动画'],
+      studio: _detailLoaded ? '测试动画社' : '',
+      poster: seed.poster,
+    );
+  }
+
+  @override
+  List<EpisodeItem> getEpisodes(
+    int subjectId, {
+    int watchedCount = 0,
+    int? currentEp,
+  }) {
+    if (subjectId != id) {
+      return super.getEpisodes(
+        subjectId,
+        watchedCount: watchedCount,
+        currentEp: currentEp,
+      );
+    }
+    if (!_episodesLoaded) return const [];
+    return [
+      for (var ep = 1; ep <= 12; ep++)
+        EpisodeItem(
+          episodeNumber: ep,
+          title: '第 $ep 话',
+          airDate: '2026-04-01',
+          state: ep == (currentEp ?? 1)
+              ? EpisodeWatchState.current
+              : EpisodeWatchState.aired,
+        ),
+    ];
+  }
+
+  @override
+  Future<void> loadSubject(int subjectId, {bool includeExtras = true}) async {
+    if (subjectId == id) await detail.future;
+  }
+
+  @override
+  Future<void> loadEpisodes(int subjectId) async {
+    if (subjectId == id) await episodesGate.future;
   }
 }

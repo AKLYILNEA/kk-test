@@ -13,6 +13,7 @@ import 'package:koneko/features/rules/rules_page.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
 import 'package:koneko/ui/koneko_image.dart';
 import 'package:koneko/ui/koneko_scaffold.dart';
+import 'package:koneko/ui/koneko_skeleton.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:koneko_contract/koneko_contract.dart';
 import 'package:prism_ui/icons/icons.dart';
@@ -239,6 +240,7 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
               watchedCount: watchedCount,
               currentEp: currentEp,
             ),
+            expectedCount: subject.totalEpisodes,
             isLoading: load.isLoading,
             onRetry: () => ref.invalidate(episodeProvider),
             onSelect: (episode) => _playEpisode(subject, episode.episodeNumber),
@@ -322,17 +324,31 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
       return KonekoScaffold(
         title: '番剧详情',
         showBack: true,
-        body: Center(
-          child: load.isLoading
-              ? const ActivityIndicator()
-              : TextButton(
-                  onPressed: () => ref.invalidate(subjectLoad),
-                  child: const Text('番剧资料暂不可用，点此重试'),
+        body: load.isLoading
+            ? _SubjectDetailSkeletonView(animate: routeSettled)
+            : Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: KonekoCard(
+                    corner: 24,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 16,
+                    ),
+                    onPressed: () => ref.invalidate(subjectLoad),
+                    child: const Text(
+                      '番剧资料暂不可用，点此重试',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
                 ),
-        ),
+              ),
       );
     }
-    if (_sectionsReady) ref.listen(subjectLoad, (_, _) {});
+    final detailLoad = _sectionsReady
+        ? ref.watch(subjectLoad)
+        : const AsyncLoading<void>();
+    final detailPending = !_sectionsReady || detailLoad.isLoading;
     if (_peopleVisited) SubjectPeopleSliver.retain(ref, id);
 
     final entry = ref.watch(
@@ -376,6 +392,7 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
               subject.studio,
               subject.summary,
               ...subject.tags,
+              detailPending,
               entry?.status,
               currentEp,
               hasHistory,
@@ -386,6 +403,7 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
                 entry: entry,
                 currentEp: currentEp,
                 hasHistory: hasHistory,
+                detailPending: detailPending,
                 onPlay: () => _playEpisode(subject, currentEp),
                 onStatusChanged: (status) {
                   ref
@@ -416,11 +434,13 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
 
           final bottomPad = 28 + MediaQuery.paddingOf(context).bottom;
 
-          return ArrivalCacheExtentBuilder(
-            builder: (context, cacheExtent) => CustomScrollView(
-              controller: _scroll,
-              scrollCacheExtent: cacheExtent,
-              slivers: [
+          return KonekoSkeletonScope(
+            animate: routeSettled,
+            child: ArrivalCacheExtentBuilder(
+              builder: (context, cacheExtent) => CustomScrollView(
+                controller: _scroll,
+                scrollCacheExtent: cacheExtent,
+                slivers: [
                 const KonekoScrollStart(),
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
@@ -496,6 +516,7 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
                   ],
                 },
               ],
+              ),
             ),
           );
         },
@@ -510,6 +531,7 @@ class _HeroCard extends StatelessWidget {
     required this.entry,
     required this.currentEp,
     required this.hasHistory,
+    required this.detailPending,
     required this.onPlay,
     required this.onStatusChanged,
   });
@@ -518,6 +540,7 @@ class _HeroCard extends StatelessWidget {
   final CollectionEntry? entry;
   final int currentEp;
   final bool hasHistory;
+  final bool detailPending;
   final VoidCallback onPlay;
   final ValueChanged<CollectionStatus> onStatusChanged;
 
@@ -525,6 +548,14 @@ class _HeroCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
     final summary = subject.summary.trim();
+    final hasRating = subject.score > 0 || subject.rank > 0;
+    final showRatingSkeleton = !hasRating && detailPending;
+    final hasMeta =
+        subject.year > 0 ||
+        subject.studio.trim().isNotEmpty ||
+        subject.totalEpisodes > 0;
+    final showMetaSkeleton = !hasMeta && detailPending;
+    final showSummarySkeleton = summary.isEmpty && detailPending;
 
     return KonekoCard(
       corner: 30,
@@ -565,46 +596,66 @@ class _HeroCard extends StatelessWidget {
                           ),
                         ],
                       ),
-                      if (subject.score > 0 || subject.rank > 0) ...[
+                      if (hasRating || showRatingSkeleton) ...[
                         const SizedBox(height: 12),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          spacing: 6,
-                          children: [
-                            if (subject.score > 0)
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                spacing: 7,
-                                children: [
-                                  KonekoStarRating(
-                                    score: subject.score,
-                                    starSize: 16,
-                                    spacing: 2,
-                                  ),
-                                  Text(
-                                    subject.score.toStringAsFixed(1),
-                                    style: AppTextStyle.headline
-                                        .of(context, emphasized: true)
-                                        .copyWith(
-                                          color: colorScheme.onSurface,
-                                          fontFeatures: const [
-                                            FontFeature.tabularFigures(),
-                                          ],
-                                        ),
-                                  ),
-                                ],
-                              ),
-                            if (subject.rank > 0)
-                              KonekoChip(
-                                label: 'Bangumi Rank #${subject.rank}',
-                                height: 22,
-                                fontSize: 11,
-                                backgroundColor: colorScheme.primary.withValues(
-                                  alpha: 0.12,
+                        KonekoSkeletonFade(
+                          child: hasRating
+                              ? Column(
+                                  key: const ValueKey('hero-rating-live'),
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  spacing: 6,
+                                  children: [
+                                    if (subject.score > 0)
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        spacing: 7,
+                                        children: [
+                                          KonekoStarRating(
+                                            score: subject.score,
+                                            starSize: 16,
+                                            spacing: 2,
+                                          ),
+                                          Text(
+                                            subject.score.toStringAsFixed(1),
+                                            style: AppTextStyle.headline
+                                                .of(context, emphasized: true)
+                                                .copyWith(
+                                                  color: colorScheme.onSurface,
+                                                  fontFeatures: const [
+                                                    FontFeature.tabularFigures(),
+                                                  ],
+                                                ),
+                                          ),
+                                        ],
+                                      ),
+                                    if (subject.rank > 0)
+                                      KonekoChip(
+                                        label: 'Bangumi Rank #${subject.rank}',
+                                        height: 22,
+                                        fontSize: 11,
+                                        backgroundColor: colorScheme.primary
+                                            .withValues(alpha: 0.12),
+                                        foregroundColor: colorScheme.primary,
+                                      ),
+                                  ],
+                                )
+                              : const Column(
+                                  key: ValueKey('hero-rating-skeleton'),
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  spacing: 6,
+                                  children: [
+                                    KonekoSkeletonBox(
+                                      width: 124,
+                                      height: 18,
+                                      corner: 7,
+                                    ),
+                                    KonekoSkeletonBox(
+                                      width: 102,
+                                      height: 22,
+                                      corner: 11,
+                                    ),
+                                  ],
                                 ),
-                                foregroundColor: colorScheme.primary,
-                              ),
-                          ],
                         ),
                       ],
                     ],
@@ -613,25 +664,37 @@ class _HeroCard extends StatelessWidget {
               ),
             ],
           ),
-          if (subject.year > 0 ||
-              subject.studio.trim().isNotEmpty ||
-              subject.totalEpisodes > 0) ...[
+          if (hasMeta || showMetaSkeleton) ...[
             const SizedBox(height: 12),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                if (subject.year > 0)
-                  KonekoChip(
-                    label: subject.seasonLabel.isNotEmpty
-                        ? subject.seasonLabel
-                        : '${subject.year} 年',
-                  ),
-                if (subject.studio.trim().isNotEmpty)
-                  KonekoChip(label: subject.studio.trim()),
-                if (subject.totalEpisodes > 0)
-                  KonekoChip(label: '共 ${subject.totalEpisodes} 话'),
-              ],
+            KonekoSkeletonFade(
+              child: hasMeta
+                  ? Wrap(
+                      key: const ValueKey('hero-meta-live'),
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        if (subject.year > 0)
+                          KonekoChip(
+                            label: subject.seasonLabel.isNotEmpty
+                                ? subject.seasonLabel
+                                : '${subject.year} 年',
+                          ),
+                        if (subject.studio.trim().isNotEmpty)
+                          KonekoChip(label: subject.studio.trim()),
+                        if (subject.totalEpisodes > 0)
+                          KonekoChip(label: '共 ${subject.totalEpisodes} 话'),
+                      ],
+                    )
+                  : const Wrap(
+                      key: ValueKey('hero-meta-skeleton'),
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        KonekoSkeletonBox(width: 68, height: 26, corner: 13),
+                        KonekoSkeletonBox(width: 88, height: 26, corner: 13),
+                        KonekoSkeletonBox(width: 60, height: 26, corner: 13),
+                      ],
+                    ),
             ),
           ],
           const SizedBox(height: 16),
@@ -692,10 +755,26 @@ class _HeroCard extends StatelessWidget {
                 ),
             ],
           ),
-          if (summary.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            SubjectSynopsis(summary: summary),
-          ],
+          AnimatedSize(
+            duration: context.motionDuration(const Duration(milliseconds: 220)),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: KonekoSkeletonFade(
+              child: summary.isNotEmpty
+                  ? Padding(
+                      key: const ValueKey('hero-synopsis-live'),
+                      padding: const EdgeInsets.only(top: 14),
+                      child: SubjectSynopsis(summary: summary),
+                    )
+                  : showSummarySkeleton
+                  ? const Padding(
+                      key: ValueKey('hero-synopsis-skeleton'),
+                      padding: EdgeInsets.only(top: 14),
+                      child: _SynopsisSkeletonBlock(),
+                    )
+                  : const SizedBox.shrink(key: ValueKey('hero-synopsis-empty')),
+            ),
+          ),
         ],
       ),
     );
@@ -706,12 +785,14 @@ class _EpisodeMatrixCard extends StatefulWidget {
   const _EpisodeMatrixCard({
     required this.episodes,
     required this.onSelect,
+    this.expectedCount = 0,
     this.isLoading = false,
     this.onRetry,
   });
 
   final List<EpisodeItem> episodes;
   final ValueChanged<EpisodeItem> onSelect;
+  final int expectedCount;
   final bool isLoading;
   final VoidCallback? onRetry;
 
@@ -795,12 +876,15 @@ class _EpisodeMatrixCardState extends State<_EpisodeMatrixCard> {
                       .copyWith(color: colorScheme.onSurface),
                 ),
               ),
-              Text(
-                '共 ${episodes.length} 话',
-                style: AppTextStyle.footnote
-                    .of(context)
-                    .copyWith(color: colorScheme.onSurfaceVariant),
-              ),
+              if (episodes.isNotEmpty)
+                Text(
+                  '共 ${episodes.length} 话',
+                  style: AppTextStyle.footnote
+                      .of(context)
+                      .copyWith(color: colorScheme.onSurfaceVariant),
+                )
+              else if (widget.isLoading)
+                const KonekoSkeletonBox(width: 52, height: 14, corner: 7),
             ],
           ),
           if (totalPages > 1) ...[
@@ -824,13 +908,34 @@ class _EpisodeMatrixCardState extends State<_EpisodeMatrixCard> {
             ),
           ],
           const SizedBox(height: 12),
-          if (episodes.isEmpty)
-            widget.isLoading
-                ? const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 16),
-                    child: Center(child: ActivityIndicator()),
+          KonekoSkeletonFade(
+            child: episodes.isNotEmpty
+                ? Listener(
+                    key: const ValueKey('episodes-live'),
+                    onPointerDown: (_) => _revealLiveCard(),
+                    child: SnapshotWidget(
+                      key: const ValueKey('episode-arrival-snapshot'),
+                      controller: _arrivalSnapshot,
+                      mode: SnapshotMode.permissive,
+                      autoresize: true,
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          for (final ep in visible) _episodeCell(context, ep),
+                        ],
+                      ),
+                    ),
+                  )
+                : widget.isLoading
+                ? _EpisodeGridSkeleton(
+                    key: const ValueKey('episodes-skeleton'),
+                    count: widget.expectedCount > 0
+                        ? widget.expectedCount.clamp(6, 12)
+                        : 12,
                   )
                 : Row(
+                    key: const ValueKey('episodes-empty'),
                     children: [
                       Expanded(
                         child: Text(
@@ -849,19 +954,6 @@ class _EpisodeMatrixCardState extends State<_EpisodeMatrixCard> {
                         ),
                     ],
                   ),
-          Listener(
-            onPointerDown: (_) => _revealLiveCard(),
-            child: SnapshotWidget(
-              key: const ValueKey('episode-arrival-snapshot'),
-              controller: _arrivalSnapshot,
-              mode: SnapshotMode.permissive,
-              autoresize: true,
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [for (final ep in visible) _episodeCell(context, ep)],
-              ),
-            ),
           ),
         ],
       ),
@@ -945,12 +1037,10 @@ class _CommentsSectionSliver extends StatelessWidget {
     final total = overrideTotal ?? basePage?.total ?? items.length;
     final hasMore = overrideHasMore ?? basePage?.hasMore ?? false;
 
+    final showSkeleton = commentsAsync.isLoading && items.isEmpty;
     final Widget? status;
-    if (commentsAsync.isLoading && items.isEmpty) {
-      status = const Padding(
-        padding: EdgeInsets.symmetric(vertical: 28),
-        child: Center(child: ActivityIndicator()),
-      );
+    if (showSkeleton) {
+      status = null;
     } else if (commentsAsync.hasError && items.isEmpty) {
       status = Padding(
         padding: const EdgeInsets.symmetric(vertical: 20),
@@ -1030,7 +1120,16 @@ class _CommentsSectionSliver extends StatelessWidget {
                 ),
               ),
               const SliverToBoxAdapter(child: SizedBox(height: 12)),
-              if (status != null)
+              if (showSkeleton)
+                SliverPrismList(
+                  key: const ValueKey('comments-loading-skeleton'),
+                  itemCount: 4,
+                  gap: 10,
+                  estimatedItemExtent: 112,
+                  itemBuilder: (_, index) =>
+                      _CommentSkeletonTile(compact: index.isOdd),
+                )
+              else if (status != null)
                 SliverToBoxAdapter(child: status)
               else ...[
                 SliverPrismList(
@@ -1345,14 +1444,27 @@ class _RuleSourcesCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTextStyle.caption1
-                      .of(context)
-                      .copyWith(color: colorScheme.onSurfaceVariant),
-                ),
+                if (state == RuleProbeState.searching)
+                  const SizedBox(
+                    height: 16,
+                    child: Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: KonekoSkeletonBox(
+                        width: 96,
+                        height: 11,
+                        corner: 5,
+                      ),
+                    ),
+                  )
+                else
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyle.caption1
+                        .of(context)
+                        .copyWith(color: colorScheme.onSurfaceVariant),
+                  ),
               ],
             ),
           ),
@@ -1366,6 +1478,8 @@ class _RuleSourcesCard extends StatelessWidget {
               foregroundColor: colorScheme.onPrimary,
               onPressed: () => onVerify(rule.id, rule.name, probe!.verifyUrl!),
             )
+          else if (state == RuleProbeState.searching)
+            const KonekoSkeletonBox(width: 56, height: 24, corner: 12)
           else
             KonekoChip(
               label: badgeText,
@@ -1439,6 +1553,368 @@ class _RuleSourcesCard extends StatelessWidget {
                   ? colorScheme.onSuccessContainer
                   : colorScheme.onWarningContainer,
             ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SynopsisSkeletonBlock extends StatelessWidget {
+  const _SynopsisSkeletonBlock();
+
+  @override
+  Widget build(BuildContext context) {
+    return const RepaintBoundary(
+      child: KonekoBlock(
+        corner: 18,
+        padding: EdgeInsets.fromLTRB(14, 12, 14, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            KonekoSkeletonBox(width: double.infinity, height: 15, corner: 6),
+            SizedBox(height: 9),
+            FractionallySizedBox(
+              widthFactor: 0.94,
+              child: KonekoSkeletonBox(height: 15, corner: 6),
+            ),
+            SizedBox(height: 9),
+            FractionallySizedBox(
+              widthFactor: 0.72,
+              child: KonekoSkeletonBox(height: 15, corner: 6),
+            ),
+            SizedBox(height: 10),
+            Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: KonekoSkeletonBox(width: 52, height: 14, corner: 7),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EpisodeGridSkeleton extends StatelessWidget {
+  const _EpisodeGridSkeleton({super.key, this.count = 12});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return RepaintBoundary(
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (var i = 0; i < count; i++)
+            const KonekoSkeletonBox(width: 58, height: 40, corner: 12),
+        ],
+      ),
+    );
+  }
+}
+
+class _CommentSkeletonTile extends StatelessWidget {
+  const _CommentSkeletonTile({this.compact = false});
+
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    return RepaintBoundary(
+      child: KonekoBlock(
+        corner: 18,
+        padding: const EdgeInsets.all(13),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                KonekoSkeletonBox(width: 34, height: 34, circle: true),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    spacing: 5,
+                    children: [
+                      KonekoSkeletonBox(width: 104, height: 14, corner: 6),
+                      KonekoSkeletonBox(width: 64, height: 10, corner: 5),
+                    ],
+                  ),
+                ),
+                KonekoSkeletonBox(width: 38, height: 22, corner: 11),
+              ],
+            ),
+            const SizedBox(height: 10),
+            const KonekoSkeletonBox(
+              width: double.infinity,
+              height: 13,
+              corner: 5,
+            ),
+            const SizedBox(height: 7),
+            FractionallySizedBox(
+              widthFactor: compact ? 0.68 : 0.90,
+              child: const KonekoSkeletonBox(height: 13, corner: 5),
+            ),
+            if (!compact) ...[
+              const SizedBox(height: 7),
+              const FractionallySizedBox(
+                widthFactor: 0.54,
+                child: KonekoSkeletonBox(height: 13, corner: 5),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SubjectDetailSkeletonView extends StatelessWidget {
+  const _SubjectDetailSkeletonView({required this.animate});
+
+  final bool animate;
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomPad = 28 + MediaQuery.paddingOf(context).bottom;
+    return KonekoSkeletonScope(
+      animate: animate,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isWide = constraints.maxWidth >= 900;
+          const episodesCard = KonekoCard(
+            corner: 30,
+            padding: EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    KonekoSkeletonBox(width: 44, height: 18, corner: 7),
+                    Spacer(),
+                    KonekoSkeletonBox(width: 52, height: 14, corner: 7),
+                  ],
+                ),
+                SizedBox(height: 14),
+                _EpisodeGridSkeleton(count: 12),
+              ],
+            ),
+          );
+          const sourcesCard = KonekoCard(
+            corner: 30,
+            padding: EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                KonekoSkeletonBox(width: 62, height: 18, corner: 7),
+                SizedBox(height: 6),
+                KonekoSkeletonBox(width: 148, height: 12, corner: 5),
+                SizedBox(height: 12),
+                Column(
+                  spacing: 8,
+                  children: [
+                    _SourceSkeletonTile(),
+                    _SourceSkeletonTile(),
+                    _SourceSkeletonTile(),
+                  ],
+                ),
+              ],
+            ),
+          );
+
+          return CustomScrollView(
+            key: const ValueKey('detail-full-skeleton'),
+            physics: const NeverScrollableScrollPhysics(),
+            slivers: [
+              const KonekoScrollStart(),
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(16, 6, 16, bottomPad),
+                sliver: SliverList.list(
+                  children: [
+                    const RepaintBoundary(
+                      child: KonekoCard(
+                        corner: 30,
+                        padding: EdgeInsets.all(18),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                KonekoSkeletonBox(
+                                  width: 104,
+                                  height: 148,
+                                  corner: 18,
+                                ),
+                                SizedBox(width: 16),
+                                Expanded(
+                                  child: SizedBox(
+                                    height: 148,
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          spacing: 8,
+                                          children: [
+                                            KonekoSkeletonBox(
+                                              width: double.infinity,
+                                              height: 22,
+                                              corner: 8,
+                                            ),
+                                            FractionallySizedBox(
+                                              widthFactor: 0.62,
+                                              child: KonekoSkeletonBox(
+                                                height: 20,
+                                                corner: 8,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          spacing: 6,
+                                          children: [
+                                            KonekoSkeletonBox(
+                                              width: 124,
+                                              height: 18,
+                                              corner: 7,
+                                            ),
+                                            KonekoSkeletonBox(
+                                              width: 102,
+                                              height: 22,
+                                              corner: 11,
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            SizedBox(height: 12),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: [
+                                KonekoSkeletonBox(
+                                  width: 68,
+                                  height: 26,
+                                  corner: 13,
+                                ),
+                                KonekoSkeletonBox(
+                                  width: 88,
+                                  height: 26,
+                                  corner: 13,
+                                ),
+                                KonekoSkeletonBox(
+                                  width: 60,
+                                  height: 26,
+                                  corner: 13,
+                                ),
+                              ],
+                            ),
+                            SizedBox(height: 16),
+                            KonekoSkeletonBox(
+                              width: double.infinity,
+                              height: 46,
+                              corner: 23,
+                            ),
+                            SizedBox(height: 10),
+                            Row(
+                              spacing: 8,
+                              children: [
+                                Expanded(
+                                  child: KonekoSkeletonBox(
+                                    height: 34,
+                                    corner: 17,
+                                  ),
+                                ),
+                                Expanded(
+                                  child: KonekoSkeletonBox(
+                                    height: 34,
+                                    corner: 17,
+                                  ),
+                                ),
+                                Expanded(
+                                  child: KonekoSkeletonBox(
+                                    height: 34,
+                                    corner: 17,
+                                  ),
+                                ),
+                                Expanded(
+                                  child: KonekoSkeletonBox(
+                                    height: 34,
+                                    corner: 17,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            SizedBox(height: 14),
+                            _SynopsisSkeletonBlock(),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    const KonekoSkeletonBox(
+                      width: double.infinity,
+                      height: 42,
+                      corner: 21,
+                    ),
+                    const SizedBox(height: 14),
+                    if (isWide)
+                      const Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        spacing: 16,
+                        children: [
+                          Expanded(flex: 12, child: episodesCard),
+                          Expanded(flex: 7, child: sourcesCard),
+                        ],
+                      )
+                    else ...const [
+                      episodesCard,
+                      SizedBox(height: 14),
+                      sourcesCard,
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _SourceSkeletonTile extends StatelessWidget {
+  const _SourceSkeletonTile();
+
+  @override
+  Widget build(BuildContext context) {
+    return const KonekoBlock(
+      child: Row(
+        spacing: 8,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              spacing: 6,
+              children: [
+                KonekoSkeletonBox(width: 112, height: 15, corner: 6),
+                KonekoSkeletonBox(width: 84, height: 11, corner: 5),
+              ],
+            ),
+          ),
+          KonekoSkeletonBox(width: 56, height: 24, corner: 12),
         ],
       ),
     );
