@@ -795,8 +795,9 @@ void main() {
       expect(refreshCount, 1);
 
       await tester.tap(find.text('打开验证'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500));
+      for (var i = 0; i < 25; i++) {
+        await tester.pump(const Duration(milliseconds: 32));
+      }
       expect(find.text('图形验证码'), findsOneWidget);
       expect(find.text('换一张'), findsOneWidget);
       expect(find.text('提交验证'), findsOneWidget);
