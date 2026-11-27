@@ -293,7 +293,7 @@ class _AnimekoHeroCarouselState extends State<_AnimekoHeroCarousel>
 
   void _autoAdvance() {
     if (!mounted || _userDragging || widget.subjects.length <= 1) return;
-    if (!TickerMode.of(context)) return;
+    if (!TickerMode.valuesOf(context).enabled) return;
     final isWide = widget.availableWidth >= 640;
     if (isWide) {
       if (!_wideController.hasClients) return;
