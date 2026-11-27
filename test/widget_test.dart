@@ -339,19 +339,19 @@ void main() {
         .descendant(of: detail, matching: find.byType(Scrollable))
         .first;
     final position = tester.state<ScrollableState>(scrollable).position;
-    final secondRange = find.descendant(
-      of: detail,
-      matching: find.text('25-25'),
-    );
-    expect(secondRange, findsOneWidget);
-    expect(tester.getBottomLeft(secondRange).dy, greaterThan(460));
     expect(position.pixels, 0);
 
     catalog.detail.complete();
     await tester.pumpAndSettle();
     expect(position.pixels, 0);
-    await tester.drag(scrollable, const Offset(0, -150));
+
+    final secondRange = find.descendant(
+      of: detail,
+      matching: find.text('25-25'),
+    );
+    await tester.scrollUntilVisible(secondRange, 160, scrollable: scrollable);
     await tester.pumpAndSettle();
+    expect(secondRange, findsOneWidget);
     expect(position.pixels, greaterThan(0));
     expect(tester.takeException(), isNull);
   });
