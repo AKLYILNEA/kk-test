@@ -645,8 +645,8 @@ class _HeroCard extends StatelessWidget {
                   ),
                   Text(
                     hasHistory
-                        ? '继续播放 · 第 ${currentEp} 话'
-                        : '立即播放 · 第 ${currentEp} 话',
+                        ? '继续播放 · 第 $currentEp 话'
+                        : '立即播放 · 第 $currentEp 话',
                     style: AppTextStyle.callout
                         .of(context, emphasized: true)
                         .copyWith(color: colorScheme.onPrimary),

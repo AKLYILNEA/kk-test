@@ -170,10 +170,10 @@ mixin RouteSettledMixin<T extends StatefulWidget> on State<T> {
       return;
     }
     _settleScheduled = true;
-    unawaited(_settle());
+    unawaited(_waitForArrival());
   }
 
-  Future<void> _settle() async {
+  Future<void> _waitForArrival() async {
     await whenRouteSettled(context);
     if (!mounted) {
       return;
