@@ -4,7 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/services.dart'
-    show DeviceOrientation, SystemChrome, SystemUiMode;
+    show DeviceOrientation, SystemChrome, SystemUiMode, TextInputAction;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:koneko/common/constants.dart';
