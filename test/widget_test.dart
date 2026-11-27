@@ -279,6 +279,8 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('星海旅人：北境编年史').first);
+    await tester.pump();
+    expect(catalog.episodeRequests, 0);
     await tester.pumpAndSettle();
     expect(catalog.episodeRequests, 1);
     expect(catalog.characterRequests, 0);

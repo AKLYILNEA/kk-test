@@ -798,4 +798,74 @@ void main() {
     await tester.pumpWidget(scene(offstage: false, enabled: false));
     expect(LiquidGlassHost.debugHeldCaptures, held);
   });
+
+  testWidgets('a pane that skips the rim in its middle draws alike', (
+    tester,
+  ) async {
+    addTearDown(() => LiquidGlassHost.debugSkipRimOverride = null);
+    final colorScheme = ColorScheme.fromSeed(seedColor: _blue);
+    await tester.pumpWidget(
+      _app(
+        Stack(
+          children: [
+            ..._stripes(),
+            _pane(
+              const Rect.fromLTWH(60, 40, 300, 180),
+              style: LiquidGlassStyle.regular(colorScheme),
+            ),
+            _pane(
+              const Rect.fromLTWH(380, 260, 320, 200),
+              style: LiquidGlassStyle.menu(colorScheme),
+            ),
+            _pane(
+              const Rect.fromLTWH(60, 300, 280, 120),
+              style: LiquidGlassStyle.pill(colorScheme),
+            ),
+          ],
+        ),
+      ),
+    );
+    await _shadersLoaded(tester);
+
+    Future<List<int>> drawn({required bool skipping}) {
+      LiquidGlassHost.debugSkipRimOverride = skipping ? null : false;
+      tester.binding.scheduleFrame();
+      return tester.pump().then((_) => _frame(tester));
+    }
+
+    final throughout = await drawn(skipping: false);
+    final skipped = await drawn(skipping: true);
+
+    expect(throughout.toSet().length, greaterThan(64));
+    expect(_furthest(throughout, skipped), 0);
+  }, skip: !ui.ImageFilter.isShaderFilterSupported);
+
+  test('a pane has a middle only past all its rim reaches', () {
+    final colorScheme = ColorScheme.fromSeed(seedColor: _blue);
+    final menu = LiquidGlassStyle.menu(colorScheme);
+    const card = Rect.fromLTWH(0, 0, 270, 170);
+
+    // Its bevel of 20 dp, then what a corner of 34 dp cuts off a rectangle.
+    final inner = liquidGlassInner(card, 34, card.size, menu, shine: true);
+    expect(inner.left, closeTo(24.11, 0.01));
+    expect(inner.top, closeTo(24.11, 0.01));
+    expect(inner.right, closeTo(245.89, 0.01));
+    expect(inner.bottom, closeTo(145.89, 0.01));
+
+    const small = Rect.fromLTWH(0, 0, 20, 20);
+    expect(
+      liquidGlassInner(small, 10, small.size, menu, shine: false),
+      Rect.zero,
+    );
+    expect(
+      liquidGlassInner(
+        card,
+        34,
+        card.size,
+        LiquidGlassStyle.lens(colorScheme),
+        shine: false,
+      ),
+      Rect.zero,
+    );
+  });
 }

@@ -46,7 +46,10 @@ jobs:
       - name: Unit & widget tests
         run: |
           set +e
-          flutter test -r expanded test packages/koneko_core/test 2>&1 | tee test.log
+          flutter test -r expanded test packages/koneko_core/test \
+            plugins/prism_ui/test/widgets/liquid_glass_test.dart \
+            plugins/prism_ui/test/widgets/liquid_glass_host_test.dart \
+            2>&1 | tee test.log
           rc=${PIPESTATUS[0]}
           if [ "$rc" -ne 0 ]; then
             grep -i -A 10 -E "\[E\]|EXCEPTION|overflowed|Assert|Expected|Actual|Failed|No .* found" test.log | head -n 45 | while IFS= read -r line; do

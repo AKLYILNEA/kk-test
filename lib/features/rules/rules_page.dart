@@ -104,7 +104,7 @@ class _RulesPageState extends ConsumerState<RulesPage> {
               (managed == null ? 0 : 1) +
               (entries.isEmpty ? 1 : entries.length + 1),
           itemBuilder: (context, index) {
-            if (managed != null && index == 0)
+            if (managed != null && index == 0) {
               return KonekoGroup(
                 items: [
                   DecorationListItem(
@@ -133,7 +133,8 @@ class _RulesPageState extends ConsumerState<RulesPage> {
                   ),
                 ],
               );
-            if (entries.isEmpty)
+            }
+            if (entries.isEmpty) {
               return KonekoCard(
                 corner: 24,
                 padding: const EdgeInsets.all(20),
@@ -144,9 +145,11 @@ class _RulesPageState extends ConsumerState<RulesPage> {
                       .copyWith(color: colorScheme.onSurfaceVariant),
                 ),
               );
+            }
             final rowIndex = index - (managed == null ? 0 : 1);
-            if (rowIndex == 0)
+            if (rowIndex == 0) {
               return ListHeader(title: '已安装规则 (${entries.length})');
+            }
             final rule = entries[rowIndex - 1];
             return KonekoCard(
               key: ValueKey(rule.id),
