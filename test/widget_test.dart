@@ -847,6 +847,7 @@ class _PartialDetailCatalog extends _PendingCatalog {
           episodeNumber: ep,
           title: '第 $ep 话',
           airDate: '2026-04-01',
+          durationSeconds: 1440,
           state: ep == (currentEp ?? 1)
               ? EpisodeWatchState.current
               : EpisodeWatchState.aired,

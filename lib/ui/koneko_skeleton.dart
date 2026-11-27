@@ -266,7 +266,7 @@ class KonekoSkeletonFade extends StatelessWidget {
       fit: StackFit.passthrough,
       children: [
         ...previousChildren,
-        if (currentChild != null) currentChild,
+        ?currentChild,
       ],
     );
   }
