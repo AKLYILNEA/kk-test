@@ -2116,8 +2116,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
               final state = _probes[r.id]?.state;
               return state != null && state != RuleProbeState.searching;
             }).length;
-            final anySearching =
-                enabledRules.isNotEmpty && doneCount < enabledRules.length;
+            final anySearching = enabledRules.any(
+              (r) => _probes[r.id]?.state == RuleProbeState.searching,
+            );
 
             void runKeywordProbe() {
               final kw = _sourceKeywordController.text.trim();
@@ -2192,7 +2193,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                                     Text(
                                       anySearching
                                           ? '正在并发检测播放源 ($doneCount/${enabledRules.length})'
-                                          : '共 ${enabledRules.length} 个播放源 · $foundCount 个可用',
+                                          : doneCount > 0
+                                          ? '共 ${enabledRules.length} 个播放源 · $foundCount 个可用'
+                                          : '共 ${enabledRules.length} 个已启用播放源',
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: AppTextStyle.footnote
@@ -2821,7 +2824,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   Widget _buildCompactSourceRow(BuildContext context, RulePluginMeta rule) {
     final colorScheme = context.colorScheme;
     final probe = _probes[rule.id];
-    final state = probe?.state ?? RuleProbeState.searching;
+    final state = probe?.state;
     final isCurrent = _ruleId == rule.id;
 
     final (badgeText, badgeBg, badgeFg) = switch (state) {
@@ -2851,6 +2854,11 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
         '不可用',
         colorScheme.errorContainer,
         colorScheme.onErrorContainer,
+      ),
+      null => (
+        '待检测',
+        SurfaceLevel.card.colorOf(colorScheme),
+        colorScheme.onSurfaceVariant,
       ),
     };
 
@@ -2910,7 +2918,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   }) {
     final colorScheme = context.colorScheme;
     final probe = _probes[rule.id];
-    final state = probe?.state ?? RuleProbeState.searching;
+    final state = probe?.state;
     final isCurrent = _ruleId == rule.id;
 
     final (badgeText, badgeBg, badgeFg) = switch (state) {
@@ -2940,6 +2948,11 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
         '不可用',
         colorScheme.errorContainer,
         colorScheme.onErrorContainer,
+      ),
+      null => (
+        '待检测',
+        SurfaceLevel.block.colorOf(colorScheme),
+        colorScheme.onSurfaceVariant,
       ),
     };
 
