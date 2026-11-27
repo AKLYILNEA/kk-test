@@ -555,8 +555,9 @@ void main() {
       await tester.ensureVisible(aboutRow);
       await tester.pumpAndSettle();
       await tester.tap(aboutRow);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 600));
+      for (var i = 0; i < 40; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
       expect(find.byType(AboutPage), findsOneWidget);
       final aboutScroll = find
           .descendant(
