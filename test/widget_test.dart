@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/rendering.dart'
+    show debugOnProfilePaint, debugProfilePaintsEnabled;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:koneko/common/constants.dart';
@@ -269,6 +271,61 @@ void main() {
     },
   );
 
+  testWidgets('detail keeps the push isolated from episodes and source rows', (
+    tester,
+  ) async {
+    _setViewport(tester, const Size(420, 880));
+    final catalog = _PendingCatalog();
+    addTearDown(catalog.events.close);
+    await tester.pumpWidget(_testApp(catalog: catalog));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('星海旅人：北境编年史').first);
+    await tester.pump();
+    final detail = find.byType(SubjectDetailPage);
+    final route = ModalRoute.of(tester.element(detail))!;
+    final overview = tester.renderObject(
+      find.descendant(of: detail, matching: find.byType(KonekoStarRating)),
+    );
+    final oldProfiling = debugProfilePaintsEnabled;
+    final oldPaint = debugOnProfilePaint;
+    var overviewPaints = 0;
+    debugProfilePaintsEnabled = true;
+    debugOnProfilePaint = (object) {
+      if (identical(object, overview)) overviewPaints++;
+    };
+    addTearDown(() {
+      debugProfilePaintsEnabled = oldProfiling;
+      debugOnProfilePaint = oldPaint;
+    });
+
+    var motionFrames = 0;
+    var episodeReadsDuringMotion = 0;
+    var sourceReadsDuringMotion = 0;
+    var episodeRequestsDuringMotion = 0;
+    for (var i = 0; i < 60; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      if (route.animation!.isCompleted) break;
+      if (route.animation!.value > 0) motionFrames++;
+      episodeReadsDuringMotion = catalog.episodeReads;
+      sourceReadsDuringMotion = catalog.sourceReads;
+      episodeRequestsDuringMotion = catalog.episodeRequests;
+    }
+
+    final counts = (
+      frames: motionFrames,
+      episodeReads: episodeReadsDuringMotion,
+      sourceReads: sourceReadsDuringMotion,
+      episodeRequests: episodeRequestsDuringMotion,
+      overviewPaints: overviewPaints,
+    );
+    debugPrint('Detail push work $counts');
+    expect(motionFrames, greaterThan(2));
+    await tester.pumpAndSettle();
+    expect(catalog.episodeRequests, 1);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('detail loads one role indicator and retains visited requests', (
     tester,
   ) async {
@@ -438,6 +495,8 @@ class _PendingCatalog extends MockCatalogRepository implements OnlineCatalog {
   final characters = Completer<List<SubjectCharacter>>();
   final credits = Completer<List<SubjectPerson>>();
   int episodeRequests = 0;
+  int episodeReads = 0;
+  int sourceReads = 0;
   int characterRequests = 0;
   int creditRequests = 0;
   int relationRequests = 0;
@@ -456,6 +515,26 @@ class _PendingCatalog extends MockCatalogRepository implements OnlineCatalog {
       await loadEpisodes(id);
       await loadRelations(id);
     }
+  }
+
+  @override
+  List<EpisodeItem> getEpisodes(
+    int id, {
+    int watchedCount = 0,
+    int? currentEp,
+  }) {
+    episodeReads++;
+    return super.getEpisodes(
+      id,
+      watchedCount: watchedCount,
+      currentEp: currentEp,
+    );
+  }
+
+  @override
+  List<RuleSourceProbe> probeSources(int id) {
+    sourceReads++;
+    return super.probeSources(id);
   }
 
   @override
