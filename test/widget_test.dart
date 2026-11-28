@@ -173,6 +173,62 @@ void main() {
     );
   }
 
+  testWidgets('repeated tab visits keep secondary route chrome work bounded', (
+    tester,
+  ) async {
+    _setViewport(tester, const Size(420, 880));
+    await tester.pumpWidget(_testApp());
+    await tester.pumpAndSettle();
+
+    final dock = find.byType(NavigationDock);
+    final home = find.byType(HomePage);
+    final detail = find.byType(SubjectDetailPage);
+    final homeScene = find.ancestor(
+      of: home,
+      matching: find.byWidgetPredicate(
+        (widget) => widget is SnapshotWidget && widget.key == null,
+      ),
+    );
+    final snapshot = tester.widget<SnapshotWidget>(homeScene).controller;
+
+    Future<int> visitDetail() async {
+      var snapshotChanges = 0;
+      void countChanges() => snapshotChanges++;
+      snapshot.addListener(countChanges);
+      try {
+        await tester.tap(find.text('星海旅人：北境编年史').first);
+        await tester.pumpAndSettle();
+        expect(detail, findsOneWidget);
+        await tester.tap(_barAction('返回'));
+        await tester.pumpAndSettle();
+        expect(detail, findsNothing);
+        return snapshotChanges;
+      } finally {
+        snapshot.removeListener(countChanges);
+      }
+    }
+
+    final coldChanges = await visitDetail();
+    expect(coldChanges, greaterThan(0));
+    final activeItems = BarItemPresence.debugRouteItems;
+    final liveAtlases = LiquidGlassHost.debugRetainedAtlases;
+    expect(activeItems, greaterThan(0));
+
+    for (var round = 0; round < 2; round++) {
+      for (final label in ['时间表', '追番', '我的', '推荐']) {
+        await tester.tap(find.descendant(of: dock, matching: find.text(label)));
+        await tester.pumpAndSettle();
+      }
+      expect(BarItemPresence.debugRouteItems, activeItems);
+      expect(LiquidGlassHost.debugRetainedAtlases, liveAtlases);
+    }
+
+    expect(await visitDetail(), lessThanOrEqualTo(coldChanges));
+    expect(BarItemPresence.debugRouteItems, activeItems);
+    expect(LiquidGlassHost.debugRetainedAtlases, liveAtlases);
+    expect(tester.takeException(), isNull);
+  });
+
   test(
     'system and Han text fonts take precedence, with Twemoji on emoji spans',
     () {

@@ -219,6 +219,51 @@ void main() {
     expect(LiquidGlassHost.debugHeldCaptures, 1);
   });
 
+  testWidgets('temporary glass atlases are released when scenes return live', (
+    tester,
+  ) async {
+    final baseline = LiquidGlassHost.debugRetainedAtlases;
+    final controller = SnapshotController();
+    addTearDown(controller.dispose);
+
+    Widget scene({bool offstage = false}) => _app(
+      Offstage(
+        offstage: offstage,
+        child: SnapshotWidget(
+          controller: controller,
+          mode: SnapshotMode.permissive,
+          child: LiquidGlassHost(
+            enabled: !offstage,
+            child: Stack(
+              children: [
+                const Positioned.fill(child: ColoredBox(color: _red)),
+                _pane(const Rect.fromLTWH(100, 100, 200, 100)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(scene());
+    expect(LiquidGlassHost.debugRetainedAtlases, baseline + 1);
+    for (var repeat = 0; repeat < 3; repeat++) {
+      controller.allowSnapshotting = true;
+      await tester.pump();
+      expect(LiquidGlassHost.debugRetainedAtlases, baseline + 1);
+
+      controller.allowSnapshotting = false;
+      await tester.pump();
+      expect(LiquidGlassHost.debugRetainedAtlases, baseline + 1);
+      expect(_capture().panes, hasLength(1));
+    }
+
+    controller.allowSnapshotting = true;
+    await tester.pump();
+    await tester.pumpWidget(scene(offstage: true));
+    expect(LiquidGlassHost.debugRetainedAtlases, baseline);
+  });
+
   testWidgets('a host within another leaves its panes to the outer one', (
     tester,
   ) async {

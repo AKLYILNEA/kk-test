@@ -362,7 +362,7 @@ class _MobileTabLayerState extends State<_MobileTabLayer> {
                     mode: SnapshotMode.permissive,
                     autoresize: true,
                     child: LiquidGlassHost(
-                      enabled: LiquidGlassScope.of(context),
+                      enabled: widget.shown && LiquidGlassScope.of(context),
                       child: _pageActivity(widget.active, widget.child),
                     ),
                   ),

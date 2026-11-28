@@ -6,9 +6,11 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 import 'package:prism_ui/icons/glyph_icon.dart';
+import 'package:prism_ui/inherited.dart';
 import 'package:prism_ui/liquid_glass.dart';
 import 'package:prism_ui/navigator.dart';
 import 'package:prism_ui/page_transition.dart';
+import 'package:prism_ui/route_scope.dart';
 
 /// SwiftUI's glass toolbar springs an item in from 1.2 and a blur of 10 a
 /// frame after its page first moves, which is when a ticker started then
@@ -120,6 +122,9 @@ class BarItemPresence extends StatefulWidget {
   static ValueListenable<bool>? filledOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<_PresenceScope>()?.filled;
 
+  @visibleForTesting
+  static int get debugRouteItems => _BarItemPresenceState._live.length;
+
   @override
   State<BarItemPresence> createState() => _BarItemPresenceState();
 }
@@ -188,19 +193,14 @@ class _BarItemPresenceState extends State<BarItemPresence>
   };
 
   @override
-  void initState() {
-    super.initState();
-    _live.add(this);
-  }
-
-  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     // A page that goes off stage freezes a fade where nothing shows it.
     if (!TickerMode.valuesOf(context).enabled) {
       _finishMotion();
     }
-    final route = switch (ModalRoute.of(context)) {
+    final active = PageActivityScope.isActiveOf(context);
+    final route = switch (active ? routeOf(context) : null) {
       final CardRouteMixin<Object?> route => route,
       _ => null,
     };
@@ -209,7 +209,10 @@ class _BarItemPresenceState extends State<BarItemPresence>
     }
     _motion?.removeListener(_handleMotion);
     _covering?.removeListener(_handleMotion);
+    _covering = null;
+    _live.remove(this);
     _route = route;
+    if (route != null) _live.add(this);
     // A sheet carrying the page moves it too, as when it closes mid-push.
     _routeMotion = route == null
         ? null
@@ -222,6 +225,16 @@ class _BarItemPresenceState extends State<BarItemPresence>
     _motion = route?.barItems?..addListener(_handleMotion);
     if (widget._kind == _PresenceKind.held) {
       _covering = route?.secondaryAnimation?..addListener(_handleMotion);
+    }
+    if (!active) {
+      // Retained tabs keep their toolbar in the page during a tab snapshot.
+      // Only the active tab's items can lift into the shared route overlay.
+      _tracking = false;
+      _filled.value = true;
+      _target = 1;
+      _presence.value = 1;
+      _updateLift();
+      return;
     }
     if (_target == null) {
       final now = _now;
@@ -560,7 +573,7 @@ class _BarItemPresenceState extends State<BarItemPresence>
           ? widget.child
           : LiquidGlassGroup(shared: _barItemGlass, child: widget.child),
     );
-    final rest = _rest;
+    final rest = _route == null ? null : _rest;
     return OverlayPortal(
       controller: _overlay,
       overlayLocation: _overRoutes
@@ -569,29 +582,31 @@ class _BarItemPresenceState extends State<BarItemPresence>
       // The item's own tooltips and menus would otherwise target the route
       // Overlay it inherits, which is not a render ancestor once lifted into
       // the root Overlay, and a layout-builder portal asserts on that.
-      overlayChildBuilder: (context) => Overlay.wrap(
-        child: Positioned.fill(
-          child: _LiftedItem(
-            rest: _slotSize ?? Size.zero,
-            locate: () => _placeIn(_overlayBox),
-            follow: _routeMotion,
-            slot: _slotConstraints,
-            onSize: _handleLiftedSize,
-            // Lifted, the item animates over the routes; without a boundary
-            // of its own each frame repaints the overlay and all above it.
-            child: RepaintBoundary(
-              child: ListenableBuilder(
-                listenable: _motion ?? const AlwaysStoppedAnimation(0),
-                builder: (_, child) => IgnorePointer(
-                  ignoring: !_now.shown || !(_route?.isCurrent ?? true),
-                  child: child,
+      overlayChildBuilder: (context) => rest == null
+          ? const SizedBox.shrink()
+          : Overlay.wrap(
+              child: Positioned.fill(
+                child: _LiftedItem(
+                  rest: _slotSize ?? Size.zero,
+                  locate: () => _placeIn(_overlayBox),
+                  follow: _routeMotion,
+                  slot: _slotConstraints,
+                  onSize: _handleLiftedSize,
+                  // Lifted, the item animates over the routes; without a boundary
+                  // of its own each frame repaints the overlay and all above it.
+                  child: RepaintBoundary(
+                    child: ListenableBuilder(
+                      listenable: _motion ?? const AlwaysStoppedAnimation(0),
+                      builder: (_, child) => IgnorePointer(
+                        ignoring: !_now.shown || !(_route?.isCurrent ?? true),
+                        child: child,
+                      ),
+                      child: _present(item),
+                    ),
+                  ),
                 ),
-                child: _present(item),
               ),
             ),
-          ),
-        ),
-      ),
       child: _SlotProbe(
         onLayout: (constraints) => _slotConstraints = constraints,
         child: rest == null

@@ -68,6 +68,9 @@ class LiquidGlassHost extends StatelessWidget {
   @visibleForTesting
   static int get debugHeldCaptures => _LiquidGlassLayer._capturesHeld;
 
+  @visibleForTesting
+  static int get debugRetainedAtlases => _LiquidGlassHostLayer._retainedAtlases;
+
   @override
   Widget build(BuildContext context) {
     return _LiquidGlassHostBox(
@@ -325,6 +328,7 @@ class _RenderLiquidGlassHost extends RenderProxyBox {
       return;
     }
     _enabled = value;
+    if (!_enabled) _release();
     markNeedsCompositingBitsUpdate();
     markNeedsPaint();
   }
@@ -367,7 +371,8 @@ class _RenderLiquidGlassHost extends RenderProxyBox {
 
   // A pane captured on a pass still current would keep drawing from it.
   void _release() {
-    if (_layer.layer != null) {
+    if (_layer.layer case final layer?) {
+      layer.releaseCaptures();
       _layer.layer = null;
       _LiquidGlassHostLayer._pass++;
     }
@@ -382,7 +387,9 @@ class _RenderLiquidGlassHost extends RenderProxyBox {
 
 class _LiquidGlassHostLayer extends ContainerLayer {
   static int _pass = 0;
+  static int _retainedAtlases = 0;
 
+  int _capturePass = -1;
   double devicePixelRatio = 1;
   LiquidGlassQuality quality = LiquidGlassQuality.ultra;
   Rect bounds = Rect.zero;
@@ -395,7 +402,11 @@ class _LiquidGlassHostLayer extends ContainerLayer {
 
   @override
   void addToScene(ui.SceneBuilder builder) {
-    if (!_hasHostAbove) {
+    if (_hasHostAbove) {
+      // A nested host only captures when rasterized on its own, such as
+      // inside a motion snapshot. Once live, its parent owns the panes.
+      releaseCaptures();
+    } else {
       _capture();
     }
     super.addToScene(builder);
@@ -410,16 +421,27 @@ class _LiquidGlassHostLayer extends ContainerLayer {
     return false;
   }
 
+  void releaseCaptures() {
+    for (final pane in _panes) {
+      if (pane._capturedPass == _capturePass) pane._dropCaptured();
+    }
+    _panes.clear();
+    while (_atlases.isNotEmpty) {
+      _removeLastAtlas();
+    }
+  }
+
+  void _removeLastAtlas() {
+    _atlases.removeLast().image.dispose();
+    assert(() {
+      _retainedAtlases--;
+      return true;
+    }());
+  }
+
   @override
   void dispose() {
-    for (final pane in _panes) {
-      pane._dropCaptured();
-    }
-    _panes = {};
-    for (final atlas in _atlases) {
-      atlas.image.dispose();
-    }
-    _atlases.clear();
+    releaseCaptures();
     super.dispose();
   }
 
@@ -427,12 +449,13 @@ class _LiquidGlassHostLayer extends ContainerLayer {
   /// own group, sits a level above it, and reads a capture with that one drawn
   /// as glass.
   void _capture() {
-    _pass++;
+    final previousPass = _capturePass;
+    _capturePass = ++_pass;
     final found = <_Behind>[];
     _gather(this, Matrix4.identity(), this, Matrix4.identity(), [], found);
     final panes = {for (final entry in found) entry.pane};
     for (final pane in _panes.difference(panes)) {
-      pane._dropCaptured();
+      if (pane._capturedPass == previousPass) pane._dropCaptured();
     }
     _panes = panes;
     final placed = <_Behind>[];
@@ -482,7 +505,7 @@ class _LiquidGlassHostLayer extends ContainerLayer {
       }
     }
     while (_atlases.length > levels) {
-      _atlases.removeLast().image.dispose();
+      _removeLastAtlas();
     }
     assert(() {
       LiquidGlassHost.debugCaptures++;
@@ -778,6 +801,10 @@ class _LiquidGlassHostLayer extends ContainerLayer {
     picture.dispose();
     if (previous == null) {
       _atlases.add((image: image, bands: bands));
+      assert(() {
+        _retainedAtlases++;
+        return true;
+      }());
     } else {
       previous.image.dispose();
       _atlases[level] = (image: image, bands: bands);
