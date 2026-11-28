@@ -1122,7 +1122,31 @@ class _PendingCatalog extends MockCatalogRepository implements OnlineCatalog {
   Stream<void> get changes => events.stream;
 
   @override
+  String get seasonTitle => '2026 春季新番';
+
+  @override
   Future<void> refresh() async {}
+
+  @override
+  Future<bool> loadMoreTrending({String? tag}) async => false;
+
+  @override
+  Future<BangumiProfile?> loadProfile(String token) async => null;
+
+  @override
+  Future<void> searchOnline(String query) async {}
+
+  @override
+  Future<List<AnimeSubject>> searchFiltered(
+    SearchFilter filter, {
+    int offset = 0,
+    int limit = 30,
+  }) async => const [];
+
+  @override
+  Future<Map<int, List<AnimeSubject>>> loadSeasonCalendar(
+    AnimeSeason season,
+  ) async => const {};
 
   @override
   Future<void> loadSubject(int id, {bool includeExtras = true}) async {
