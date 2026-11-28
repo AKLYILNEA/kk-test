@@ -837,10 +837,10 @@ class _RulesPageState extends ConsumerState<RulesPage> {
                   ),
                   sliver: SliverReorderableList(
                     itemCount: visible.length,
-                    onReorder: (oldIndex, newIndex) => unawaited(
+                    onReorderItem: (oldIndex, newIndex) => unawaited(
                       ref.read(rulesProvider.notifier).reorder(
                         oldIndex,
-                        newIndex,
+                        newIndex > oldIndex ? newIndex + 1 : newIndex,
                       ),
                     ),
                     itemBuilder: (context, index) => _buildRuleCard(

@@ -226,7 +226,7 @@ void main() {
       );
 
       // Batch removal removes the specified rule and persists.
-      final remaining = await rules.removeRules(const ['fixture']);
+      final remaining = await rules.removeRules(const {'fixture'});
       expect(remaining.map((r) => r.id), ['fixture api']);
       expect(
         KazumiRules(preferences).getAllRules().map((r) => r.id),
