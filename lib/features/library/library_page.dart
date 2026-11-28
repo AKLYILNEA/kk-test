@@ -8,6 +8,7 @@ import 'package:koneko/common/providers.dart';
 import 'package:koneko/features/detail/subject_detail_page.dart';
 import 'package:koneko/features/my/service_settings_page.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
+import 'package:koneko/ui/koneko_polygon.dart';
 import 'package:koneko/ui/koneko_scaffold.dart';
 import 'package:koneko/ui/koneko_sheet.dart';
 import 'package:koneko/ui/koneko_skeleton.dart';
@@ -140,7 +141,16 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                 KonekoGroup(
                   items: [
                     DecorationListItem(
-                      leading: const GlyphIcon(KonekoGlyphs.sync),
+                      leading: KonekoPolygonBadge(
+                        glyph: KonekoGlyphs.sync,
+                        shape: KonekoPolygons.sunny,
+                        size: 34,
+                        iconSize: 16,
+                        backgroundColor: const Color(
+                          0xFFF09199,
+                        ).withValues(alpha: 0.18),
+                        foregroundColor: const Color(0xFFD95B6A),
+                      ),
                       title: const Text('Bangumi 同步'),
                       subtitle: Text(hasBangumi ? '点击同步' : '未配置'),
                       trailing: _syncing
@@ -171,7 +181,16 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                             },
                     ),
                     DecorationListItem(
-                      leading: const GlyphIcon(KonekoGlyphs.cloud),
+                      leading: KonekoPolygonBadge(
+                        glyph: KonekoGlyphs.cloud,
+                        shape: KonekoPolygons.cookie6Sided,
+                        size: 34,
+                        iconSize: 16,
+                        backgroundColor: context.colorScheme.primary.withValues(
+                          alpha: 0.13,
+                        ),
+                        foregroundColor: context.colorScheme.primary,
+                      ),
                       title: const Text('WebDAV 同步'),
                       subtitle: Text(hasWebDav ? '点击同步' : '未配置'),
                       trailing: _syncing
@@ -203,7 +222,16 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                             },
                     ),
                     DecorationListItem(
-                      leading: const GlyphIcon(KonekoGlyphs.user),
+                      leading: KonekoPolygonBadge(
+                        glyph: KonekoGlyphs.user,
+                        shape: KonekoPolygons.cookie9Sided,
+                        size: 34,
+                        iconSize: 16,
+                        backgroundColor: SurfaceLevel.block.colorOf(
+                          context.colorScheme,
+                        ),
+                        foregroundColor: context.colorScheme.onSurfaceVariant,
+                      ),
                       title: const Text('同步设置'),
                       trailing: const GlyphIcon(Glyphs.chevronForward),
                       onPressed: () {
@@ -346,13 +374,15 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                 else if (filtered.isEmpty)
                   SliverFillRemaining(
                     hasScrollBody: false,
-                    child: Center(
-                      child: Text(
-                        _query.trim().isNotEmpty ? '没有匹配的追番记录' : '该分类下暂无番剧',
-                        style: AppTextStyle.subheadline
-                            .of(context)
-                            .copyWith(color: colorScheme.onSurfaceVariant),
-                      ),
+                    child: KonekoEmptyState(
+                      glyph: KonekoGlyphs.heart,
+                      shape: KonekoPolygons.cookie6Sided,
+                      title: _query.trim().isNotEmpty
+                          ? '没有匹配的追番记录'
+                          : '该分类下暂无番剧',
+                      subtitle: _query.trim().isNotEmpty
+                          ? '试试更换关键词或切换其他分类'
+                          : '在番剧详情页标记在看、想看后会自动出现在这里',
                     ),
                   )
                 else
@@ -448,10 +478,16 @@ class _LibraryFallbackCard extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             spacing: 8,
             children: [
-              GlyphIcon(
-                KonekoGlyphs.heart,
-                size: 22,
-                color: konekoStatusColor(entry.status),
+              KonekoPolygonBadge(
+                glyph: konekoStatusGlyph(entry.status, forBadge: true),
+                shape: KonekoPolygons.cookie6Sided,
+                size: 40,
+                iconSize: 18,
+                fill: 1,
+                backgroundColor: konekoStatusColor(
+                  entry.status,
+                ).withValues(alpha: 0.14),
+                foregroundColor: konekoStatusColor(entry.status),
               ),
               Text(
                 '条目 #${entry.subjectId}',

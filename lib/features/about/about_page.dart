@@ -6,12 +6,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:koneko/common/providers.dart';
 import 'package:koneko/common/constants.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
+import 'package:koneko/ui/koneko_polygon.dart';
 import 'package:koneko/ui/koneko_scaffold.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:koneko/ui/miuix/miuix_bg_effect.dart';
 import 'package:koneko/ui/miuix/miuix_frosted_card.dart';
 import 'package:prism_ui/icons/icons.dart';
 import 'package:prism_ui/prism_ui.dart';
+import 'package:prism_ui/shapes/shapes.dart' as shapes;
 import 'package:url_launcher/url_launcher.dart';
 
 /// 08 · 1:1 FlClash MIUIX About Page with dynamic fluid mesh shader,
@@ -166,16 +168,16 @@ class _AboutPageState extends ConsumerState<AboutPage>
     required String title,
     required String subtitle,
     required String url,
+    shapes.RoundedPolygon? shape,
   }) {
     return DecorationListItem(
-      leading: Container(
-        width: 36,
-        height: 36,
-        decoration: ShapeDecoration(
-          color: color.withValues(alpha: 0.14),
-          shape: AppShape.md,
-        ),
-        child: Center(child: GlyphIcon(glyph, size: 18, color: color)),
+      leading: KonekoPolygonBadge(
+        glyph: glyph,
+        shape: shape ?? KonekoPolygons.cookie4Sided,
+        size: 38,
+        iconSize: 18,
+        backgroundColor: color.withValues(alpha: 0.14),
+        foregroundColor: color,
       ),
       title: Text(title),
       subtitle: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),

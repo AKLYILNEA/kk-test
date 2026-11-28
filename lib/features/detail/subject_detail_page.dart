@@ -12,6 +12,7 @@ import 'package:koneko/features/player/rule_verify_page.dart';
 import 'package:koneko/features/rules/rules_page.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
 import 'package:koneko/ui/koneko_image.dart';
+import 'package:koneko/ui/koneko_polygon.dart';
 import 'package:koneko/ui/koneko_scaffold.dart';
 import 'package:koneko/ui/koneko_skeleton.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
@@ -1187,41 +1188,25 @@ class _CommentsSectionSliver extends StatelessWidget {
     if (showSkeleton) {
       status = null;
     } else if (commentsAsync.hasError && items.isEmpty) {
-      status = Padding(
-        padding: const EdgeInsets.symmetric(vertical: 20),
-        child: Center(
-          child: Column(
-            spacing: 8,
-            children: [
-              Text(
-                '评论加载失败，请检查网络后重试',
-                style: AppTextStyle.footnote
-                    .of(context)
-                    .copyWith(color: colorScheme.onSurfaceVariant),
-              ),
-              KonekoChip(
-                label: '重新加载',
-                height: 32,
-                fontSize: 12.5,
-                backgroundColor: colorScheme.primary,
-                foregroundColor: colorScheme.onPrimary,
-                onPressed: onRefresh,
-              ),
-            ],
+      status = KonekoEmptyState(
+        glyph: KonekoGlyphs.comment,
+        shape: KonekoPolygons.softBurst,
+        title: '评论加载失败，请检查网络后重试',
+        compact: true,
+        actions: [
+          KonekoRefreshChip(
+            label: '重新加载',
+            prominent: true,
+            onPressed: onRefresh,
           ),
-        ),
+        ],
       );
     } else if (items.isEmpty) {
-      status = Padding(
-        padding: const EdgeInsets.symmetric(vertical: 24),
-        child: Center(
-          child: Text(
-            '暂时还没有吐槽评论',
-            style: AppTextStyle.subheadline
-                .of(context)
-                .copyWith(color: colorScheme.onSurfaceVariant),
-          ),
-        ),
+      status = const KonekoEmptyState(
+        glyph: KonekoGlyphs.comment,
+        shape: KonekoPolygons.flower,
+        title: '暂时还没有吐槽评论',
+        compact: true,
       );
     } else {
       status = null;

@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/widgets.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
 import 'package:koneko/ui/koneko_image.dart';
+import 'package:koneko/ui/koneko_polygon.dart';
 import 'package:koneko_contract/koneko_contract.dart';
 import 'package:prism_ui/icons/icons.dart';
 import 'package:prism_ui/prism_ui.dart';
@@ -1016,7 +1017,7 @@ class KonekoSourceSurface extends StatelessWidget {
   }
 }
 
-/// Clean Apple/FlClash solid-primary check circle paired with
+/// Clean Apple/FlClash solid-primary polygon check seal paired with
 /// [KonekoSourceSurface] for unmistakable cross-page source selection.
 class KonekoSourceCheckBadge extends StatelessWidget {
   const KonekoSourceCheckBadge({super.key});
@@ -1024,20 +1025,13 @@ class KonekoSourceCheckBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
-    return Container(
-      width: 18,
-      height: 18,
-      decoration: ShapeDecoration(
-        color: colorScheme.primary,
-        shape: AppShape.full,
-      ),
-      child: Center(
-        child: GlyphIcon(
-          Glyphs.check,
-          size: 11,
-          color: colorScheme.onPrimary,
-        ),
-      ),
+    return KonekoPolygonBadge(
+      glyph: Glyphs.check,
+      shape: KonekoPolygons.cookie9Sided,
+      size: 20,
+      iconSize: 11,
+      backgroundColor: colorScheme.primary,
+      foregroundColor: colorScheme.onPrimary,
     );
   }
 }
@@ -1486,39 +1480,26 @@ class UnifiedAnimeCard extends StatelessWidget {
                         label: statusTooltip ?? '修改追番状态',
                         child: Tooltip(
                           message: statusTooltip ?? '修改追番状态',
-                          child: DecoratedBox(
-                            decoration: ShapeDecoration(
-                              shape: CircleBorder(
-                                side: BorderSide(
-                                  color: Colors.white.withValues(alpha: 0.28),
-                                  width: 1,
-                                ),
-                              ),
-                              shadows: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.24),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
+                          child: KonekoPolygonBadge(
+                            glyph: statusGlyph!,
+                            shape: KonekoPolygons.cookie6Sided,
+                            size: compact ? 28 : 30,
+                            iconSize: compact ? 13.5 : 14.5,
+                            fill: 1,
+                            backgroundColor: statusColor ?? colorScheme.primary,
+                            foregroundColor: Colors.white,
+                            borderSide: BorderSide(
+                              color: Colors.white.withValues(alpha: 0.30),
+                              width: 1,
                             ),
-                            child: SizedBox.square(
-                              dimension: compact ? 26 : 28,
-                              child: PressSurface(
-                                fill: statusColor ?? colorScheme.primary,
-                                shape: AppShape.full,
-                                clipsChild: true,
-                                onPressed: onStatusTap,
-                                child: Center(
-                                  child: GlyphIcon(
-                                    statusGlyph!,
-                                    fill: 1,
-                                    size: compact ? 14 : 15,
-                                    color: Colors.white,
-                                  ),
-                                ),
+                            shadows: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.24),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
                               ),
-                            ),
+                            ],
+                            onPressed: onStatusTap,
                           ),
                         ),
                       ),

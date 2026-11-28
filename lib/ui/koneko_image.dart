@@ -1,6 +1,8 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/widgets.dart';
+import 'package:koneko/ui/koneko_polygon.dart';
 import 'package:prism_ui/prism_ui.dart';
+import 'package:prism_ui/shapes/shapes.dart' as shapes;
 
 /// Fixed quantized decode width for all anime posters so every page (Home,
 /// Schedule, Library, History, Detail, Related) hits the EXACT SAME entry in
@@ -69,46 +71,67 @@ class KonekoNetworkImage extends StatelessWidget {
   }
 }
 
-/// Circular cached avatar for Bangumi comments and profiles.
+/// Expressive polygon cached avatar for Bangumi profiles, comments, and cast.
+/// Defaults to [KonekoPolygons.cookie9Sided] to align with Kazumi's M3
+/// expressive polygon language inside pure FlClash cards.
 class KonekoAvatar extends StatelessWidget {
   const KonekoAvatar({
     super.key,
     required this.name,
     this.avatarUrl,
     this.size = 38,
+    this.polygon,
+    this.backgroundColor,
+    this.foregroundColor,
+    this.borderSide = BorderSide.none,
   });
 
   final String name;
   final String? avatarUrl;
   final double size;
+  final shapes.RoundedPolygon? polygon;
+  final Color? backgroundColor;
+  final Color? foregroundColor;
+  final BorderSide borderSide;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
     final initial = name.trim().isNotEmpty ? name.trim().substring(0, 1) : '?';
     final fallback = ColoredBox(
-      color: colorScheme.primary.withValues(alpha: 0.14),
+      color: backgroundColor ?? colorScheme.primary.withValues(alpha: 0.14),
       child: Center(
         child: Text(
           initial,
           style: AppTextStyle.subheadline
               .of(context, emphasized: true)
-              .copyWith(color: colorScheme.primary),
+              .copyWith(
+                fontSize: (size * 0.40).clamp(12.0, 24.0),
+                color: foregroundColor ?? colorScheme.primary,
+              ),
         ),
       ),
     );
     final url = avatarUrl == null ? '' : normalizeKonekoImageUrl(avatarUrl!);
+    final border = KonekoPolygonBorder(
+      polygon ?? KonekoPolygons.cookie9Sided,
+      side: borderSide,
+    );
 
-    return ClipOval(
-      child: SizedBox.square(
-        dimension: size,
-        child: url.isEmpty || !url.startsWith('http')
-            ? fallback
-            : KonekoNetworkImage(
-                url: url,
-                placeholder: fallback,
-                memCacheWidth: kAvatarCacheWidth,
-              ),
+    return DecoratedBox(
+      decoration: ShapeDecoration(shape: border),
+      child: ClipPath(
+        clipper: ShapeBorderClipper(shape: border),
+        child: SizedBox.square(
+          dimension: size,
+          child: url.isEmpty || !url.startsWith('http')
+              ? fallback
+              : KonekoNetworkImage(
+                  url: url,
+                  placeholder: fallback,
+                  memCacheWidth: kAvatarCacheWidth,
+                ),
+        ),
       ),
     );
   }

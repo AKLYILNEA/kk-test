@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:koneko/common/providers.dart';
 import 'package:koneko/features/player/player_page.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
+import 'package:koneko/ui/koneko_polygon.dart';
 import 'package:koneko/ui/koneko_scaffold.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:koneko_contract/koneko_contract.dart';
@@ -35,18 +36,36 @@ class OfflinePage extends ConsumerWidget {
           estimatedItemExtent: 68,
           itemCount: entries.isEmpty ? 1 : entries.length,
           itemBuilder: (context, index) {
-            if (entries.isEmpty) return const KonekoCard(child: Text('暂无离线缓存'));
+            if (entries.isEmpty) {
+              return const KonekoEmptyState(
+                glyph: KonekoGlyphs.importFile,
+                shape: KonekoPolygons.cookie4Sided,
+                title: '暂无离线缓存',
+                subtitle: '可在播放器中下载剧集到本地，随时离线观看',
+              );
+            }
             final entry = entries[index];
+            final colorScheme = context.colorScheme;
+            final ready = entry.state == OfflineState.ready;
             return KonekoCard(
               key: ValueKey(entry.id),
               padding: const EdgeInsets.all(12),
               child: Row(
-                spacing: 8,
+                spacing: 10,
                 children: [
-                  GlyphIcon(
-                    entry.state == OfflineState.ready
-                        ? KonekoGlyphs.play
-                        : KonekoGlyphs.importFile,
+                  KonekoPolygonBadge(
+                    glyph: ready ? KonekoGlyphs.play : KonekoGlyphs.importFile,
+                    shape: ready
+                        ? KonekoPolygons.gem
+                        : KonekoPolygons.cookie4Sided,
+                    size: 40,
+                    iconSize: 18,
+                    backgroundColor: ready
+                        ? colorScheme.primary.withValues(alpha: 0.14)
+                        : SurfaceLevel.block.colorOf(colorScheme),
+                    foregroundColor: ready
+                        ? colorScheme.primary
+                        : colorScheme.onSurfaceVariant,
                   ),
                   Expanded(
                     child: Column(

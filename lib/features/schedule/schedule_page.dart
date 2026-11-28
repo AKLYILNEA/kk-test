@@ -6,6 +6,7 @@ import 'package:koneko/common/catalog_page_refresh.dart';
 import 'package:koneko/common/providers.dart';
 import 'package:koneko/features/detail/subject_detail_page.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
+import 'package:koneko/ui/koneko_polygon.dart';
 import 'package:koneko/ui/koneko_scaffold.dart';
 import 'package:koneko/ui/koneko_sheet.dart';
 import 'package:koneko/ui/koneko_skeleton.dart';
@@ -574,28 +575,30 @@ class _SchedulePageState extends ConsumerState<SchedulePage>
                 else if (items.isEmpty)
                   SliverFillRemaining(
                     hasScrollBody: false,
-                    child: Center(
-                      child: hasError
-                          ? TextButton(
-                              onPressed: () {
-                                if (_season.isCurrent) {
-                                  ref.invalidate(loadHomeCatalogProvider);
-                                } else {
-                                  unawaited(_selectSeason(_season));
-                                }
-                              },
-                              child: Text(_seasonError ?? '时间表加载失败，点此重试'),
-                            )
-                          : Text(
-                              _activeOptionCount > 0
-                                  ? '当前筛选条件下暂无放送条目'
-                                  : '当天暂无放送条目',
-                              style: AppTextStyle.subheadline
-                                  .of(context)
-                                  .copyWith(
-                                    color: colorScheme.onSurfaceVariant,
-                                  ),
-                            ),
+                    child: KonekoEmptyState(
+                      glyph: KonekoGlyphs.calendar,
+                      shape: hasError
+                          ? KonekoPolygons.softBurst
+                          : KonekoPolygons.pentagon,
+                      title: hasError
+                          ? (_seasonError ?? '时间表加载失败，点此重试')
+                          : (_activeOptionCount > 0
+                                ? '当前筛选条件下暂无放送条目'
+                                : '当天暂无放送条目'),
+                      actions: [
+                        if (hasError)
+                          KonekoRefreshChip(
+                            label: '重新加载',
+                            prominent: true,
+                            onPressed: () {
+                              if (_season.isCurrent) {
+                                ref.invalidate(loadHomeCatalogProvider);
+                              } else {
+                                unawaited(_selectSeason(_season));
+                              }
+                            },
+                          ),
+                      ],
                     ),
                   )
                 else

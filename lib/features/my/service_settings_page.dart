@@ -8,6 +8,7 @@ import 'package:koneko/common/feature_feedback.dart';
 import 'package:koneko/common/providers.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
 import 'package:koneko/ui/koneko_image.dart';
+import 'package:koneko/ui/koneko_polygon.dart';
 import 'package:koneko/ui/koneko_scaffold.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:koneko_contract/koneko_contract.dart';
@@ -426,25 +427,19 @@ class _ServiceSettingsPageState extends ConsumerState<ServiceSettingsPage>
                                   KonekoAvatar(
                                     name: profile.nickname,
                                     avatarUrl: profile.avatarUrl,
-                                    size: 42,
+                                    size: 46,
+                                    polygon: KonekoPolygons.cookie9Sided,
                                   )
                                 else
-                                  Container(
-                                    width: 42,
-                                    height: 42,
-                                    decoration: ShapeDecoration(
-                                      color: const Color(
-                                        0xFFE84C7F,
-                                      ).withValues(alpha: 0.14),
-                                      shape: AppShape.circle,
-                                    ),
-                                    child: const Center(
-                                      child: GlyphIcon(
-                                        KonekoGlyphs.user,
-                                        size: 19,
-                                        color: Color(0xFFE84C7F),
-                                      ),
-                                    ),
+                                  KonekoPolygonBadge(
+                                    glyph: KonekoGlyphs.user,
+                                    shape: KonekoPolygons.sunny,
+                                    size: 46,
+                                    iconSize: 20,
+                                    backgroundColor: const Color(
+                                      0xFFF09199,
+                                    ).withValues(alpha: 0.22),
+                                    foregroundColor: const Color(0xFFD95B6A),
                                   ),
                                 Expanded(
                                   child: Column(
@@ -500,9 +495,15 @@ class _ServiceSettingsPageState extends ConsumerState<ServiceSettingsPage>
                           KonekoGroup(
                             items: [
                               DecorationListItem(
-                                leading: GlyphIcon(
-                                  KonekoGlyphs.code,
-                                  color: colorScheme.primary,
+                                leading: KonekoPolygonBadge(
+                                  glyph: KonekoGlyphs.code,
+                                  shape: KonekoPolygons.hexagon,
+                                  size: 34,
+                                  iconSize: 16,
+                                  backgroundColor: const Color(
+                                    0xFFF09199,
+                                  ).withValues(alpha: 0.18),
+                                  foregroundColor: const Color(0xFFD95B6A),
                                 ),
                                 title: const Text('Access Token'),
                                 subtitle: Text(
@@ -514,9 +515,15 @@ class _ServiceSettingsPageState extends ConsumerState<ServiceSettingsPage>
                                 onPressed: _busy ? null : _editBangumiToken,
                               ),
                               DecorationListItem(
-                                leading: GlyphIcon(
-                                  KonekoGlyphs.externalLink,
-                                  color: colorScheme.onSurfaceVariant,
+                                leading: KonekoPolygonBadge(
+                                  glyph: KonekoGlyphs.externalLink,
+                                  shape: KonekoPolygons.cookie4Sided,
+                                  size: 34,
+                                  iconSize: 16,
+                                  backgroundColor: SurfaceLevel.block.colorOf(
+                                    colorScheme,
+                                  ),
+                                  foregroundColor: colorScheme.onSurfaceVariant,
                                 ),
                                 title: const Text('获取 Access Token'),
                                 subtitle: const Text(
@@ -533,9 +540,17 @@ class _ServiceSettingsPageState extends ConsumerState<ServiceSettingsPage>
                                 ),
                               ),
                               DecorationListItem(
-                                leading: GlyphIcon(
-                                  KonekoGlyphs.sync,
-                                  color: hasBangumi
+                                leading: KonekoPolygonBadge(
+                                  glyph: KonekoGlyphs.sync,
+                                  shape: KonekoPolygons.cookie9Sided,
+                                  size: 34,
+                                  iconSize: 16,
+                                  backgroundColor: hasBangumi
+                                      ? colorScheme.primary.withValues(
+                                          alpha: 0.13,
+                                        )
+                                      : SurfaceLevel.block.colorOf(colorScheme),
+                                  foregroundColor: hasBangumi
                                       ? colorScheme.primary
                                       : colorScheme.onSurfaceVariant,
                                 ),
@@ -564,9 +579,15 @@ class _ServiceSettingsPageState extends ConsumerState<ServiceSettingsPage>
                                       ),
                               ),
                               KonekoOptionsItem<BangumiSyncPriority>(
-                                leading: GlyphIcon(
-                                  KonekoGlyphs.tune,
-                                  color: colorScheme.onSurfaceVariant,
+                                leading: KonekoPolygonBadge(
+                                  glyph: KonekoGlyphs.tune,
+                                  shape: KonekoPolygons.pentagon,
+                                  size: 34,
+                                  iconSize: 16,
+                                  backgroundColor: SurfaceLevel.block.colorOf(
+                                    colorScheme,
+                                  ),
+                                  foregroundColor: colorScheme.onSurfaceVariant,
                                 ),
                                 title: const Text('冲突解决策略'),
                                 subtitle: Text(
@@ -580,9 +601,15 @@ class _ServiceSettingsPageState extends ConsumerState<ServiceSettingsPage>
                                 ),
                               ),
                               DecorationListItem(
-                                leading: GlyphIcon(
-                                  KonekoGlyphs.info,
-                                  color: colorScheme.onSurfaceVariant,
+                                leading: KonekoPolygonBadge(
+                                  glyph: KonekoGlyphs.info,
+                                  shape: KonekoPolygons.softBurst,
+                                  size: 34,
+                                  iconSize: 16,
+                                  backgroundColor: SurfaceLevel.block.colorOf(
+                                    colorScheme,
+                                  ),
+                                  foregroundColor: colorScheme.onSurfaceVariant,
                                 ),
                                 title: const Text('同步结果提示'),
                                 subtitle: const Text('追番同步后显示结果横幅'),
@@ -648,12 +675,80 @@ class _ServiceSettingsPageState extends ConsumerState<ServiceSettingsPage>
                           // WebDAV 多设备同步
                           // ---------------------------------------------------
                           const ListHeader(title: 'WebDAV 多设备同步'),
+                          KonekoCard(
+                            corner: 24,
+                            padding: const EdgeInsets.all(14),
+                            onPressed: _busy ? null : _editWebDavUrl,
+                            child: Row(
+                              spacing: 12,
+                              children: [
+                                KonekoPolygonBadge(
+                                  glyph: KonekoGlyphs.cloud,
+                                  shape: KonekoPolygons.cookie6Sided,
+                                  size: 46,
+                                  iconSize: 20,
+                                  backgroundColor: colorScheme.primary
+                                      .withValues(alpha: 0.14),
+                                  foregroundColor: colorScheme.primary,
+                                ),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    spacing: 2,
+                                    children: [
+                                      Text(
+                                        'WebDAV 云端备份',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: AppTextStyle.headline
+                                            .of(context, emphasized: true)
+                                            .copyWith(
+                                              color: colorScheme.onSurface,
+                                            ),
+                                      ),
+                                      Text(
+                                        hasWebDav
+                                            ? _hostLabel(_secrets.webdavUrl)
+                                            : '点击配置 WebDAV 地址，多端同步历史与追番',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: AppTextStyle.caption1
+                                            .of(context)
+                                            .copyWith(
+                                              color:
+                                                  colorScheme.onSurfaceVariant,
+                                            ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                KonekoChip(
+                                  label: hasWebDav ? '已配置' : '未配置',
+                                  height: 22,
+                                  fontSize: 11,
+                                  backgroundColor: hasWebDav
+                                      ? colorScheme.successContainer
+                                      : SurfaceLevel.block.colorOf(colorScheme),
+                                  foregroundColor: hasWebDav
+                                      ? colorScheme.onSuccessContainer
+                                      : colorScheme.onSurfaceVariant,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 10),
                           KonekoGroup(
                             items: [
                               DecorationListItem(
-                                leading: GlyphIcon(
-                                  KonekoGlyphs.cloud,
-                                  color: colorScheme.primary,
+                                leading: KonekoPolygonBadge(
+                                  glyph: KonekoGlyphs.cloud,
+                                  shape: KonekoPolygons.cookie6Sided,
+                                  size: 34,
+                                  iconSize: 16,
+                                  backgroundColor: colorScheme.primary
+                                      .withValues(alpha: 0.13),
+                                  foregroundColor: colorScheme.primary,
                                 ),
                                 title: const Text('服务器地址'),
                                 subtitle: Text(_hostLabel(_secrets.webdavUrl)),
@@ -663,9 +758,15 @@ class _ServiceSettingsPageState extends ConsumerState<ServiceSettingsPage>
                                 onPressed: _busy ? null : _editWebDavUrl,
                               ),
                               DecorationListItem(
-                                leading: GlyphIcon(
-                                  KonekoGlyphs.user,
-                                  color: colorScheme.onSurfaceVariant,
+                                leading: KonekoPolygonBadge(
+                                  glyph: KonekoGlyphs.user,
+                                  shape: KonekoPolygons.pentagon,
+                                  size: 34,
+                                  iconSize: 16,
+                                  backgroundColor: SurfaceLevel.block.colorOf(
+                                    colorScheme,
+                                  ),
+                                  foregroundColor: colorScheme.onSurfaceVariant,
                                 ),
                                 title: const Text('用户名'),
                                 subtitle: Text(
@@ -679,9 +780,15 @@ class _ServiceSettingsPageState extends ConsumerState<ServiceSettingsPage>
                                 onPressed: _busy ? null : _editWebDavUser,
                               ),
                               DecorationListItem(
-                                leading: GlyphIcon(
-                                  KonekoGlyphs.code,
-                                  color: colorScheme.onSurfaceVariant,
+                                leading: KonekoPolygonBadge(
+                                  glyph: KonekoGlyphs.code,
+                                  shape: KonekoPolygons.hexagon,
+                                  size: 34,
+                                  iconSize: 16,
+                                  backgroundColor: SurfaceLevel.block.colorOf(
+                                    colorScheme,
+                                  ),
+                                  foregroundColor: colorScheme.onSurfaceVariant,
                                 ),
                                 title: const Text('密码'),
                                 subtitle: Text(
@@ -695,9 +802,17 @@ class _ServiceSettingsPageState extends ConsumerState<ServiceSettingsPage>
                                 onPressed: _busy ? null : _editWebDavPassword,
                               ),
                               DecorationListItem(
-                                leading: GlyphIcon(
-                                  KonekoGlyphs.sync,
-                                  color: hasWebDav
+                                leading: KonekoPolygonBadge(
+                                  glyph: KonekoGlyphs.sync,
+                                  shape: KonekoPolygons.clover4Leaf,
+                                  size: 34,
+                                  iconSize: 16,
+                                  backgroundColor: hasWebDav
+                                      ? colorScheme.primary.withValues(
+                                          alpha: 0.13,
+                                        )
+                                      : SurfaceLevel.block.colorOf(colorScheme),
+                                  foregroundColor: hasWebDav
                                       ? colorScheme.primary
                                       : colorScheme.onSurfaceVariant,
                                 ),
@@ -847,9 +962,14 @@ class _ServiceSettingsPageState extends ConsumerState<ServiceSettingsPage>
                             KonekoGroup(
                               items: [
                                 DecorationListItem(
-                                  leading: GlyphIcon(
-                                    KonekoGlyphs.importFile,
-                                    color: colorScheme.primary,
+                                  leading: KonekoPolygonBadge(
+                                    glyph: KonekoGlyphs.importFile,
+                                    shape: KonekoPolygons.cookie4Sided,
+                                    size: 34,
+                                    iconSize: 16,
+                                    backgroundColor: colorScheme.primary
+                                        .withValues(alpha: 0.13),
+                                    foregroundColor: colorScheme.primary,
                                   ),
                                   title: const Text('从 Kazumi 备份导入'),
                                   subtitle: const Text(

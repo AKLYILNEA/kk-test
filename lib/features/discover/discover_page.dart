@@ -6,6 +6,7 @@ import 'package:koneko/common/catalog_page_refresh.dart';
 import 'package:koneko/common/providers.dart';
 import 'package:koneko/features/detail/subject_detail_page.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
+import 'package:koneko/ui/koneko_polygon.dart';
 import 'package:koneko/ui/koneko_scaffold.dart';
 import 'package:koneko/ui/koneko_sheet.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
@@ -886,23 +887,29 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage>
                 else if (_searchError != null && results.isEmpty)
                   SliverFillRemaining(
                     hasScrollBody: false,
-                    child: Center(
-                      child: TextButton(
-                        onPressed: () => unawaited(_executeSearch(_filter)),
-                        child: Text(_searchError!),
-                      ),
+                    child: KonekoEmptyState(
+                      glyph: Glyphs.search,
+                      shape: KonekoPolygons.softBurst,
+                      title: _searchError!,
+                      actions: [
+                        KonekoRefreshChip(
+                          label: '重试搜索',
+                          prominent: true,
+                          onPressed: () => unawaited(_executeSearch(_filter)),
+                        ),
+                      ],
                     ),
                   )
                 else if (results.isEmpty)
                   SliverFillRemaining(
                     hasScrollBody: false,
-                    child: Center(
-                      child: Text(
-                        _hasQueryOrFilter ? '未找到符合条件的番剧' : '输入番名或点击「按条件查找」开始探索',
-                        style: AppTextStyle.subheadline
-                            .of(context)
-                            .copyWith(color: colorScheme.onSurfaceVariant),
-                      ),
+                    child: KonekoEmptyState(
+                      glyph: Glyphs.search,
+                      shape: KonekoPolygons.pentagon,
+                      title: _hasQueryOrFilter
+                          ? '未找到符合条件的番剧'
+                          : '输入番名或点击「按条件查找」开始探索',
+                      compact: true,
                     ),
                   )
                 else ...[

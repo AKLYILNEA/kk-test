@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:koneko/common/feature_feedback.dart';
 import 'package:koneko/common/providers.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
+import 'package:koneko/ui/koneko_polygon.dart';
 import 'package:koneko/ui/koneko_scaffold.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:koneko_contract/koneko_contract.dart';
@@ -319,27 +320,45 @@ class _RulesPageState extends ConsumerState<RulesPage> {
           child: KonekoGroup(
             items: [
               DecorationListItem(
-                leading: GlyphIcon(
-                  KonekoGlyphs.resources,
-                  color: dialogContext.colorScheme.primary,
+                leading: KonekoPolygonBadge(
+                  glyph: KonekoGlyphs.resources,
+                  shape: KonekoPolygons.softBurst,
+                  size: 34,
+                  iconSize: 16,
+                  backgroundColor: dialogContext.colorScheme.primary.withValues(
+                    alpha: 0.13,
+                  ),
+                  foregroundColor: dialogContext.colorScheme.primary,
                 ),
                 title: const Text('从在线规则仓库安装'),
                 trailing: const GlyphIcon(Glyphs.chevronForward),
                 onPressed: () => Navigator.pop(dialogContext, 'store'),
               ),
               DecorationListItem(
-                leading: GlyphIcon(
-                  KonekoGlyphs.code,
-                  color: dialogContext.colorScheme.primary,
+                leading: KonekoPolygonBadge(
+                  glyph: KonekoGlyphs.code,
+                  shape: KonekoPolygons.hexagon,
+                  size: 34,
+                  iconSize: 16,
+                  backgroundColor: dialogContext.colorScheme.primary.withValues(
+                    alpha: 0.13,
+                  ),
+                  foregroundColor: dialogContext.colorScheme.primary,
                 ),
                 title: const Text('粘贴 JSON / 链接导入'),
                 trailing: const GlyphIcon(Glyphs.chevronForward),
                 onPressed: () => Navigator.pop(dialogContext, 'paste'),
               ),
               DecorationListItem(
-                leading: GlyphIcon(
-                  KonekoGlyphs.importFile,
-                  color: dialogContext.colorScheme.primary,
+                leading: KonekoPolygonBadge(
+                  glyph: KonekoGlyphs.importFile,
+                  shape: KonekoPolygons.cookie4Sided,
+                  size: 34,
+                  iconSize: 16,
+                  backgroundColor: dialogContext.colorScheme.primary.withValues(
+                    alpha: 0.13,
+                  ),
+                  foregroundColor: dialogContext.colorScheme.primary,
                 ),
                 title: const Text('从本地文件导入'),
                 trailing: const GlyphIcon(Glyphs.chevronForward),
@@ -420,24 +439,17 @@ class _RulesPageState extends ConsumerState<RulesPage> {
         child: Row(
           spacing: 10,
           children: [
-            Container(
-              width: 38,
-              height: 38,
-              decoration: ShapeDecoration(
-                color: rule.enabled
-                    ? colorScheme.primary.withValues(alpha: 0.12)
-                    : SurfaceLevel.block.colorOf(colorScheme),
-                shape: SuperellipseBorder(borderRadius: AppRadius.all(13)),
-              ),
-              child: Center(
-                child: GlyphIcon(
-                  KonekoGlyphs.puzzle,
-                  size: 18,
-                  color: rule.enabled
-                      ? colorScheme.primary
-                      : colorScheme.onSurfaceVariant,
-                ),
-              ),
+            KonekoPolygonBadge(
+              glyph: KonekoGlyphs.puzzle,
+              shape: KonekoPolygons.clover4Leaf,
+              size: 40,
+              iconSize: 19,
+              backgroundColor: rule.enabled
+                  ? colorScheme.primary.withValues(alpha: 0.13)
+                  : SurfaceLevel.block.colorOf(colorScheme),
+              foregroundColor: rule.enabled
+                  ? colorScheme.primary
+                  : colorScheme.onSurfaceVariant,
             ),
             Expanded(
               child: Column(
@@ -710,9 +722,15 @@ class _RulesPageState extends ConsumerState<RulesPage> {
                     child: KonekoGroup(
                       items: [
                         DecorationListItem(
-                          leading: GlyphIcon(
-                            KonekoGlyphs.resources,
-                            color: colorScheme.primary,
+                          leading: KonekoPolygonBadge(
+                            glyph: KonekoGlyphs.resources,
+                            shape: KonekoPolygons.softBurst,
+                            size: 36,
+                            iconSize: 18,
+                            backgroundColor: colorScheme.primary.withValues(
+                              alpha: 0.13,
+                            ),
+                            foregroundColor: colorScheme.primary,
                           ),
                           title: const Text('在线规则仓库'),
                           subtitle: Text(
@@ -788,43 +806,40 @@ class _RulesPageState extends ConsumerState<RulesPage> {
                   ),
                 ),
               if (allEntries.isEmpty)
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
-                  sliver: SliverToBoxAdapter(
-                    child: KonekoCard(
-                      corner: 24,
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        spacing: 12,
-                        children: [
-                          Text(
-                            '还没有安装播放规则',
-                            style: AppTextStyle.headline
-                                .of(context, emphasized: true)
-                                .copyWith(color: colorScheme.onSurface),
-                          ),
-                          Text(
-                            '安装一条播放规则后即可自动搜索剧集与线路。可从上方在线规则仓库一键安装，或点击右上角「+」导入。',
-                            style: AppTextStyle.subheadline
-                                .of(context)
-                                .copyWith(color: colorScheme.onSurfaceVariant),
-                          ),
-                        ],
-                      ),
-                    ),
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: KonekoEmptyState(
+                    glyph: KonekoGlyphs.puzzle,
+                    shape: KonekoPolygons.clover4Leaf,
+                    title: '还没有安装播放规则',
+                    subtitle: '安装一条播放规则后即可自动搜索剧集与线路，可从在线仓库一键安装或右上角导入。',
+                    actions: [
+                      if (managed != null)
+                        KonekoChip(
+                          label: '打开在线仓库',
+                          height: 36,
+                          fontSize: 13,
+                          selected: true,
+                          elevated: true,
+                          onPressed: () async {
+                            await BaseNavigator.push<void>(
+                              context,
+                              _RuleStorePage(repository: managed),
+                            );
+                            if (mounted) unawaited(_refreshCatalogIndex());
+                          },
+                        ),
+                    ],
                   ),
                 )
               else if (visible.isEmpty)
-                SliverFillRemaining(
+                const SliverFillRemaining(
                   hasScrollBody: false,
-                  child: Center(
-                    child: Text(
-                      '没有符合条件的规则',
-                      style: AppTextStyle.subheadline
-                          .of(context)
-                          .copyWith(color: colorScheme.onSurfaceVariant),
-                    ),
+                  child: KonekoEmptyState(
+                    glyph: Glyphs.search,
+                    shape: KonekoPolygons.pentagon,
+                    title: '没有符合条件的规则',
+                    compact: true,
                   ),
                 )
               else if (_sorting && canReorder)
@@ -1395,13 +1410,11 @@ class _RuleStorePageState extends ConsumerState<_RuleStorePage>
           else if (filtered.isEmpty)
             SliverFillRemaining(
               hasScrollBody: false,
-              child: Center(
-                child: Text(
-                  allItems.isEmpty ? '仓库内暂无可用规则' : '没有符合条件的规则',
-                  style: AppTextStyle.subheadline
-                      .of(context)
-                      .copyWith(color: colorScheme.onSurfaceVariant),
-                ),
+              child: KonekoEmptyState(
+                glyph: KonekoGlyphs.resources,
+                shape: KonekoPolygons.cookie4Sided,
+                title: allItems.isEmpty ? '仓库内暂无可用规则' : '没有符合条件的规则',
+                compact: true,
               ),
             )
           else
@@ -1438,26 +1451,19 @@ class _RuleStorePageState extends ConsumerState<_RuleStorePage>
                     child: Row(
                       spacing: 12,
                       children: [
-                        Container(
-                          width: 40,
-                          height: 40,
-                          decoration: ShapeDecoration(
-                            color: upToDate
-                                ? colorScheme.successContainer
-                                : colorScheme.primary.withValues(alpha: 0.12),
-                            shape: SuperellipseBorder(
-                              borderRadius: AppRadius.all(13),
-                            ),
-                          ),
-                          child: Center(
-                            child: GlyphIcon(
-                              upToDate ? Glyphs.check : KonekoGlyphs.puzzle,
-                              size: 18,
-                              color: upToDate
-                                  ? colorScheme.onSuccessContainer
-                                  : colorScheme.primary,
-                            ),
-                          ),
+                        KonekoPolygonBadge(
+                          glyph: upToDate ? Glyphs.check : KonekoGlyphs.puzzle,
+                          shape: upToDate
+                              ? KonekoPolygons.cookie9Sided
+                              : KonekoPolygons.clover4Leaf,
+                          size: 42,
+                          iconSize: 19,
+                          backgroundColor: upToDate
+                              ? colorScheme.successContainer
+                              : colorScheme.primary.withValues(alpha: 0.13),
+                          foregroundColor: upToDate
+                              ? colorScheme.onSuccessContainer
+                              : colorScheme.primary,
                         ),
                         Expanded(
                           child: Column(

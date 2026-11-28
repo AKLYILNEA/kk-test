@@ -9,6 +9,7 @@ import 'package:koneko/features/detail/subject_detail_page.dart';
 import 'package:koneko/features/discover/discover_page.dart';
 import 'package:koneko/features/history/history_page.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
+import 'package:koneko/ui/koneko_polygon.dart';
 import 'package:koneko/ui/koneko_scaffold.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:koneko_contract/koneko_contract.dart';
@@ -190,11 +191,24 @@ class _HomePageState extends ConsumerState<HomePage>
                 if (subjects.isEmpty)
                   SliverFillRemaining(
                     hasScrollBody: false,
-                    child: Center(
-                      child: loading.isLoading || _loadingMore
-                          ? const ActivityIndicator.page()
-                          : Text(loading.hasError ? '加载失败，请稍后重试' : '暂无番剧'),
-                    ),
+                    child: loading.isLoading || _loadingMore
+                        ? const Center(child: ActivityIndicator.page())
+                        : KonekoEmptyState(
+                            glyph: KonekoGlyphs.home,
+                            shape: loading.hasError
+                                ? KonekoPolygons.softBurst
+                                : KonekoPolygons.sunny,
+                            title: loading.hasError ? '加载失败，请稍后重试' : '暂无番剧',
+                            actions: [
+                              if (loading.hasError)
+                                KonekoRefreshChip(
+                                  label: '重新加载',
+                                  prominent: true,
+                                  onPressed: () =>
+                                      ref.invalidate(loadHomeCatalogProvider),
+                                ),
+                            ],
+                          ),
                   )
                 else ...[
                   SliverPadding(

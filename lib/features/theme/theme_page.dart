@@ -10,6 +10,7 @@ import 'package:koneko/features/theme/font_family_page.dart';
 import 'package:koneko/features/theme/theme_preview.dart';
 import 'package:koneko/ui/koneko_danmaku_sheet.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
+import 'package:koneko/ui/koneko_polygon.dart';
 import 'package:koneko/ui/koneko_scaffold.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:koneko/ui/palette.dart';
@@ -451,11 +452,22 @@ class _FontAndDanmakuSection extends StatelessWidget {
                       child: Row(
                         spacing: 12,
                         children: [
-                          Text(
-                            'Aa',
-                            style: AppTextStyle.headline
-                                .of(context)
-                                .copyWith(fontFamily: family),
+                          KonekoPolygonBadge(
+                            shape: KonekoPolygons.cookie6Sided,
+                            size: 36,
+                            backgroundColor: colorScheme.primary.withValues(
+                              alpha: 0.13,
+                            ),
+                            foregroundColor: colorScheme.primary,
+                            child: Text(
+                              'Aa',
+                              style: AppTextStyle.footnote
+                                  .of(context, emphasized: true)
+                                  .copyWith(
+                                    fontFamily: family,
+                                    color: colorScheme.primary,
+                                  ),
+                            ),
                           ),
                           Expanded(
                             child: Text(
@@ -483,9 +495,15 @@ class _FontAndDanmakuSection extends StatelessWidget {
               ),
               generateGroup([
                 DecorationListItem(
-                  leading: GlyphIcon(
-                    KonekoGlyphs.danmaku,
-                    color: colorScheme.onSurfaceVariant,
+                  leading: KonekoPolygonBadge(
+                    glyph: KonekoGlyphs.danmaku,
+                    shape: KonekoPolygons.flower,
+                    size: 36,
+                    iconSize: 17,
+                    backgroundColor: colorScheme.primary.withValues(
+                      alpha: 0.13,
+                    ),
+                    foregroundColor: colorScheme.primary,
                   ),
                   title: const Text('弹幕设置'),
                   subtitle: const Text('区域、样式与来源'),

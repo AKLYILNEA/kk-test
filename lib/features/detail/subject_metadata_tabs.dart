@@ -1,7 +1,9 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:koneko/common/providers.dart';
+import 'package:koneko/ui/koneko_glyphs.dart';
 import 'package:koneko/ui/koneko_image.dart';
+import 'package:koneko/ui/koneko_polygon.dart';
 import 'package:koneko/ui/koneko_skeleton.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:koneko_contract/koneko_contract.dart';
@@ -258,13 +260,23 @@ class _MetadataList<T> extends StatelessWidget {
     error: (_, _) => SliverToBoxAdapter(
       child: KonekoCard(
         onPressed: onRetry,
-        child: Text('$label加载失败，点此重试', textAlign: TextAlign.center),
+        child: KonekoEmptyState(
+          glyph: KonekoGlyphs.info,
+          shape: KonekoPolygons.softBurst,
+          title: '$label加载失败，点此重试',
+          compact: true,
+        ),
       ),
     ),
     data: (items) => items.isEmpty
         ? SliverToBoxAdapter(
             child: KonekoCard(
-              child: Text('暂无$label', textAlign: TextAlign.center),
+              child: KonekoEmptyState(
+                glyph: KonekoGlyphs.user,
+                shape: KonekoPolygons.cookie4Sided,
+                title: '暂无$label',
+                compact: true,
+              ),
             ),
           )
         : SliverPrismList(

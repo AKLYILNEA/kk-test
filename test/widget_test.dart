@@ -21,6 +21,7 @@ import 'package:koneko/features/theme/theme_page.dart';
 import 'package:koneko/features/theme/theme_preview.dart';
 import 'package:koneko/main.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
+import 'package:koneko/ui/koneko_polygon.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:koneko_contract/koneko_contract.dart';
 import 'package:koneko_mock/koneko_mock.dart';
@@ -1058,6 +1059,51 @@ void main() {
       await tester.tap(_barAction('调整规则排序'));
       await tester.pumpAndSettle();
       expect(find.byType(SliverReorderableList), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'v0.0.26: MyPage renders Bangumi hero & expressive Kazumi polygon badges on mobile and desktop',
+    (tester) async {
+      // Mobile viewport
+      _setViewport(tester, const Size(420, 880));
+      await tester.pumpWidget(_testApp());
+      await tester.pumpAndSettle();
+
+      final dock = find.byType(NavigationDock);
+      await tester.tap(find.descendant(of: dock, matching: find.text('我的')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('bgm.tv'), findsOneWidget);
+      expect(find.text('在看番剧'), findsOneWidget);
+      expect(find.text('观看集数'), findsOneWidget);
+      expect(find.text('规则管理'), findsOneWidget);
+      expect(find.byType(KonekoPolygonBadge), findsWidgets);
+
+      // Navigate to OfflinePage and verify expressive KonekoEmptyState
+      await tester.tap(find.text('离线缓存'));
+      await tester.pumpAndSettle();
+      expect(find.byType(KonekoEmptyState), findsOneWidget);
+      expect(find.text('暂无离线缓存'), findsOneWidget);
+      await tester.tap(_barAction('返回'));
+      await tester.pumpAndSettle();
+
+      // Wide desktop/tablet viewport
+      _setViewport(tester, const Size(1100, 800));
+      await tester.pumpWidget(_testApp());
+      await tester.pumpAndSettle();
+
+      final sidebarMy = find.descendant(
+        of: find.byType(NavigationSidebar),
+        matching: find.text('我的'),
+      );
+      await tester.tap(sidebarMy);
+      await tester.pumpAndSettle();
+
+      expect(find.text('bgm.tv'), findsOneWidget);
+      expect(find.text('观看足迹'), findsOneWidget);
+      expect(find.byType(KonekoPolygonBadge), findsWidgets);
       expect(tester.takeException(), isNull);
     },
   );

@@ -18,6 +18,7 @@ import 'package:koneko/features/rules/rules_page.dart';
 import 'package:koneko/ui/koneko_comments.dart';
 import 'package:koneko/ui/koneko_danmaku_sheet.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
+import 'package:koneko/ui/koneko_polygon.dart';
 import 'package:koneko/ui/koneko_sheet.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:koneko_contract/koneko_contract.dart';
@@ -2647,22 +2648,15 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
               Row(
                 spacing: 10,
                 children: [
-                  Container(
-                    width: 34,
-                    height: 34,
-                    decoration: ShapeDecoration(
-                      color: colorScheme.primary.withValues(alpha: 0.12),
-                      shape: SuperellipseBorder(
-                        borderRadius: AppRadius.all(11),
-                      ),
+                  KonekoPolygonBadge(
+                    glyph: KonekoGlyphs.danmaku,
+                    shape: KonekoPolygons.flower,
+                    size: 36,
+                    iconSize: 16,
+                    backgroundColor: colorScheme.primary.withValues(
+                      alpha: 0.13,
                     ),
-                    child: Center(
-                      child: GlyphIcon(
-                        KonekoGlyphs.danmaku,
-                        size: 16,
-                        color: colorScheme.primary,
-                      ),
-                    ),
+                    foregroundColor: colorScheme.primary,
                   ),
                   Expanded(
                     child: Column(
@@ -2758,22 +2752,15 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
               Row(
                 spacing: 10,
                 children: [
-                  Container(
-                    width: 34,
-                    height: 34,
-                    decoration: ShapeDecoration(
-                      color: colorScheme.primary.withValues(alpha: 0.12),
-                      shape: SuperellipseBorder(
-                        borderRadius: AppRadius.all(11),
-                      ),
+                  KonekoPolygonBadge(
+                    glyph: KonekoGlyphs.layers,
+                    shape: KonekoPolygons.gem,
+                    size: 36,
+                    iconSize: 16,
+                    backgroundColor: colorScheme.primary.withValues(
+                      alpha: 0.13,
                     ),
-                    child: Center(
-                      child: GlyphIcon(
-                        KonekoGlyphs.layers,
-                        size: 16,
-                        color: colorScheme.primary,
-                      ),
-                    ),
+                    foregroundColor: colorScheme.primary,
                   ),
                   Expanded(
                     child: Text(
@@ -2896,22 +2883,15 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                     Row(
                       spacing: 10,
                       children: [
-                        Container(
-                          width: 34,
-                          height: 34,
-                          decoration: ShapeDecoration(
-                            color: colorScheme.primary.withValues(alpha: 0.12),
-                            shape: SuperellipseBorder(
-                              borderRadius: AppRadius.all(11),
-                            ),
+                        KonekoPolygonBadge(
+                          glyph: KonekoGlyphs.puzzle,
+                          shape: KonekoPolygons.clover4Leaf,
+                          size: 36,
+                          iconSize: 16,
+                          backgroundColor: colorScheme.primary.withValues(
+                            alpha: 0.13,
                           ),
-                          child: Center(
-                            child: GlyphIcon(
-                              KonekoGlyphs.puzzle,
-                              size: 16,
-                              color: colorScheme.primary,
-                            ),
-                          ),
+                          foregroundColor: colorScheme.primary,
                         ),
                         Expanded(
                           child: Column(

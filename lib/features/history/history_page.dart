@@ -10,6 +10,7 @@ import 'package:koneko/common/providers.dart';
 import 'package:koneko/features/detail/subject_detail_page.dart';
 import 'package:koneko/features/player/player_page.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
+import 'package:koneko/ui/koneko_polygon.dart';
 import 'package:koneko/ui/koneko_scaffold.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:koneko_contract/koneko_contract.dart';
@@ -140,15 +141,13 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
               ),
             ),
             if (visible.isEmpty)
-              SliverFillRemaining(
+              const SliverFillRemaining(
                 hasScrollBody: false,
-                child: Center(
-                  child: Text(
-                    '暂无历史记录',
-                    style: AppTextStyle.subheadline
-                        .of(context)
-                        .copyWith(color: colorScheme.onSurfaceVariant),
-                  ),
+                child: KonekoEmptyState(
+                  glyph: KonekoGlyphs.history,
+                  shape: KonekoPolygons.cookie6Sided,
+                  title: '暂无历史记录',
+                  subtitle: '观看过的番剧会自动记录播放进度与上次线路',
                 ),
               )
             else
