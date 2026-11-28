@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
@@ -86,24 +87,31 @@ abstract final class KonekoPolygons {
       ).transformed(_rotated(math.pi / 8)).normalized();
 }
 
-/// First-class [OutlinedBorder] backed by a [shapes.RoundedPolygon] with
-/// zero-allocation normalized path caching so polygons compose natively with
-/// FlClash's [DecoratedBox], [ShapeDecoration], [PressSurface], and shadows.
+/// An [OutlinedBorder] with shared, size-specific rounded polygon geometry.
 class KonekoPolygonBorder extends OutlinedBorder {
   const KonekoPolygonBorder(this.polygon, {super.side = BorderSide.none});
 
   final shapes.RoundedPolygon polygon;
 
-  static final Expando<Path> _unitPaths = Expando<Path>('konekoPolygonPaths');
-
-  static Path _unitPathOf(shapes.RoundedPolygon polygon) =>
-      _unitPaths[polygon] ??= polygon.toPath();
+  static const _cachedSizesPerShape = 8;
+  static final _unitPaths = Expando<Path>();
+  static final _sizedPaths = Expando<LinkedHashMap<Size, Path>>();
 
   Path _scaledPath(Rect rect) {
-    final unit = _unitPathOf(polygon);
-    final matrix = Matrix4.translationValues(rect.left, rect.top, 0)
-      ..multiply(Matrix4.diagonal3Values(rect.width, rect.height, 1));
-    return unit.transform(matrix.storage);
+    final sizes = _sizedPaths[polygon] ??= LinkedHashMap<Size, Path>();
+    final size = rect.size;
+    final cached = sizes.remove(size);
+    final path =
+        cached ??
+        (_unitPaths[polygon] ??= polygon.toPath()).transform(
+          Matrix4.diagonal3Values(size.width, size.height, 1).storage,
+        );
+    sizes[size] = path;
+    if (sizes.length > _cachedSizesPerShape) sizes.remove(sizes.keys.first);
+    // ShapeBorder callers can mutate the path they receive.
+    return rect.topLeft == Offset.zero
+        ? Path.from(path)
+        : path.shift(rect.topLeft);
   }
 
   @override

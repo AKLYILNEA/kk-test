@@ -860,6 +860,67 @@ void main() {
   );
 
   testWidgets(
+    'playing position updates the timeline without rebuilding HUD actions',
+    (tester) async {
+      _setViewport(tester, const Size(420, 880));
+      final playback = _FixturePlayback();
+      await tester.pumpWidget(_testApp(playback: playback));
+      await tester.pumpAndSettle();
+
+      unawaited(
+        BaseNavigator.push<void>(
+          tester.element(find.byType(NavigationDock)),
+          PlayerPage(
+            subjectId: 1001,
+            initialEpisode: 1,
+            initialRuleId: 'offline-fixture',
+            initialRuleName: '离线',
+            offline: OfflineEpisode(
+              id: 'offline-episode',
+              subjectId: 1001,
+              subjectTitle: '离线测试',
+              number: 1,
+              ruleId: 'offline-fixture',
+              ruleName: '离线',
+              state: OfflineState.ready,
+              media: Uri.file('/fixture.mp4'),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      for (var i = 0; i < 60 && !playback.opened; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(playback.opened, isTrue);
+      playback.emit(const Duration(seconds: 1));
+      await tester.pump();
+      expect(find.text('正在缓冲…'), findsNothing);
+      expect(find.text('00:01 / 02:00', findRichText: true), findsOneWidget);
+      final fullscreen = find.byTooltip('全屏播放');
+      final action = tester.widget(fullscreen);
+      for (final milliseconds in [1250, 1750, 2000, 2750]) {
+        playback.emit(Duration(milliseconds: milliseconds));
+        await tester.pump();
+        expect(tester.widget(fullscreen), same(action));
+      }
+      expect(find.text('00:02 / 02:00', findRichText: true), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pump(const Duration(milliseconds: 200));
+      playback.emit(const Duration(seconds: 12));
+      await tester.pump();
+      expect(find.text('00:12 / 02:00', findRichText: true), findsNothing);
+      await tester.tapAt(const Offset(210, 150));
+      await tester.pump();
+      expect(find.text('00:12 / 02:00', findRichText: true), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    },
+  );
+
+  testWidgets(
     'tablet landscape playback covers sidebar and supports true fullscreen',
     (tester) async {
       _setViewport(tester, const Size(1100, 800));
@@ -1120,17 +1181,20 @@ void _setViewport(WidgetTester tester, Size size) {
   addTearDown(tester.view.resetDevicePixelRatio);
 }
 
-Widget _testApp({CatalogRepository? catalog}) => ProviderScope(
-  overrides: [
-    catalogRepositoryProvider.overrideWithValue(
-      catalog ?? MockCatalogRepository(),
-    ),
-    ruleRepositoryProvider.overrideWithValue(MockRuleRepository()),
-    libraryProvider.overrideWith(_FixtureLibrary.new),
-    historyProvider.overrideWith(_FixtureHistory.new),
-  ],
-  child: const KonekoApp(),
-);
+Widget _testApp({CatalogRepository? catalog, PlaybackSession? playback}) =>
+    ProviderScope(
+      overrides: [
+        catalogRepositoryProvider.overrideWithValue(
+          catalog ?? MockCatalogRepository(),
+        ),
+        ruleRepositoryProvider.overrideWithValue(MockRuleRepository()),
+        if (playback != null)
+          playbackFactoryProvider.overrideWithValue(() => playback),
+        libraryProvider.overrideWith(_FixtureLibrary.new),
+        historyProvider.overrideWith(_FixtureHistory.new),
+      ],
+      child: const KonekoApp(),
+    );
 
 class _FixtureLibrary extends LibraryNotifier {
   @override
@@ -1149,6 +1213,49 @@ class _CustomFixtureLibrary extends LibraryNotifier {
 class _FixtureHistory extends HistoryNotifier {
   @override
   List<MergedHistoryEntry> build() => MockSeedData.initialMergedHistory();
+}
+
+class _FixturePlayback implements PlaybackSession {
+  final _updates = StreamController<PlaybackStatus>.broadcast();
+  bool opened = false;
+
+  @override
+  PlaybackStatus status = const PlaybackStatus();
+
+  @override
+  Stream<PlaybackStatus> get changes => _updates.stream;
+
+  void emit(Duration position) {
+    status = PlaybackStatus(
+      position: position,
+      duration: const Duration(minutes: 2),
+      playing: true,
+    );
+    _updates.add(status);
+  }
+
+  @override
+  Future<void> open(
+    PlayableMedia media, {
+    Duration startAt = Duration.zero,
+  }) async {
+    opened = true;
+  }
+
+  @override
+  Future<void> setPlaying(bool playing) async {}
+
+  @override
+  Future<void> seek(Duration position) async {}
+
+  @override
+  Future<void> setRate(double rate) async {}
+
+  @override
+  Future<void> setUpscaling(bool enabled) async {}
+
+  @override
+  Future<void> dispose() => _updates.close();
 }
 
 class _PendingCatalog extends MockCatalogRepository implements OnlineCatalog {

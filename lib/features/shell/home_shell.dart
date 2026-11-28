@@ -300,7 +300,6 @@ class _ShellPagesState extends ConsumerState<_ShellPages> {
                       controller: _controller,
                       position: position,
                       fade: widget.mode == TabAnimationMode.fade,
-                      active: active,
                       child: body,
                     );
             },
@@ -316,14 +315,12 @@ class _TabPage extends StatefulWidget {
     required this.controller,
     required this.position,
     required this.fade,
-    required this.active,
     required this.child,
   });
 
   final PageController controller;
   final int position;
   final bool fade;
-  final bool active;
   final Widget child;
 
   @override
@@ -331,6 +328,28 @@ class _TabPage extends StatefulWidget {
 }
 
 class _TabPageState extends State<_TabPage> {
+  final _fadeOffset = ValueNotifier(0.0);
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.fade) widget.controller.addListener(_updateFadeOffset);
+    _updateFadeOffset();
+  }
+
+  @override
+  void didUpdateWidget(covariant _TabPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.fade != widget.fade ||
+        oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_updateFadeOffset);
+      if (widget.fade) widget.controller.addListener(_updateFadeOffset);
+    }
+    _updateFadeOffset();
+  }
+
+  void _updateFadeOffset() => _fadeOffset.value = widget.fade ? _delta : 0;
+
   double get _delta {
     final controller = widget.controller;
     if (!controller.hasClients) return 0;
@@ -345,14 +364,19 @@ class _TabPageState extends State<_TabPage> {
   }
 
   @override
+  void dispose() {
+    widget.controller.removeListener(_updateFadeOffset);
+    _fadeOffset.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final glass = LiquidGlassScope.of(context);
     final rtl = Directionality.of(context) == TextDirection.rtl;
-    return AnimatedBuilder(
-      animation: widget.controller,
-      builder: (_, child) {
-        final offset = _delta;
-        final delta = widget.fade ? offset : 0.0;
+    return ValueListenableBuilder(
+      valueListenable: _fadeOffset,
+      builder: (_, delta, child) {
         return FractionalTranslation(
           translation: Offset(rtl ? delta : -delta, 0),
           child: Opacity(opacity: 1 - delta.abs(), child: child),

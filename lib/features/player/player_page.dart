@@ -66,6 +66,16 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   PlaybackSession? _session;
   final _viewportKey = GlobalKey();
   final _playbackStatus = ValueNotifier(const PlaybackStatus());
+  final _stageStatus = ValueNotifier((
+    playing: false,
+    buffering: false,
+    hasError: false,
+    duration: Duration.zero,
+    awaitingFirstPosition: false,
+  ));
+  final _timeline = ValueNotifier((position: 0, duration: 0));
+  final _scrub = ValueNotifier<double?>(null);
+  late final _timelineChanges = Listenable.merge([_timeline, _scrub]);
 
   PlaybackStatus get _status => _playbackStatus.value;
   StreamSubscription<PlaybackStatus>? _subscription;
@@ -96,7 +106,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   bool _upscale = false;
   double _speed = 1;
   double _brightness = 1;
-  double? _scrub;
   double? _scrubStart;
   bool _changingBrightness = false;
   _PanelTab _panelTab = _PanelTab.play;
@@ -176,6 +185,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     _sourcesRevision.dispose();
     unawaited(_subscription?.cancel());
     _playbackStatus.dispose();
+    _stageStatus.dispose();
+    _timeline.dispose();
+    _scrub.dispose();
     unawaited(_session?.dispose());
     super.dispose();
   }
@@ -203,7 +215,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
 
   void _armHudAutoHide() {
     _hudTimer?.cancel();
-    if (!_showHud || !_status.playing || _drawerOpen) return;
+    if (!_showHud || !_status.playing || _drawerOpen || _scrub.value != null) {
+      return;
+    }
     _hudTimer = Timer(const Duration(seconds: 3), () {
       if (mounted && _status.playing && !_drawerOpen) {
         setState(() => _showHud = false);
@@ -311,7 +325,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
         status.error == null &&
         (status.position > startingPosition || status.completed);
     if (started) _positionAtOpen = null;
-    _playbackStatus.value = status;
+    _publishStatus(status);
     if (_source case final source? when started) {
       unawaited(
         ref
@@ -323,6 +337,29 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     _watchBuffering();
     if (completed) _checkpoint();
     if (startedPlaying) _armHudAutoHide();
+  }
+
+  void _publishStatus(PlaybackStatus status) {
+    final previous = _status;
+    if (status.position != previous.position ||
+        status.duration != previous.duration ||
+        status.playing != previous.playing ||
+        status.buffering != previous.buffering ||
+        status.completed != previous.completed ||
+        status.error != previous.error) {
+      _playbackStatus.value = status;
+    }
+    _timeline.value = (
+      position: status.position.inSeconds,
+      duration: status.duration.inSeconds,
+    );
+    _stageStatus.value = (
+      playing: status.playing,
+      buffering: status.buffering,
+      hasError: status.error != null,
+      duration: status.duration,
+      awaitingFirstPosition: _positionAtOpen != null,
+    );
   }
 
   bool _isCurrent(int request) => mounted && request == _request;
@@ -349,8 +386,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
         _ruleId = source.ruleId;
         _ruleName = source.ruleName;
       }
-      _playbackStatus.value = session.status;
-      _positionAtOpen = _status.position;
+      final status = session.status;
+      _positionAtOpen = status.position;
+      _publishStatus(status);
       _loading = false;
       _loadingHint = null;
       _loaded = true;
@@ -557,7 +595,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       _errorVerifyHint = null;
       _errorVerifyRuleId = null;
       _errorVerifyRuleName = null;
-      _scrub = null;
+      _scrub.value = null;
       _scrubStart = null;
       _danmaku = const [];
       _danmakuError = null;
@@ -679,7 +717,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       _errorVerifyHint = null;
       _errorVerifyRuleId = null;
       _errorVerifyRuleName = null;
-      _scrub = null;
+      _scrub.value = null;
       _scrubStart = null;
       _danmaku = const [];
       _danmakuError = null;
@@ -1522,8 +1560,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     final overlay = ref.watch(danmakuViewportProvider);
     final danmakuSettings = ref.watch(danmakuSettingsProvider);
     final offline = widget.offline != null;
-    final videoStage = ValueListenableBuilder<PlaybackStatus>(
-      valueListenable: _playbackStatus,
+    // Position changes only reach the timeline and the danmaku overlay.
+    final videoStage = ValueListenableBuilder(
+      valueListenable: _stageStatus,
       child: RepaintBoundary(
         key: _viewportKey,
         child: session != null && viewport != null
@@ -1532,7 +1571,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
             ? Opacity(opacity: .35, child: KonekoPosterArt(subject: subject))
             : const SizedBox.expand(),
       ),
-      builder: (context, status, picture) {
+      builder: (context, _, picture) {
+        final status = _status;
         final error =
             _error ??
             (_loaded &&
@@ -1726,7 +1766,13 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
               if (_showDanmaku && _danmaku.isNotEmpty && overlay != null)
                 Positioned.fill(
                   child: IgnorePointer(
-                    child: overlay(_danmaku, status, danmakuSettings),
+                    child: RepaintBoundary(
+                      child: ValueListenableBuilder(
+                        valueListenable: _playbackStatus,
+                        builder: (_, status, _) =>
+                            overlay(_danmaku, status, danmakuSettings),
+                      ),
+                    ),
                   ),
                 ),
             ],
@@ -1738,7 +1784,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
             !_waitingForPlayback &&
             _loaded &&
             !status.playing &&
-            _scrub == null)
+            _scrub.value == null)
           Center(
             child: IgnorePointer(
               ignoring: !_showHud,
@@ -1971,65 +2017,74 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
               ),
             ),
           ),
-        if (_scrub != null && status.duration.inSeconds > 0)
-          Center(
-            child: _HudSurface(
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                spacing: 3,
-                children: [
-                  Text.rich(
-                    TextSpan(
-                      children: [
-                        TextSpan(
-                          text: formatDurationShort(_scrub!.round()),
-                          style: AppTextStyle.title3
-                              .of(context, emphasized: true)
-                              .copyWith(
-                                color: Colors.white,
-                                fontFeatures: const [
-                                  FontFeature.tabularFigures(),
-                                ],
-                              ),
-                        ),
-                        TextSpan(
-                          text:
-                              '  /  ${formatDurationShort(status.duration.inSeconds)}',
-                          style: AppTextStyle.footnote
-                              .of(context)
-                              .copyWith(
-                                color: Colors.white.withValues(alpha: 0.60),
-                                fontFeatures: const [
-                                  FontFeature.tabularFigures(),
-                                ],
-                              ),
-                        ),
-                      ],
-                    ),
+        if (_scrub.value != null && status.duration.inSeconds > 0)
+          ValueListenableBuilder(
+            valueListenable: _scrub,
+            builder: (context, value, _) {
+              if (value == null) return const SizedBox.shrink();
+              return Center(
+                child: _HudSurface(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 10,
                   ),
-                  if (_scrubStart != null)
-                    Builder(
-                      builder: (context) {
-                        final delta = (_scrub! - _scrubStart!).round();
-                        if (delta == 0) return const SizedBox.shrink();
-                        final sign = delta > 0 ? '+' : '-';
-                        return Text(
-                          '$sign${formatDurationShort(delta.abs())}',
-                          style: AppTextStyle.caption1
-                              .of(context, emphasized: true)
-                              .copyWith(
-                                color: Colors.white.withValues(alpha: 0.78),
-                                fontFeatures: const [
-                                  FontFeature.tabularFigures(),
-                                ],
-                              ),
-                        );
-                      },
-                    ),
-                ],
-              ),
-            ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    spacing: 3,
+                    children: [
+                      Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(
+                              text: formatDurationShort(value.round()),
+                              style: AppTextStyle.title3
+                                  .of(context, emphasized: true)
+                                  .copyWith(
+                                    color: Colors.white,
+                                    fontFeatures: const [
+                                      FontFeature.tabularFigures(),
+                                    ],
+                                  ),
+                            ),
+                            TextSpan(
+                              text:
+                                  '  /  ${formatDurationShort(status.duration.inSeconds)}',
+                              style: AppTextStyle.footnote
+                                  .of(context)
+                                  .copyWith(
+                                    color: Colors.white.withValues(alpha: 0.60),
+                                    fontFeatures: const [
+                                      FontFeature.tabularFigures(),
+                                    ],
+                                  ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (_scrubStart != null)
+                        Builder(
+                          builder: (context) {
+                            final delta = (value - _scrubStart!).round();
+                            if (delta == 0) return const SizedBox.shrink();
+                            final sign = delta > 0 ? '+' : '-';
+                            return Text(
+                              '$sign${formatDurationShort(delta.abs())}',
+                              style: AppTextStyle.caption1
+                                  .of(context, emphasized: true)
+                                  .copyWith(
+                                    color: Colors.white.withValues(alpha: 0.78),
+                                    fontFeatures: const [
+                                      FontFeature.tabularFigures(),
+                                    ],
+                                  ),
+                            );
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+              );
+            },
           ),
         // Top HUD bar — pure borderless white cinema iconography over smooth vignette
         Positioned(
@@ -2152,7 +2207,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                 const Duration(milliseconds: 180),
               ),
               curve: Curves.easeOutCubic,
-              child: _controls(context, status, session, offline, safe),
+              child: RepaintBoundary(
+                child: _controls(context, status, session, offline, safe),
+              ),
             ),
           ),
         ),
@@ -3335,11 +3392,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     bool offline,
     EdgeInsets safe,
   ) {
-    final duration = status.duration.inSeconds;
-    final position = status.position.inSeconds;
-    final max = math.max(1, duration).toDouble();
-    final value = (_scrub ?? position.toDouble()).clamp(0.0, max);
-    final progress = duration > 0 ? (value / max).clamp(0.0, 1.0) : 0.0;
     final canAdvance = _choices.any(
       (episode) => episode.number == _episode + 1,
     );
@@ -3374,32 +3426,51 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       ),
     );
 
-    final scrubber = _VideoProgressBar(
-      progress: progress,
-      enabled: duration > 0 && _loaded,
-      scrubbing: _scrub != null,
-      onScrubStart: (ratio) {
-        _hudTimer?.cancel();
-        setState(() {
-          _scrubStart = position.toDouble();
-          _scrub = ratio * max;
-        });
-      },
-      onScrubUpdate: (ratio) {
-        _hudTimer?.cancel();
-        setState(() => _scrub = ratio * max);
-      },
-      onScrubEnd: (ratio, {required bool cancelled}) {
-        setState(() {
-          _scrub = null;
-          _scrubStart = null;
-        });
-        if (!cancelled) {
-          unawaited(session?.seek(Duration(seconds: (ratio * max).round())));
-        }
-        _armHudAutoHide();
-      },
-    );
+    Widget timeline(Widget Function(BuildContext, int, int) builder) =>
+        ListenableBuilder(
+          listenable: _showHud
+              ? _timelineChanges
+              : const AlwaysStoppedAnimation(0),
+          builder: (context, _) {
+            final (position: position, duration: duration) = _timeline.value;
+            final value = (_scrub.value?.round() ?? position).clamp(
+              0,
+              math.max(1, duration),
+            );
+            return builder(context, value, duration);
+          },
+        );
+
+    Widget scrubber(int duration) {
+      final max = math.max(1, duration).toDouble();
+      final value = (_scrub.value ?? _timeline.value.position.toDouble()).clamp(
+        0.0,
+        max,
+      );
+      return _VideoProgressBar(
+        progress: duration > 0 ? value / max : 0,
+        enabled: duration > 0 && _loaded,
+        scrubbing: _scrub.value != null,
+        onScrubStart: (ratio) {
+          _hudTimer?.cancel();
+          setState(() {
+            _scrubStart = _timeline.value.position.toDouble();
+            _scrub.value = ratio * max;
+          });
+        },
+        onScrubUpdate: (ratio) => _scrub.value = ratio * max,
+        onScrubEnd: (ratio, {required bool cancelled}) {
+          setState(() {
+            _scrub.value = null;
+            _scrubStart = null;
+          });
+          if (!cancelled) {
+            unawaited(session?.seek(Duration(seconds: (ratio * max).round())));
+          }
+          _armHudAutoHide();
+        },
+      );
+    }
 
     // Pure cinema minimal portrait bottom bar
     if (!_fullscreen) {
@@ -3422,7 +3493,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           children: [
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 2),
-              child: scrubber,
+              child: timeline((_, _, duration) => scrubber(duration)),
             ),
             SizedBox(
               height: 38,
@@ -3442,25 +3513,27 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                           },
                   ),
                   const SizedBox(width: 2),
-                  Text.rich(
-                    TextSpan(
-                      children: [
-                        TextSpan(
-                          text: formatDurationShort(value.round()),
-                          style: _style(context, small: true).copyWith(
-                            fontSize: 12,
-                            color: Colors.white,
-                            fontWeight: FontWeight.w500,
+                  timeline(
+                    (context, value, duration) => Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(
+                            text: formatDurationShort(value),
+                            style: _style(context, small: true).copyWith(
+                              fontSize: 12,
+                              color: Colors.white,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
-                        ),
-                        TextSpan(
-                          text: ' / ${formatDurationShort(duration)}',
-                          style: _style(context, small: true).copyWith(
-                            fontSize: 11.5,
-                            color: Colors.white.withValues(alpha: 0.56),
+                          TextSpan(
+                            text: ' / ${formatDurationShort(duration)}',
+                            style: _style(context, small: true).copyWith(
+                              fontSize: 11.5,
+                              color: Colors.white.withValues(alpha: 0.56),
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                   const Spacer(),
@@ -3503,25 +3576,27 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
         mainAxisSize: MainAxisSize.min,
         spacing: 2,
         children: [
-          Row(
-            spacing: 12,
-            children: [
-              Text(
-                formatDurationShort(value.round()),
-                style: _style(
-                  context,
-                  small: true,
-                ).copyWith(color: Colors.white),
-              ),
-              Expanded(child: scrubber),
-              Text(
-                formatDurationShort(duration),
-                style: _style(
-                  context,
-                  small: true,
-                ).copyWith(color: Colors.white.withValues(alpha: 0.68)),
-              ),
-            ],
+          timeline(
+            (context, value, duration) => Row(
+              spacing: 12,
+              children: [
+                Text(
+                  formatDurationShort(value),
+                  style: _style(
+                    context,
+                    small: true,
+                  ).copyWith(color: Colors.white),
+                ),
+                Expanded(child: scrubber(duration)),
+                Text(
+                  formatDurationShort(duration),
+                  style: _style(
+                    context,
+                    small: true,
+                  ).copyWith(color: Colors.white.withValues(alpha: 0.68)),
+                ),
+              ],
+            ),
           ),
           SizedBox(
             height: 42,
@@ -3529,7 +3604,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
               spacing: 4,
               children: [
                 _bareIcon(
-                  glyph: status.playing ? KonekoGlyphs.pause : KonekoGlyphs.play,
+                  glyph: status.playing
+                      ? KonekoGlyphs.pause
+                      : KonekoGlyphs.play,
                   tooltip: status.playing ? '暂停' : '播放',
                   size: 22,
                   onPressed: !_loaded
