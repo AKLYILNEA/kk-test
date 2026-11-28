@@ -668,23 +668,6 @@ abstract final class KonekoGlyphs {
     ], role: GlyphRole.detail),
   ]);
 
-  static const pureBlack = Glyph([
-    GlyphBox(3, 3.5, 21, 16.5, 2.5),
-    GlyphPath(
-      'M7 6H17A1.5 1.5 0 0 1 18.5 7.5V12.5A1.5 1.5 0 0 1 17 14H7A1.5 1.5 0 0 1 5.5 12.5V7.5A1.5 1.5 0 0 1 7 6Z',
-      role: GlyphRole.detail,
-      solid: true,
-    ),
-    GlyphPolyline([
-      GlyphVertex(12, 16.5),
-      GlyphVertex(12, 20.4),
-    ], role: GlyphRole.line),
-    GlyphPolyline([
-      GlyphVertex(8, 20.4),
-      GlyphVertex(16, 20.4),
-    ], role: GlyphRole.line),
-  ]);
-
   static const eyedropper = Glyph([
     GlyphPolyline([
       GlyphVertex(4.79, 19.21, 0.9),

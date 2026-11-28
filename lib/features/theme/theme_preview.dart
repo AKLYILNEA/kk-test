@@ -38,7 +38,7 @@ class PreviewChoiceGroup<T> extends StatelessWidget {
       children: [
         InfoHeader(info: info),
         Padding(
-          padding: context.listInsets.page(top: infoSectionContentGap),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
           child: generateGroup([
             for (final choice in choices)
               DecorationListItem(
@@ -199,7 +199,7 @@ class _ThemeLivePreviewState extends ConsumerState<ThemeLivePreview>
     final corner = AppCorner.fit(_phoneWidth);
 
     return Container(
-      margin: EdgeInsets.symmetric(horizontal: context.listInsets.margin),
+      margin: const EdgeInsets.symmetric(horizontal: 16),
       padding: const EdgeInsets.symmetric(vertical: 24),
       alignment: Alignment.center,
       decoration: ShapeDecoration(

@@ -766,15 +766,14 @@ class KonekoOptionsItem<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final insets = context.listInsets;
     PopupOpen? openMenu;
     return DecorationListItem(
       leading: leading,
       title: title,
       subtitle: subtitle,
-      contentPadding: EdgeInsetsDirectional.only(
-        start: insets.leading,
-        end: insets.trailing - _endInset,
+      contentPadding: const EdgeInsetsDirectional.only(
+        start: 16,
+        end: 16 - _endInset,
       ),
       onPressed: () => openMenu?.call(),
       trailing: PopupAnchor(

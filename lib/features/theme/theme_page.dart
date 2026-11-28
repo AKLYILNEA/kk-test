@@ -284,7 +284,7 @@ class _ThemeColorSection extends ConsumerWidget {
           ],
         ),
         Padding(
-          padding: context.listInsets.page(top: infoSectionContentGap),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             spacing: 8,
@@ -481,7 +481,7 @@ class _FontAndDanmakuSection extends StatelessWidget {
           info: Info(label: '字体与弹幕', glyph: KonekoGlyphs.font),
         ),
         Padding(
-          padding: context.listInsets.page(top: infoSectionContentGap),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             spacing: 8,
@@ -596,7 +596,7 @@ class _TextScaleSectionState extends ConsumerState<_TextScaleSection> {
           ],
         ),
         Padding(
-          padding: context.listInsets.page(top: infoSectionContentGap),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
           child: Column(
             spacing: 8,
             children: [
