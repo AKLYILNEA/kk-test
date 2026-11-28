@@ -1,6 +1,5 @@
 import 'dart:math' as math;
 
-import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 import 'package:prism_ui/prism_ui.dart';
 
@@ -299,50 +298,15 @@ class KonekoSkeletonFade extends StatelessWidget {
   }
 }
 
-/// Kazumi-style first-entrance gate for bottom-dock / sidebar tab pages.
-///
-/// On the very first switch into a tab, keeps the initial transition frames
-/// ultra-light by showing static placeholders while the tab animation runs,
-/// then flips [tabEntered] once so subsequent visits stay live with zero flash.
-/// Driven by a [Ticker] (not a raw Timer) so Flutter's frame scheduler and
-/// `pumpAndSettle` settle deterministically with zero dangling timers.
-mixin TabEntranceMixin<T extends StatefulWidget>
-    on State<T>, TickerProvider {
-  static const _entranceDuration = Duration(milliseconds: 160);
-
+/// Keeps the first entrance on static placeholders until the tab is active.
+mixin TabEntranceMixin<T extends StatefulWidget> on State<T> {
   bool _tabEntered = false;
-  Ticker? _entranceTicker;
 
   bool get tabEntered => _tabEntered;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_tabEntered) return;
-    if (!PageActivityScope.isActiveOf(context)) {
-      _entranceTicker?.stop();
-      return;
-    }
-    if (context.disableAnimations) {
-      _tabEntered = true;
-      return;
-    }
-    _entranceTicker ??= createTicker((elapsed) {
-      if (elapsed >= _entranceDuration) {
-        _entranceTicker?.stop();
-        if (mounted && !_tabEntered) {
-          setState(() => _tabEntered = true);
-        }
-      }
-    });
-    if (!_entranceTicker!.isActive) {
-      _entranceTicker!.start();
-    }
-  }
-
-  @override
-  void dispose() {
-    _entranceTicker?.dispose();
-    super.dispose();
+    _tabEntered = _tabEntered || PageActivityScope.isActiveOf(context);
   }
 }

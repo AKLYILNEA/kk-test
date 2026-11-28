@@ -13,10 +13,14 @@ import 'package:koneko/common/ui_localizations.dart';
 import 'package:koneko/features/about/about_page.dart';
 import 'package:koneko/features/detail/subject_detail_page.dart';
 import 'package:koneko/features/discover/discover_page.dart';
+import 'package:koneko/features/home/home_page.dart';
+import 'package:koneko/features/library/library_page.dart';
+import 'package:koneko/features/my/my_page.dart';
 import 'package:koneko/features/my/service_settings_page.dart';
 import 'package:koneko/features/player/player_page.dart';
 import 'package:koneko/features/player/rule_verify_page.dart';
 import 'package:koneko/features/rules/rules_page.dart';
+import 'package:koneko/features/schedule/schedule_page.dart';
 import 'package:koneko/features/theme/theme_page.dart';
 import 'package:koneko/features/theme/theme_preview.dart';
 import 'package:koneko/main.dart';
@@ -75,6 +79,99 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('星海旅人：北境编年史'), findsWidgets);
   });
+
+  for (final mode in TabAnimationMode.values) {
+    testWidgets(
+      'dock ${mode.name} reuses both snapshots and preserves page state',
+      (tester) async {
+        _setViewport(tester, const Size(420, 880));
+        await tester.pumpWidget(_testApp());
+        await tester.pumpAndSettle();
+
+        final dock = find.byType(NavigationDock);
+        final container = ProviderScope.containerOf(tester.element(dock));
+        container
+            .read(themeSettingsProvider.notifier)
+            .update((settings) => settings.copyWith(tabAnimation: mode));
+        await tester.pumpAndSettle();
+
+        final home = find.byType(HomePage);
+        final homeElement = tester.element(home);
+        final homeScroll = find.descendant(
+          of: home,
+          matching: find.byType(CustomScrollView),
+        );
+        final position = tester
+            .widget<CustomScrollView>(homeScroll)
+            .controller!;
+        position.jumpTo(320);
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.descendant(of: dock, matching: find.text('我的')));
+        await tester.pump();
+        final myScroll = find.descendant(
+          of: find.byType(MyPage),
+          matching: find.byType(CustomScrollView),
+        );
+        Finder snapshot(int index) => find.byKey(
+          ValueKey('dock-page-snapshot-$index'),
+          skipOffstage: false,
+        );
+        bool snapshotting(int index) => tester
+            .widget<SnapshotWidget>(snapshot(index))
+            .controller
+            .allowSnapshotting;
+
+        expect(snapshotting(0), isTrue);
+        expect(snapshotting(3), isTrue);
+        final homeBody = tester.renderObject(homeScroll);
+        final myBody = tester.renderObject(myScroll);
+
+        final previousProfiling = debugProfilePaintsEnabled;
+        final previousCallback = debugOnProfilePaint;
+        var scenePaints = 0;
+        debugProfilePaintsEnabled = true;
+        debugOnProfilePaint = (object) {
+          if (identical(object, homeBody) || identical(object, myBody)) {
+            scenePaints++;
+          }
+        };
+        addTearDown(() {
+          debugProfilePaintsEnabled = previousProfiling;
+          debugOnProfilePaint = previousCallback;
+        });
+
+        final topAtRest = tester.getTopLeft(homeScroll);
+        for (var i = 0; i < 8; i++) {
+          await tester.pump(const Duration(milliseconds: 16));
+          expect(snapshotting(0), isTrue);
+          expect(snapshotting(3), isTrue);
+        }
+        expect(scenePaints, 0);
+        final movingX = tester.getTopLeft(homeScroll).dx;
+        if (mode == TabAnimationMode.slide) {
+          expect(movingX, lessThan(topAtRest.dx));
+        } else {
+          expect(movingX, topAtRest.dx);
+        }
+
+        final navigation = container.read(navIndexProvider.notifier);
+        navigation.select(1);
+        navigation.select(2);
+        await tester.pumpAndSettle();
+        expect(find.byType(LibraryPage), findsOneWidget);
+        expect(find.byType(SchedulePage, skipOffstage: false), findsNothing);
+        for (final index in [0, 2, 3]) {
+          expect(snapshotting(index), isFalse);
+        }
+
+        navigation.select(0);
+        await tester.pumpAndSettle();
+        expect(tester.element(home), same(homeElement));
+        expect(position.offset, 320);
+      },
+    );
+  }
 
   test(
     'system and Han text fonts take precedence, with Twemoji on emoji spans',

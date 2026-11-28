@@ -36,7 +36,6 @@ class SchedulePage extends ConsumerStatefulWidget {
 
 class _SchedulePageState extends ConsumerState<SchedulePage>
     with
-        SingleTickerProviderStateMixin,
         RouteMotionHoldMixin<SchedulePage>,
         CatalogPageRefreshMixin<SchedulePage>,
         TabEntranceMixin<SchedulePage> {

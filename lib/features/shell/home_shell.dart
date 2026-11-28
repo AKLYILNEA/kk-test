@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:koneko/common/constants.dart';
@@ -52,11 +50,7 @@ class HomeShell extends ConsumerWidget {
 
     if (isMobile) {
       final dockInset = NavigationDock.insetOf(context) + 8;
-      final pages = _ShellPages(
-        count: _mobileDestinations.length,
-        mode: mode,
-        bottomPadding: dockInset,
-      );
+      final pages = _MobilePages(mode: mode, bottomPadding: dockInset);
 
       return Surface(
         color: SurfaceLevel.page.colorOf(colorScheme),
@@ -122,13 +116,7 @@ class HomeShell extends ConsumerWidget {
               ),
             ),
           ),
-          Expanded(
-            child: _ShellPages(
-              count: _desktopDestinations.length,
-              mode: mode,
-              desktop: true,
-            ),
-          ),
+          Expanded(child: _DesktopPages(count: _desktopDestinations.length)),
         ],
       ),
     );
@@ -139,70 +127,296 @@ const _mobileIndices = [0, 1, 2, 8];
 
 int _mobileIndexOf(int index) => index.clamp(0, 3);
 
-// The PageView preserves each destination. For distant switches it swaps the
-// outgoing page into the adjacent slot so intermediate pages never flash by.
-class _ShellPages extends ConsumerStatefulWidget {
-  const _ShellPages({
-    required this.count,
-    required this.mode,
-    this.desktop = false,
-    this.bottomPadding = 0,
-  });
+class _MobilePages extends ConsumerStatefulWidget {
+  const _MobilePages({required this.mode, required this.bottomPadding});
 
-  final int count;
   final TabAnimationMode mode;
   final double bottomPadding;
-  final bool desktop;
 
   @override
-  ConsumerState<_ShellPages> createState() => _ShellPagesState();
+  ConsumerState<_MobilePages> createState() => _MobilePagesState();
 }
 
-class _ShellPagesState extends ConsumerState<_ShellPages> {
-  late final _controller = PageController(
-    initialPage: _mapIndex(ref.read(navIndexProvider)),
-  );
+class _MobilePagesState extends ConsumerState<_MobilePages>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _progress;
+  late final _outgoingOpacity = ReverseAnimation(_progress);
   final _pages = <int, Widget>{};
-  List<int>? _order;
-  int _switch = 0;
 
-  int _mapIndex(int index) =>
-      widget.desktop ? index.clamp(0, widget.count - 1) : _mobileIndexOf(index);
+  late int _shown;
+  late int _requested;
+  int? _arriving;
+  bool _prepared = false;
+  late TabAnimationMode _mode;
 
   @override
   void initState() {
     super.initState();
-    // Read before a selection change can initialize the controller.
+    _progress = AnimationController(vsync: this)
+      ..addStatusListener(_onMotionStatus);
+    _shown = _requested = _mobileIndexOf(ref.read(navIndexProvider));
+    _rememberPage(_shown);
+    ref.listenManual(navIndexProvider.select(_mobileIndexOf), (_, index) {
+      if (_arriving == null) {
+        _requested = index;
+        _startSwitch();
+      } else {
+        setState(() => _requested = index);
+      }
+    });
+  }
+
+  void _rememberPage(int index) {
+    _pages.putIfAbsent(index, () {
+      final inset = widget.bottomPadding;
+      return PageFocusScope(
+        child: switch (index) {
+          0 => HomePage(bottomPadding: inset),
+          1 => SchedulePage(bottomPadding: inset),
+          2 => LibraryPage(bottomPadding: inset),
+          _ => MyPage(bottomPadding: inset),
+        },
+      );
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _MobilePages oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.bottomPadding == oldWidget.bottomPadding) return;
+    final visited = _pages.keys.toList();
+    _pages.clear();
+    for (final index in visited) {
+      _rememberPage(index);
+    }
+  }
+
+  void _startSwitch() {
+    if (_shown == _requested) return;
+    final destination = _requested;
+    final instant = context.disableAnimations;
+    _progress.value = 0;
+    setState(() {
+      _rememberPage(destination);
+      if (instant) {
+        _shown = destination;
+      } else {
+        _mode = widget.mode;
+        _arriving = destination;
+      }
+    });
+    if (instant) return;
+
+    // The first paint prepares both pages at rest while the old scene covers
+    // the incoming one. The first animated frame can reuse both snapshots.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _arriving != destination) return;
+      setState(() => _prepared = true);
+      final fade = _mode == TabAnimationMode.fade;
+      _progress.animateTo(
+        1,
+        duration: fade ? fadeTabDuration : kTabScrollDuration,
+        curve: fade ? fadeTabCurve : Curves.easeOut,
+      );
+    });
+  }
+
+  void _onMotionStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _progress.isCompleted) _finishSwitch();
+    });
+  }
+
+  void _finishSwitch() {
+    final arriving = _arriving;
+    if (arriving == null) return;
+    _progress.stop();
+    setState(() {
+      _shown = arriving;
+      _arriving = null;
+      _prepared = false;
+    });
+    // The dock responds immediately. Coalesce further taps to the latest
+    // destination so an in-flight pair of pages never jumps mid-transition.
+    _startSwitch();
+  }
+
+  @override
+  void dispose() {
+    _progress.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final arriving = _arriving;
+    final fade = arriving != null && _mode == TabAnimationMode.fade;
+    final rtl = Directionality.of(context) == TextDirection.rtl;
+    final direction = arriving != null && (arriving > _shown) != rtl
+        ? 1.0
+        : -1.0;
+    final order = [
+      for (final index in _pages.keys)
+        if (index != _shown && index != arriving) index,
+      ?arriving,
+      _shown,
+    ];
+    return ClipRect(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          for (final index in order)
+            _MobileTabLayer(
+              key: ValueKey(index),
+              index: index,
+              shown: index == _shown || index == arriving,
+              active: arriving == null && index == _shown,
+              snapshot:
+                  arriving != null && (index == _shown || index == arriving),
+              onTouch: _prepared && index == arriving && arriving == _requested
+                  ? _finishSwitch
+                  : null,
+              // The departing opaque scene fades over the new scene.
+              opacity: _prepared && fade && index == _shown
+                  ? _outgoingOpacity
+                  : kAlwaysCompleteAnimation,
+              offset: _prepared && !fade
+                  ? Tween<Offset>(
+                      begin: index == arriving
+                          ? Offset(direction, 0)
+                          : Offset.zero,
+                      end: index == arriving
+                          ? Offset.zero
+                          : Offset(-direction, 0),
+                    ).animate(_progress)
+                  : const AlwaysStoppedAnimation(Offset.zero),
+              child: _pages[index]!,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MobileTabLayer extends StatefulWidget {
+  const _MobileTabLayer({
+    super.key,
+    required this.index,
+    required this.shown,
+    required this.active,
+    required this.snapshot,
+    required this.onTouch,
+    required this.opacity,
+    required this.offset,
+    required this.child,
+  });
+
+  final int index;
+  final bool shown;
+  final bool active;
+  final bool snapshot;
+  final VoidCallback? onTouch;
+  final Animation<double> opacity;
+  final Animation<Offset> offset;
+  final Widget child;
+
+  @override
+  State<_MobileTabLayer> createState() => _MobileTabLayerState();
+}
+
+class _MobileTabLayerState extends State<_MobileTabLayer> {
+  late final _snapshot = SnapshotController(allowSnapshotting: widget.snapshot);
+
+  @override
+  void didUpdateWidget(covariant _MobileTabLayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _snapshot.allowSnapshotting = widget.snapshot;
+  }
+
+  @override
+  void dispose() {
+    _snapshot.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final onTouch = widget.onTouch;
+    return Offstage(
+      offstage: !widget.shown,
+      child: IgnorePointer(
+        ignoring: !widget.active && onTouch == null,
+        child: ExcludeSemantics(
+          excluding: !widget.active,
+          child: Listener(
+            onPointerDown: onTouch == null ? null : (_) => onTouch(),
+            child: SlideTransition(
+              position: widget.offset,
+              child: FadeTransition(
+                opacity: widget.opacity,
+                child: RepaintBoundary(
+                  child: SnapshotWidget(
+                    key: ValueKey('dock-page-snapshot-${widget.index}'),
+                    controller: _snapshot,
+                    mode: SnapshotMode.permissive,
+                    autoresize: true,
+                    child: LiquidGlassHost(
+                      enabled: LiquidGlassScope.of(context),
+                      child: _pageActivity(widget.active, widget.child),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+Widget _pageActivity(bool active, Widget child) => PageActivityScope(
+  isActive: active,
+  child: TickerMode(
+    enabled: active,
+    child: ExcludeFocus(
+      excluding: !active,
+      child: KeyboardInsetHold(child: child),
+    ),
+  ),
+);
+
+class _DesktopPages extends ConsumerStatefulWidget {
+  const _DesktopPages({required this.count});
+
+  final int count;
+
+  @override
+  ConsumerState<_DesktopPages> createState() => _DesktopPagesState();
+}
+
+class _DesktopPagesState extends ConsumerState<_DesktopPages> {
+  late final _controller = PageController(initialPage: _selectedIndex);
+  final _pages = <int, Widget>{};
+
+  int get _selectedIndex =>
+      ref.read(navIndexProvider).clamp(0, widget.count - 1);
+
+  @override
+  void initState() {
+    super.initState();
     final controller = _controller;
-    ref.listenManual(navIndexProvider, (previous, next) {
-      final index = _mapIndex(next);
-      if (previous != null && index == _mapIndex(previous)) return;
-      final request = ++_switch;
+    ref.listenManual(navIndexProvider, (_, _) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && controller.hasClients && request == _switch) {
-          unawaited(_showPage(index, request));
+        if (mounted && controller.hasClients) {
+          controller.jumpToPage(_selectedIndex);
         }
       });
     });
   }
 
-  @override
-  void didUpdateWidget(covariant _ShellPages oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.bottomPadding != oldWidget.bottomPadding ||
-        widget.desktop != oldWidget.desktop) {
-      _pages.clear();
-    }
-  }
-
-  Widget _buildMobilePage(int index, double bottomPadding) => switch (index) {
-    0 => HomePage(bottomPadding: bottomPadding),
-    1 => SchedulePage(bottomPadding: bottomPadding),
-    2 => LibraryPage(bottomPadding: bottomPadding),
-    _ => MyPage(bottomPadding: bottomPadding),
-  };
-
-  Widget _buildDesktopPage(int index) => switch (index) {
+  Widget _buildPage(int index) => switch (index) {
     0 => const HomePage(),
     1 => const SchedulePage(),
     2 => const LibraryPage(),
@@ -213,38 +427,6 @@ class _ShellPagesState extends ConsumerState<_ShellPages> {
     7 => const AboutPage(showBack: false),
     _ => const MyPage(),
   };
-
-  Future<void> _showPage(int index, int request) async {
-    if (!_controller.hasClients) return;
-    final position = _controller.page?.round() ?? index;
-    final current = _order?[position] ?? position;
-    if (_order != null) {
-      setState(() => _order = null);
-      _controller.jumpToPage(current);
-    }
-    if (widget.desktop || context.disableAnimations) {
-      _controller.jumpToPage(index);
-      return;
-    }
-    if ((index - current).abs() > 1) {
-      final adjacent = index > current ? index - 1 : index + 1;
-      setState(() {
-        _order = List.generate(widget.count, (slot) => slot)
-          ..[adjacent] = current
-          ..[current] = adjacent;
-      });
-      _controller.jumpToPage(adjacent);
-    }
-    final fade = widget.mode == TabAnimationMode.fade;
-    await _controller.animateToPage(
-      index,
-      duration: fade ? fadeTabDuration : kTabScrollDuration,
-      curve: fade ? fadeTabCurve : Curves.easeOut,
-    );
-    if (mounted && request == _switch && _order != null) {
-      setState(() => _order = null);
-    }
-  }
 
   @override
   void dispose() {
@@ -258,19 +440,10 @@ class _ShellPagesState extends ConsumerState<_ShellPages> {
       controller: _controller,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: widget.count,
-      findChildIndexCallback: (key) {
-        final index = (key as ValueKey<int>).value;
-        return _order?.indexOf(index) ?? index;
-      },
-      itemBuilder: (context, position) {
-        final index = _order?[position] ?? position;
+      itemBuilder: (context, index) {
         final page = _pages.putIfAbsent(
           index,
-          () => PageFocusScope(
-            child: widget.desktop
-                ? _buildDesktopPage(index)
-                : _buildMobilePage(index, widget.bottomPadding),
-          ),
+          () => PageFocusScope(child: _buildPage(index)),
         );
         return KeepScope(
           key: ValueKey(index),
@@ -278,113 +451,18 @@ class _ShellPagesState extends ConsumerState<_ShellPages> {
             child: page,
             builder: (context, ref, page) {
               final active = ref.watch(
-                navIndexProvider.select((value) => _mapIndex(value) == index),
-              );
-              final body = PageActivityScope(
-                isActive: active,
-                child: TickerMode(
-                  enabled: active,
-                  child: ExcludeFocus(
-                    excluding: !active,
-                    child: KeyboardInsetHold(
-                      child: widget.desktop
-                          ? _DesktopStack(active: active, child: page!)
-                          : page!,
-                    ),
-                  ),
+                navIndexProvider.select(
+                  (value) => value.clamp(0, widget.count - 1) == index,
                 ),
               );
-              return widget.desktop
-                  ? body
-                  : _TabPage(
-                      controller: _controller,
-                      position: position,
-                      fade: widget.mode == TabAnimationMode.fade,
-                      child: body,
-                    );
+              return _pageActivity(
+                active,
+                _DesktopStack(active: active, child: page!),
+              );
             },
           ),
         );
       },
-    );
-  }
-}
-
-class _TabPage extends StatefulWidget {
-  const _TabPage({
-    required this.controller,
-    required this.position,
-    required this.fade,
-    required this.child,
-  });
-
-  final PageController controller;
-  final int position;
-  final bool fade;
-  final Widget child;
-
-  @override
-  State<_TabPage> createState() => _TabPageState();
-}
-
-class _TabPageState extends State<_TabPage> {
-  final _fadeOffset = ValueNotifier(0.0);
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.fade) widget.controller.addListener(_updateFadeOffset);
-    _updateFadeOffset();
-  }
-
-  @override
-  void didUpdateWidget(covariant _TabPage oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.fade != widget.fade ||
-        oldWidget.controller != widget.controller) {
-      oldWidget.controller.removeListener(_updateFadeOffset);
-      if (widget.fade) widget.controller.addListener(_updateFadeOffset);
-    }
-    _updateFadeOffset();
-  }
-
-  void _updateFadeOffset() => _fadeOffset.value = widget.fade ? _delta : 0;
-
-  double get _delta {
-    final controller = widget.controller;
-    if (!controller.hasClients) return 0;
-    final metrics = controller.position;
-    if (!metrics.hasContentDimensions || metrics.viewportDimension == 0) {
-      return 0;
-    }
-    return (widget.position - metrics.pixels / metrics.viewportDimension).clamp(
-      -1.0,
-      1.0,
-    );
-  }
-
-  @override
-  void dispose() {
-    widget.controller.removeListener(_updateFadeOffset);
-    _fadeOffset.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final glass = LiquidGlassScope.of(context);
-    final rtl = Directionality.of(context) == TextDirection.rtl;
-    return ValueListenableBuilder(
-      valueListenable: _fadeOffset,
-      builder: (_, delta, child) {
-        return FractionalTranslation(
-          translation: Offset(rtl ? delta : -delta, 0),
-          child: Opacity(opacity: 1 - delta.abs(), child: child),
-        );
-      },
-      child: RepaintBoundary(
-        child: LiquidGlassHost(enabled: glass, child: widget.child),
-      ),
     );
   }
 }

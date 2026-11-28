@@ -38,7 +38,6 @@ class LibraryPage extends ConsumerStatefulWidget {
 
 class _LibraryPageState extends ConsumerState<LibraryPage>
     with
-        SingleTickerProviderStateMixin,
         RouteMotionHoldMixin<LibraryPage>,
         CatalogPageRefreshMixin<LibraryPage>,
         TabEntranceMixin<LibraryPage> {
@@ -253,6 +252,39 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
     );
   }
 
+  List<CollectionEntry> _filteredEntries(
+    CatalogRepository catalog,
+    List<CollectionEntry> entries,
+  ) {
+    final query = _query.trim().toLowerCase();
+    final filtered = query.isEmpty
+        ? entries
+        : entries.where((entry) {
+            final subject = catalog.getSubjectById(entry.subjectId);
+            return subject != null &&
+                (subject.title.toLowerCase().contains(query) ||
+                    subject.originalTitle.toLowerCase().contains(query));
+          }).toList();
+
+    switch (_sort) {
+      case _LibrarySort.recent:
+        filtered.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      case _LibrarySort.score:
+        filtered.sort((a, b) {
+          final sa = catalog.getSubjectById(a.subjectId)?.score ?? -1;
+          final sb = catalog.getSubjectById(b.subjectId)?.score ?? -1;
+          return sb.compareTo(sa);
+        });
+      case _LibrarySort.title:
+        filtered.sort((a, b) {
+          final ta = catalog.getSubjectById(a.subjectId)?.title ?? '￿';
+          final tb = catalog.getSubjectById(b.subjectId)?.title ?? '￿';
+          return ta.compareTo(tb);
+        });
+    }
+    return filtered;
+  }
+
   @override
   Widget build(BuildContext context) {
     final catalog = ref.watch(catalogRepositoryProvider);
@@ -267,36 +299,11 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
     final tabEntries = entries
         .where((entry) => _filter == null || entry.status == _filter)
         .toList();
-    final q = _query.trim().toLowerCase();
-    final filtered = tabEntries.where((entry) {
-      final subject = catalog.getSubjectById(entry.subjectId);
-      if (subject == null) {
-        return q.isEmpty;
-      }
-      if (q.isEmpty) return true;
-      return subject.title.toLowerCase().contains(q) ||
-          subject.originalTitle.toLowerCase().contains(q);
-    }).toList();
-
-    switch (_sort) {
-      case _LibrarySort.recent:
-        filtered.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-      case _LibrarySort.score:
-        filtered.sort((a, b) {
-          final sa = catalog.getSubjectById(a.subjectId)?.score ?? -1;
-          final sb = catalog.getSubjectById(b.subjectId)?.score ?? -1;
-          return sb.compareTo(sa);
-        });
-      case _LibrarySort.title:
-        filtered.sort((a, b) {
-          final ta = catalog.getSubjectById(a.subjectId)?.title ?? '\uffff';
-          final tb = catalog.getSubjectById(b.subjectId)?.title ?? '\uffff';
-          return ta.compareTo(tb);
-        });
-    }
-
     final showEntranceSkeleton =
         !tabEntered || (_syncing && tabEntries.isEmpty);
+    final filtered = showEntranceSkeleton
+        ? const <CollectionEntry>[]
+        : _filteredEntries(catalog, tabEntries);
 
     return KonekoScaffold(
       title: '追番',
