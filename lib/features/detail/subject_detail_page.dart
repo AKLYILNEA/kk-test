@@ -1202,7 +1202,7 @@ class _CommentsSectionSliver extends StatelessWidget {
         ],
       );
     } else if (items.isEmpty) {
-      status = const KonekoEmptyState(
+      status = KonekoEmptyState(
         glyph: KonekoGlyphs.comment,
         shape: KonekoPolygons.flower,
         title: '暂时还没有吐槽评论',

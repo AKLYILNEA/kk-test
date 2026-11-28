@@ -254,7 +254,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = context.colorScheme;
     final catalog = ref.watch(catalogRepositoryProvider);
     final entries = ref.watch(libraryProvider);
     final trackedLoad = ref.watch(loadTrackedSubjectsProvider);

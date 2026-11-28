@@ -833,7 +833,7 @@ class _RulesPageState extends ConsumerState<RulesPage> {
                   ),
                 )
               else if (visible.isEmpty)
-                const SliverFillRemaining(
+                SliverFillRemaining(
                   hasScrollBody: false,
                   child: KonekoEmptyState(
                     glyph: Glyphs.search,

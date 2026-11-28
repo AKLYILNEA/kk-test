@@ -37,7 +37,7 @@ class OfflinePage extends ConsumerWidget {
           itemCount: entries.isEmpty ? 1 : entries.length,
           itemBuilder: (context, index) {
             if (entries.isEmpty) {
-              return const KonekoEmptyState(
+              return KonekoEmptyState(
                 glyph: KonekoGlyphs.importFile,
                 shape: KonekoPolygons.cookie4Sided,
                 title: '暂无离线缓存',

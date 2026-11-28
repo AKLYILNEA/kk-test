@@ -93,7 +93,6 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = context.colorScheme;
     final catalog = ref.watch(catalogRepositoryProvider);
     final entries = ref.watch(historyProvider);
 
@@ -141,7 +140,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
               ),
             ),
             if (visible.isEmpty)
-              const SliverFillRemaining(
+              SliverFillRemaining(
                 hasScrollBody: false,
                 child: KonekoEmptyState(
                   glyph: KonekoGlyphs.history,

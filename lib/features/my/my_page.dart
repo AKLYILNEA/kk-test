@@ -762,7 +762,7 @@ class _ExpressiveRulesTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
-    final shape = const SuperellipseBorder(
+    const shape = SuperellipseBorder(
       borderRadius: BorderRadius.only(
         topLeft: Radius.circular(28),
         topRight: Radius.circular(56),
