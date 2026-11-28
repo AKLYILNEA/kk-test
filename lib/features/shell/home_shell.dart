@@ -215,20 +215,25 @@ class _MobilePagesState extends ConsumerState<_MobilePages>
     final previous = _motion;
     final fade = previous?.fade ?? (widget.mode == TabAnimationMode.fade);
     final current = <int, double>{};
+    var nearestPage = _shown;
+    var nearestDistance = double.infinity;
     if (previous == null) {
       current[_shown] = fade ? 1 : 0;
     } else {
       for (final entry in previous.tracks.entries) {
         final value = entry.value.evaluate(_progress);
-        if ((fade ? value > 0 : value.abs() < 1) || entry.key == destination) {
+        final distance = value.abs();
+        if ((fade ? value > 0 : distance < 1) || entry.key == destination) {
           current[entry.key] = value;
+        }
+        if (!fade && distance < nearestDistance) {
+          nearestPage = entry.key;
+          nearestDistance = distance;
         }
       }
     }
     final rtl = Directionality.of(context) == TextDirection.rtl;
-    final direction = ((destination > (previous?.destination ?? _shown)) != rtl)
-        ? 1.0
-        : -1.0;
+    final direction = (destination > nearestPage) != rtl ? 1.0 : -1.0;
     final entering = current[destination] ?? (fade ? 0.0 : direction);
     final away = entering == 0 ? -direction : -entering.sign;
     final tracks = {
@@ -250,16 +255,8 @@ class _MobilePagesState extends ConsumerState<_MobilePages>
     });
     _progress.animateTo(
       1,
-      duration: previous != null
-          ? const Duration(milliseconds: 180)
-          : fade
-          ? fadeTabDuration
-          : kTabScrollDuration,
-      curve: previous != null
-          ? Curves.easeOutCubic
-          : fade
-          ? fadeTabCurve
-          : Curves.easeOut,
+      duration: fade ? fadeTabDuration : kTabScrollDuration,
+      curve: fade ? fadeTabCurve : Curves.easeOut,
     );
   }
 

@@ -156,18 +156,19 @@ void main() {
         }
 
         final myX = tester.getTopLeft(myScroll).dx;
-        double myOpacity() => tester
+        double opacityOf(int index) => tester
             .widget<FadeTransition>(
               find
                   .ancestor(
-                    of: snapshot(3),
+                    of: snapshot(index),
                     matching: find.byType(FadeTransition),
                   )
                   .first,
             )
             .opacity
             .value;
-        final myAlpha = myOpacity();
+        final myAlpha = opacityOf(3);
+        final homeAlpha = opacityOf(0);
         final navigation = container.read(navIndexProvider.notifier);
         navigation.select(1);
         navigation.select(2);
@@ -176,12 +177,24 @@ void main() {
         expect(snapshotting(3), isTrue);
         await tester.pump();
         expect(tester.getTopLeft(myScroll).dx, closeTo(myX, 0.01));
-        expect(myOpacity(), closeTo(myAlpha, 0.001));
-        await tester.pump(const Duration(milliseconds: 40));
+        expect(opacityOf(3), closeTo(myAlpha, 0.001));
+        const sinceRetarget = Duration(milliseconds: 40);
+        await tester.pump(sinceRetarget);
         if (mode == TabAnimationMode.slide) {
-          expect(tester.getTopLeft(myScroll).dx, greaterThan(myX));
+          final width = tester.getSize(myScroll).width;
+          final edge = myX.abs() < movingX.abs() ? width : -width;
+          final progress = Curves.easeOut.transform(
+            sinceRetarget.inMilliseconds / kTabScrollDuration.inMilliseconds,
+          );
+          expect(
+            tester.getTopLeft(myScroll).dx,
+            closeTo(myX + (edge - myX) * progress, 0.1),
+          );
         } else {
-          expect(myOpacity(), lessThan(myAlpha));
+          final progress = fadeTabCurve.transform(
+            sinceRetarget.inMilliseconds / fadeTabDuration.inMilliseconds,
+          );
+          expect(opacityOf(0), closeTo(homeAlpha * (1 - progress), 0.001));
         }
         await tester.pumpAndSettle();
         expect(find.byType(LibraryPage), findsOneWidget);
