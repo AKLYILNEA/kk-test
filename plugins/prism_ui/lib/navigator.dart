@@ -358,16 +358,22 @@ class CardPageRoute<T> extends PageRoute<T>
   set offstage(bool value) {}
 
   @override
-  bool get prepareArrivalSnapshot => true;
+  bool get prepareArrivalSnapshot => !hasDeferredArrivalHolds;
 
   @override
-  void onDeferredPushReady({required bool waitedForContent}) {
-    super.onDeferredPushReady(waitedForContent: waitedForContent);
-    if (waitedForContent) {
-      retakeSnapshot();
-    } else {
-      syncMotionSnapshot();
-    }
+  void onDeferredPushHeld() => syncMotionSnapshot();
+
+  @override
+  Future<void> prepareAfterArrivalHold() {
+    syncMotionSnapshot();
+    // Paint content from a released hold before the first moving frame.
+    return SchedulerBinding.instance.endOfFrame;
+  }
+
+  @override
+  void onDeferredPushReady() {
+    super.onDeferredPushReady();
+    syncMotionSnapshot();
   }
 
   @override

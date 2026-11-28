@@ -49,6 +49,8 @@ jobs:
           flutter test -r expanded test packages/koneko_core/test \
             plugins/prism_ui/test/widgets/liquid_glass_test.dart \
             plugins/prism_ui/test/widgets/liquid_glass_host_test.dart \
+            plugins/prism_ui/test/widgets/deferred_push_test.dart \
+            plugins/prism_ui/test/widgets/drag_back_test.dart \
             2>&1 | tee test.log
           rc=${PIPESTATUS[0]}
           if [ "$rc" -ne 0 ]; then

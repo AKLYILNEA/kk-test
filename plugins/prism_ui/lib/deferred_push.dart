@@ -16,8 +16,16 @@ mixin DeferredPushRouteMixin<T> on TransitionRoute<T> {
 
   bool get isDeferredPushReady => !_takesHolds && _arrivalHolds == null;
 
+  bool get hasDeferredArrivalHolds => _arrivalHolds?.isNotEmpty ?? false;
+
   @protected
-  void onDeferredPushReady({required bool waitedForContent}) {}
+  void onDeferredPushHeld() {}
+
+  @protected
+  Future<void>? prepareAfterArrivalHold() => null;
+
+  @protected
+  void onDeferredPushReady() {}
 
   @override
   AnimationController createAnimationController() {
@@ -51,8 +59,16 @@ mixin DeferredPushRouteMixin<T> on TransitionRoute<T> {
         ]).timeout(arrivalHoldLimit, onTimeout: () => const []);
       }
       if (!context.mounted || !identical(_arrivalHolds, holds)) return;
+      if (waitedForContent) {
+        holds.clear();
+        final prepared = prepareAfterArrivalHold();
+        if (prepared != null) {
+          await prepared;
+          if (!context.mounted || !identical(_arrivalHolds, holds)) return;
+        }
+      }
       _arrivalHolds = null;
-      onDeferredPushReady(waitedForContent: waitedForContent);
+      onDeferredPushReady();
       ticker.muted = !TickerMode.getValuesNotifier(context).value.enabled;
     });
     return pushed;
@@ -115,6 +131,7 @@ class _ArrivalHoldState extends State<ArrivalHold> {
       final hold = _hold = Completer();
       for (final route in heldRoutes) {
         route._arrivalHolds!.add(hold);
+        route.onDeferredPushHeld();
       }
     }
   }
