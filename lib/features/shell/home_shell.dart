@@ -196,13 +196,13 @@ class _MobilePagesState extends ConsumerState<_MobilePages>
       if (_preparing != null) setState(() => _preparing = null);
       return;
     }
-    if (motion?.tracks.containsKey(index) ?? false) {
+    if (motion?.contains(index) ?? false) {
       _retarget(index);
       return;
     }
 
-    // Prepare a new destination behind the current picture while the current
-    // transition keeps running. Several taps in one frame need only one paint.
+    // Take the destination's snapshot outside the viewport while the current
+    // pair keeps moving. Several taps in one frame need only one paint.
     setState(() => _preparing = index);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && _preparing == index && _requested == index) {
@@ -214,43 +214,33 @@ class _MobilePagesState extends ConsumerState<_MobilePages>
   void _retarget(int destination) {
     final previous = _motion;
     final fade = previous?.fade ?? (widget.mode == TabAnimationMode.fade);
-    final current = <int, double>{};
-    var nearestPage = _shown;
-    var nearestDistance = double.infinity;
-    if (previous == null) {
-      current[_shown] = fade ? 1 : 0;
+    final position = previous?.position.evaluate(_progress) ?? 0.0;
+
+    final int lower;
+    final int upper;
+    final double from;
+    if (previous != null && previous.contains(destination)) {
+      lower = previous.lower;
+      upper = previous.upper;
+      from = position;
     } else {
-      for (final entry in previous.tracks.entries) {
-        final value = entry.value.evaluate(_progress);
-        final distance = value.abs();
-        if ((fade ? value > 0 : distance < 1) || entry.key == destination) {
-          current[entry.key] = value;
-        }
-        if (!fade && distance < nearestDistance) {
-          nearestPage = entry.key;
-          nearestDistance = distance;
-        }
-      }
+      // Like FlClash's rounded PageController position, take the nearest
+      // page as the origin when replacing the pair for a different target.
+      final origin = previous?.nearestPage(position) ?? _shown;
+      lower = origin < destination ? origin : destination;
+      upper = origin < destination ? destination : origin;
+      from = origin == lower ? 0 : 1;
     }
-    final rtl = Directionality.of(context) == TextDirection.rtl;
-    final direction = (destination > nearestPage) != rtl ? 1.0 : -1.0;
-    final entering = current[destination] ?? (fade ? 0.0 : direction);
-    final away = entering == 0 ? -direction : -entering.sign;
-    final tracks = {
-      if (!current.containsKey(destination))
-        destination: Tween<double>(begin: entering, end: fade ? 1 : 0),
-      for (final entry in current.entries)
-        entry.key: Tween<double>(
-          begin: entry.value,
-          end: fade
-              ? (entry.key == destination ? 1 : 0)
-              : (entry.key == destination ? 0 : away),
-        ),
-    };
 
     _progress.value = 0;
     setState(() {
-      _motion = _MobilePageMotion(destination, fade: fade, tracks: tracks);
+      _motion = _MobilePageMotion(
+        lower: lower,
+        upper: upper,
+        destination: destination,
+        fade: fade,
+        position: Tween<double>(begin: from, end: destination == lower ? 0 : 1),
+      );
       _preparing = null;
     });
     _progress.animateTo(
@@ -297,85 +287,77 @@ class _MobilePagesState extends ConsumerState<_MobilePages>
     final preparing = _preparing;
     if (preparing != null) _rememberPage(preparing);
     final motion = _motion;
-    final visible = [
-      ?preparing,
-      if (motion == null) _shown else ...motion.tracks.keys,
-    ];
+    final pair = motion == null ? [_shown] : [motion.lower, motion.upper];
     final active = motion == null && preparing == null;
+    final position = motion?.position.animate(_progress);
+    final direction = Directionality.of(context) == TextDirection.rtl
+        ? -1.0
+        : 1.0;
     final order = [
       for (final index in _pages.keys)
-        if (!visible.contains(index)) index,
-      ...visible,
+        if (index != preparing && !pair.contains(index)) index,
+      ?preparing,
+      ...pair,
     ];
 
-    final opacities = <int, Animation<double>>{};
-    if (motion != null && motion.fade) {
-      var start = 0.0;
-      var end = 0.0;
-      for (final entry in motion.tracks.entries) {
-        start += entry.value.begin!;
-        end += entry.value.end!;
-        opacities[entry.key] = _TabLayerOpacity(
-          weight: entry.value,
-          totalThroughLayer: Tween<double>(begin: start, end: end),
-        ).animate(_progress);
-      }
+    Widget page(int index) {
+      final isPreparing = index == preparing;
+      final inPair = pair.contains(index);
+      final isLower = index == motion?.lower;
+      final moving = position != null && inPair;
+      return _MobileTabLayer(
+        key: ValueKey(index),
+        index: index,
+        shown: isPreparing || inPair,
+        active: active && index == _shown,
+        snapshot: !active && (isPreparing || inPair),
+        onTouch: motion?.destination == index && preparing == null
+            ? () => _finishForTouch(index)
+            : null,
+        opacity: moving && motion!.fade
+            ? isLower
+                  ? ReverseAnimation(position)
+                  : position
+            : kAlwaysCompleteAnimation,
+        offset: isPreparing
+            ? const AlwaysStoppedAnimation(Offset(1, 0))
+            : moving && !motion!.fade
+            ? Tween<Offset>(
+                begin: isLower ? Offset.zero : Offset(direction, 0),
+                end: isLower ? Offset(-direction, 0) : Offset.zero,
+              ).animate(position)
+            : const AlwaysStoppedAnimation(Offset.zero),
+        child: _pages[index]!,
+      );
     }
 
     return ClipRect(
       child: Stack(
         fit: StackFit.expand,
-        children: [
-          for (final index in order)
-            _MobileTabLayer(
-              key: ValueKey(index),
-              index: index,
-              shown: visible.contains(index),
-              active: active && index == _shown,
-              snapshot: !active && visible.contains(index),
-              onTouch: motion?.destination == index && preparing == null
-                  ? () => _finishForTouch(index)
-                  : null,
-              opacity: opacities[index] ?? kAlwaysCompleteAnimation,
-              offset: motion?.fade == false && motion!.tracks.containsKey(index)
-                  ? Tween<Offset>(
-                      begin: Offset(motion.tracks[index]!.begin!, 0),
-                      end: Offset(motion.tracks[index]!.end!, 0),
-                    ).animate(_progress)
-                  : const AlwaysStoppedAnimation(Offset.zero),
-              child: _pages[index]!,
-            ),
-        ],
+        children: [for (final index in order) page(index)],
       ),
     );
   }
 }
 
 class _MobilePageMotion {
-  const _MobilePageMotion(
-    this.destination, {
+  const _MobilePageMotion({
+    required this.lower,
+    required this.upper,
+    required this.destination,
     required this.fade,
-    required this.tracks,
+    required this.position,
   });
 
+  final int lower;
+  final int upper;
   final int destination;
   final bool fade;
-  final Map<int, Tween<double>> tracks;
-}
+  final Tween<double> position;
 
-/// Converts a page's share of the final blend to its opacity in the stack.
-/// This preserves the visible blend when a fade is retargeted.
-class _TabLayerOpacity extends Animatable<double> {
-  _TabLayerOpacity({required this.weight, required this.totalThroughLayer});
+  bool contains(int index) => index == lower || index == upper;
 
-  final Tween<double> weight;
-  final Tween<double> totalThroughLayer;
-
-  @override
-  double transform(double t) {
-    final remaining = totalThroughLayer.transform(t);
-    return remaining <= 0 ? 0 : (weight.transform(t) / remaining).clamp(0, 1);
-  }
+  int nearestPage(double position) => position < 0.5 ? lower : upper;
 }
 
 class _MobileTabLayer extends StatefulWidget {

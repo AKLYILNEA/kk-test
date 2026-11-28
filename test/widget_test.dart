@@ -113,17 +113,37 @@ void main() {
           of: find.byType(MyPage),
           matching: find.byType(CustomScrollView),
         );
-        Finder snapshot(int index) => find.byKey(
+        Finder snapshot(int index, {bool skipOffstage = false}) => find.byKey(
           ValueKey('dock-page-snapshot-$index'),
-          skipOffstage: false,
+          skipOffstage: skipOffstage,
         );
         bool snapshotting(int index) => tester
             .widget<SnapshotWidget>(snapshot(index))
             .controller
             .allowSnapshotting;
+        double opacityOf(int index) => tester
+            .widget<FadeTransition>(
+              find
+                  .ancestor(
+                    of: snapshot(index),
+                    matching: find.byType(FadeTransition),
+                  )
+                  .first,
+            )
+            .opacity
+            .value;
+        const viewport = Rect.fromLTWH(0, 0, 420, 880);
+        Set<int> visiblePages() => {
+          for (var index = 0; index < 4; index++)
+            if (snapshot(index, skipOffstage: true).evaluate().isNotEmpty &&
+                opacityOf(index) > 0 &&
+                tester.getRect(snapshot(index)).overlaps(viewport))
+              index,
+        };
 
         expect(snapshotting(0), isTrue);
         expect(snapshotting(3), isTrue);
+        expect(visiblePages(), {0});
         final homeBody = tester.renderObject(homeScroll);
         final myBody = tester.renderObject(myScroll);
 
@@ -155,46 +175,51 @@ void main() {
           expect(movingX, topAtRest.dx);
         }
 
+        expect(visiblePages(), {0, 3});
         final myX = tester.getTopLeft(myScroll).dx;
-        double opacityOf(int index) => tester
-            .widget<FadeTransition>(
-              find
-                  .ancestor(
-                    of: snapshot(index),
-                    matching: find.byType(FadeTransition),
-                  )
-                  .first,
-            )
-            .opacity
-            .value;
         final myAlpha = opacityOf(3);
         final homeAlpha = opacityOf(0);
+        final origin = mode == TabAnimationMode.slide
+            ? (myX.abs() <= movingX.abs() ? 3 : 0)
+            : (myAlpha >= 0.5 ? 3 : 0);
         final navigation = container.read(navIndexProvider.notifier);
+
+        // Reversing the same pair starts from the frame already on screen.
+        navigation.select(0);
+        await tester.pump();
+        expect(tester.getTopLeft(myScroll).dx, closeTo(myX, 0.01));
+        expect(opacityOf(3), closeTo(myAlpha, 0.001));
+        expect(opacityOf(0), closeTo(homeAlpha, 0.001));
+        expect(visiblePages(), {0, 3});
+
         navigation.select(1);
         navigation.select(2);
         await tester.pump();
         expect(snapshotting(2), isTrue);
-        expect(snapshotting(3), isTrue);
+        expect(visiblePages(), {0, 3});
+        expect(find.byType(SchedulePage, skipOffstage: false), findsNothing);
         await tester.pump();
-        expect(tester.getTopLeft(myScroll).dx, closeTo(myX, 0.01));
-        expect(opacityOf(3), closeTo(myAlpha, 0.001));
+        expect(visiblePages(), {origin});
+        expect(snapshotting(origin == 0 ? 3 : 0), isFalse);
+
         const sinceRetarget = Duration(milliseconds: 40);
         await tester.pump(sinceRetarget);
+        expect(visiblePages(), {origin, 2});
         if (mode == TabAnimationMode.slide) {
-          final width = tester.getSize(myScroll).width;
-          final edge = myX.abs() < movingX.abs() ? width : -width;
+          final edge = origin == 0 ? -viewport.width : viewport.width;
           final progress = Curves.easeOut.transform(
             sinceRetarget.inMilliseconds / kTabScrollDuration.inMilliseconds,
           );
           expect(
-            tester.getTopLeft(myScroll).dx,
-            closeTo(myX + (edge - myX) * progress, 0.1),
+            tester.getTopLeft(snapshot(origin)).dx,
+            closeTo(edge * progress, 0.1),
           );
         } else {
           final progress = fadeTabCurve.transform(
             sinceRetarget.inMilliseconds / fadeTabDuration.inMilliseconds,
           );
-          expect(opacityOf(0), closeTo(homeAlpha * (1 - progress), 0.001));
+          expect(opacityOf(origin), closeTo(1 - progress, 0.001));
+          expect(opacityOf(2), closeTo(progress, 0.001));
         }
         await tester.pumpAndSettle();
         expect(find.byType(LibraryPage), findsOneWidget);
