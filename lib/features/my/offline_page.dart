@@ -38,7 +38,7 @@ class OfflinePage extends ConsumerWidget {
           itemBuilder: (context, index) {
             if (entries.isEmpty) {
               return KonekoEmptyState(
-                glyph: KonekoGlyphs.importFile,
+                glyph: KonekoGlyphs.download,
                 shape: KonekoPolygons.cookie4Sided,
                 title: '暂无离线缓存',
                 subtitle: '可在播放器中下载剧集到本地，随时离线观看',
@@ -54,7 +54,7 @@ class OfflinePage extends ConsumerWidget {
                 spacing: 10,
                 children: [
                   KonekoPolygonBadge(
-                    glyph: ready ? KonekoGlyphs.play : KonekoGlyphs.importFile,
+                    glyph: ready ? KonekoGlyphs.play : KonekoGlyphs.download,
                     shape: ready
                         ? KonekoPolygons.gem
                         : KonekoPolygons.cookie4Sided,

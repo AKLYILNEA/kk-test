@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:koneko/common/constants.dart';
@@ -111,7 +113,7 @@ class MyPage extends ConsumerWidget {
           );
 
           final offlineTile = _ExpressiveToolTile(
-            glyph: KonekoGlyphs.importFile,
+            glyph: KonekoGlyphs.download,
             shape: KonekoPolygons.cookie4Sided,
             title: '离线缓存',
             caption: offlineEntries.isEmpty
@@ -308,9 +310,10 @@ class MyPage extends ConsumerWidget {
   }
 }
 
-/// Handsome Bangumi profile hero card with FlClash elevation, subtle Bangumi
-/// sakura accent wash, translucent `cookie12Sided` polygon seal watermark,
-/// `cookie9Sided` polygon avatar, and optional integrated watch stats strip.
+/// Handsome Bangumi profile hero card modeled 1:1 after FlClash's
+/// `CurrentOutboundCard` startup widget: crisp [SurfaceLevel.card] fill with
+/// one giant clipped `cookie12Sided` flower sweeping out of the top-right edge,
+/// paired with a `cookie9Sided` polygon avatar and integrated watch stats.
 class _BangumiHeroCard extends StatelessWidget {
   const _BangumiHeroCard({
     required this.profile,
@@ -320,6 +323,10 @@ class _BangumiHeroCard extends StatelessWidget {
     required this.showInlineStats,
     required this.onPressed,
   });
+
+  static const _decorationGrowth = 0.06;
+  static const _decorationTurn = 2 * math.pi / 12;
+  static const _decorationBottomGap = 10.0;
 
   final BangumiProfile? profile;
   final int watchingCount;
@@ -332,6 +339,8 @@ class _BangumiHeroCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
     final isDark = colorScheme.brightness == Brightness.dark;
+    final cardColor = SurfaceLevel.card.colorOf(colorScheme);
+    final toneColor = SurfaceLevel.block.colorOf(colorScheme);
     final isBound = profile != null;
     final displayName = (profile?.nickname.trim().isNotEmpty ?? false)
         ? profile!.nickname
@@ -344,6 +353,10 @@ class _BangumiHeroCard extends StatelessWidget {
     final signText = profile?.sign.trim() ?? '';
 
     final shape = SuperellipseBorder(borderRadius: AppRadius.all(30));
+    final decorationSize = showInlineStats ? 216.0 : 256.0;
+    final decorationEnd = showInlineStats ? -48.0 : -52.0;
+    final decorationBottom =
+        _decorationBottomGap + decorationSize * _decorationGrowth / 2;
 
     return DecoratedBox(
       decoration: ShapeDecoration(
@@ -351,64 +364,66 @@ class _BangumiHeroCard extends StatelessWidget {
         shadows: konekoCardShadows(colorScheme),
       ),
       child: PressSurface(
-        fill: SurfaceLevel.card.colorOf(colorScheme),
+        fill: cardColor,
         shape: shape,
         clipsChild: true,
         onPressed: onPressed,
         child: Stack(
           children: [
-            // Soft Bangumi sakura-rose + theme-primary ambient gradient wash
+            // 1:1 FlClash CurrentOutboundCard sweeping top-right cookie-12 motif
             Positioned.fill(
               child: IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        _kBangumiRose.withValues(alpha: isDark ? 0.16 : 0.14),
-                        colorScheme.primary.withValues(
-                          alpha: isDark ? 0.08 : 0.05,
+                child: ClipPath(
+                  clipper: ShapeBorderClipper(
+                    shape: shape,
+                    textDirection: Directionality.of(context),
+                  ),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      PositionedDirectional(
+                        end: decorationEnd,
+                        bottom: decorationBottom,
+                        child: TweenAnimationBuilder<double>(
+                          tween: Tween(end: isBound ? 1 : 0),
+                          duration: context.motionDuration(
+                            const Duration(milliseconds: 450),
+                          ),
+                          curve: Curves.easeOutBack,
+                          builder: (_, progress, _) => Transform.rotate(
+                            angle: _decorationTurn * progress,
+                            child: Transform.scale(
+                              scale: 1 + _decorationGrowth * progress,
+                              child: SizedBox.square(
+                                dimension: decorationSize,
+                                child: DecoratedBox(
+                                  decoration: ShapeDecoration(
+                                    color: Color.lerp(
+                                      Color.alphaBlend(
+                                        _kBangumiRose.withValues(
+                                          alpha: isDark ? 0.11 : 0.08,
+                                        ),
+                                        toneColor,
+                                      ),
+                                      Color.alphaBlend(
+                                        _kBangumiRose.withValues(
+                                          alpha: isDark ? 0.18 : 0.13,
+                                        ),
+                                        cardColor,
+                                      ),
+                                      progress.clamp(0, 1),
+                                    ),
+                                    shape: KonekoPolygonBorder(
+                                      KonekoPolygons.cookie12Sided,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
-                        Colors.transparent,
-                      ],
-                      stops: const [0.0, 0.52, 1.0],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            // Decorative Kazumi expressive polygon watermark in top-right corner
-            Positioned(
-              top: -28,
-              right: -22,
-              child: IgnorePointer(
-                child: SizedBox.square(
-                  dimension: 128,
-                  child: DecoratedBox(
-                    decoration: ShapeDecoration(
-                      color: _kBangumiRose.withValues(
-                        alpha: isDark ? 0.12 : 0.14,
                       ),
-                      shape: KonekoPolygonBorder(KonekoPolygons.cookie12Sided),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              top: 22,
-              right: 84,
-              child: IgnorePointer(
-                child: SizedBox.square(
-                  dimension: 34,
-                  child: DecoratedBox(
-                    decoration: ShapeDecoration(
-                      color: colorScheme.primary.withValues(
-                        alpha: isDark ? 0.12 : 0.09,
-                      ),
-                      shape: KonekoPolygonBorder(KonekoPolygons.sunny),
-                    ),
+                    ],
                   ),
                 ),
               ),

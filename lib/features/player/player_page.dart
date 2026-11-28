@@ -2243,7 +2243,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                 KonekoCircleButton(
                   size: 34,
                   iconSize: 15,
-                  glyph: KonekoGlyphs.importFile,
+                  glyph: KonekoGlyphs.download,
                   tooltip: '离线缓存当前话',
                   onPressed: _loaded && _source != null ? _download : null,
                 ),

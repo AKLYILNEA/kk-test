@@ -80,17 +80,26 @@ abstract final class KonekoGlyphs {
     ], role: GlyphRole.detail),
   ]);
 
+  /// Watch history rewind clock (counter-clockwise arc + arrow + clock hands).
   static const history = Glyph([
-    GlyphBox(3, 4.5, 21, 19.5, 3.5),
+    GlyphArc(
+      12,
+      12,
+      7.8,
+      -math.pi * 0.78,
+      math.pi * 1.62,
+      role: GlyphRole.line,
+    ),
     GlyphPolyline([
-      GlyphVertex(7.3, 9.3),
-      GlyphVertex(9.9, 11.9, 0.4),
-      GlyphVertex(7.3, 14.5),
-    ], role: GlyphRole.detail),
+      GlyphVertex(4.8, 4.8),
+      GlyphVertex(5.4, 8.2, 0.4),
+      GlyphVertex(8.8, 8.0),
+    ], role: GlyphRole.line),
     GlyphPolyline([
-      GlyphVertex(12.2, 14.5),
-      GlyphVertex(16.2, 14.5),
-    ], role: GlyphRole.detail),
+      GlyphVertex(12, 8.0),
+      GlyphVertex(12, 12.2, 0.4),
+      GlyphVertex(15.2, 14.2),
+    ], role: GlyphRole.line),
   ]);
 
   static const user = Glyph([
@@ -698,6 +707,25 @@ abstract final class KonekoGlyphs {
       GlyphVertex(13.25, 7.25),
       GlyphVertex(16.75, 10.75),
     ], role: GlyphRole.detail),
+  ]);
+
+  /// Offline cache / download arrow into a crisp rounded tray.
+  static const download = Glyph([
+    GlyphPolyline([
+      GlyphVertex(12, 4.2),
+      GlyphVertex(12, 14.8),
+    ], role: GlyphRole.line),
+    GlyphPolyline([
+      GlyphVertex(7.8, 10.8),
+      GlyphVertex(12, 15.0, 0.4),
+      GlyphVertex(16.2, 10.8),
+    ], role: GlyphRole.line),
+    GlyphPolyline([
+      GlyphVertex(4.6, 15.0),
+      GlyphVertex(4.6, 19.0, 2.2),
+      GlyphVertex(19.4, 19.0, 2.2),
+      GlyphVertex(19.4, 15.0),
+    ], role: GlyphRole.line),
   ]);
 
   static const chevronUp = Glyph([
