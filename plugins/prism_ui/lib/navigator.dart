@@ -289,10 +289,9 @@ class FadePageRoute<T> extends PageRoute<T>
     if (animation == null || secondary == null) return;
     final dragged = navigator?.userGestureInProgress ?? false;
     _motionSnapshot.allowSnapshotting =
-        !_glass &&
-        (isDragBackActive ||
-            animation.status == AnimationStatus.reverse ||
-            (secondary.status == AnimationStatus.forward && !dragged));
+        isDragBackActive ||
+        animation.isAnimating ||
+        (secondary.status == AnimationStatus.forward && !dragged);
   }
 
   void _handleMotionStatus(AnimationStatus _) => _updateMotionSnapshot();
@@ -326,7 +325,7 @@ class FadePageRoute<T> extends PageRoute<T>
         controller: _motionSnapshot,
         mode: SnapshotMode.permissive,
         autoresize: true,
-        child: child,
+        child: LiquidGlassHost(enabled: _glass, child: child),
       ),
     );
     return dragBackDetector(
@@ -359,9 +358,16 @@ class CardPageRoute<T> extends PageRoute<T>
   set offstage(bool value) {}
 
   @override
-  void onDeferredPushReady() {
-    super.onDeferredPushReady();
-    syncMotionSnapshot();
+  bool get prepareArrivalSnapshot => true;
+
+  @override
+  void onDeferredPushReady({required bool waitedForContent}) {
+    super.onDeferredPushReady(waitedForContent: waitedForContent);
+    if (waitedForContent) {
+      retakeSnapshot();
+    } else {
+      syncMotionSnapshot();
+    }
   }
 
   @override

@@ -17,7 +17,7 @@ mixin DeferredPushRouteMixin<T> on TransitionRoute<T> {
   bool get isDeferredPushReady => !_takesHolds && _arrivalHolds == null;
 
   @protected
-  void onDeferredPushReady() {}
+  void onDeferredPushReady({required bool waitedForContent}) {}
 
   @override
   AnimationController createAnimationController() {
@@ -42,20 +42,39 @@ mixin DeferredPushRouteMixin<T> on TransitionRoute<T> {
     final pushed = super.didPush();
     final context = navigator!.context;
     SchedulerBinding.instance.addPostFrameCallback((_) async {
+      if (!identical(_arrivalHolds, holds)) return;
       _takesHolds = false;
-      if (holds.isNotEmpty) {
+      final waitedForContent = holds.isNotEmpty;
+      if (waitedForContent) {
         await Future.wait([
           for (final hold in holds) hold.future,
         ]).timeout(arrivalHoldLimit, onTimeout: () => const []);
-        if (!context.mounted) {
-          return;
-        }
       }
+      if (!context.mounted || !identical(_arrivalHolds, holds)) return;
       _arrivalHolds = null;
-      onDeferredPushReady();
+      onDeferredPushReady(waitedForContent: waitedForContent);
       ticker.muted = !TickerMode.getValuesNotifier(context).value.enabled;
     });
     return pushed;
+  }
+
+  @override
+  bool didPop(T? result) {
+    final popped = super.didPop(result);
+    final holds = _arrivalHolds;
+    if (popped && holds != null) {
+      _takesHolds = false;
+      _arrivalHolds = null;
+      for (final hold in holds) {
+        if (!hold.isCompleted) hold.complete();
+      }
+      final context = navigator?.context;
+      final ticker = _vsync?.ticker;
+      if (context != null && context.mounted && ticker != null) {
+        ticker.muted = !TickerMode.getValuesNotifier(context).value.enabled;
+      }
+    }
+    return popped;
   }
 }
 

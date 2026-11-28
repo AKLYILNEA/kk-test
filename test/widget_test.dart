@@ -339,9 +339,17 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(_barAction('发现搜索'));
-    await tester.pumpAndSettle();
+    await tester.pump();
     final page = find.byType(DiscoverPage);
     expect(ModalRoute.of(tester.element(page)), isA<FadePageRoute<void>>());
+    final capture = tester
+        .widget<SnapshotWidget>(
+          find.ancestor(of: page, matching: find.byType(SnapshotWidget)).first,
+        )
+        .controller;
+    expect(capture.allowSnapshotting, isTrue);
+    await tester.pumpAndSettle();
+    expect(capture.allowSnapshotting, isFalse);
     expect(find.byType(NavigationSidebar), findsOneWidget);
     expect(
       tester.widget<AppBar>(find.byType(AppBar)).titleTextStyle?.fontSize,
@@ -429,17 +437,20 @@ void main() {
     final overview = tester.renderObject(
       find.descendant(of: detail, matching: find.byType(KonekoStarRating)),
     );
-    final episodeSnapshot = find.byKey(
-      const ValueKey('episode-arrival-snapshot'),
+    final episodeGrid = find.byKey(const ValueKey('episodes-live'));
+    final pageSnapshot = find
+        .ancestor(of: detail, matching: find.byType(SnapshotWidget))
+        .first;
+    expect(episodeGrid, findsOneWidget);
+    expect(
+      find.descendant(of: episodeGrid, matching: find.byType(SnapshotWidget)),
+      findsNothing,
     );
     final firstReads = catalog.episodeReads;
     expect(firstReads, 1);
     expect(find.text('选集'), findsOneWidget);
     expect(
-      tester
-          .widget<SnapshotWidget>(episodeSnapshot)
-          .controller
-          .allowSnapshotting,
+      tester.widget<SnapshotWidget>(pageSnapshot).controller.allowSnapshotting,
       isTrue,
     );
     final oldProfiling = debugProfilePaintsEnabled;
@@ -482,10 +493,7 @@ void main() {
     expect(overviewPaints, lessThanOrEqualTo(2), reason: '$counts');
     await tester.pumpAndSettle();
     expect(
-      tester
-          .widget<SnapshotWidget>(episodeSnapshot)
-          .controller
-          .allowSnapshotting,
+      tester.widget<SnapshotWidget>(pageSnapshot).controller.allowSnapshotting,
       isFalse,
     );
     expect(catalog.episodeRequests, 1);
@@ -811,6 +819,82 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('切换播放源'), findsOneWidget);
     expect(find.text('自动优选'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a pending secondary page releases its hold when popped', (
+    tester,
+  ) async {
+    _setViewport(tester, const Size(420, 880));
+    await tester.pumpWidget(_testApp());
+    await tester.pumpAndSettle();
+
+    final navigator = Navigator.of(tester.element(find.byType(NavigationDock)));
+    final route = CardPageRoute<void>(
+      builder: (_) => const ArrivalHold(
+        ready: false,
+        child: SizedBox.expand(key: ValueKey('pending-page')),
+      ),
+    );
+    unawaited(navigator.push(route));
+    await tester.pump();
+    expect(route.isDeferredPushReady, isFalse);
+    navigator.pop();
+    expect(route.isDeferredPushReady, isTrue);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('pending-page')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('rapid detail back keeps the arrival capture and skips loads', (
+    tester,
+  ) async {
+    _setViewport(tester, const Size(420, 880));
+    final catalog = _PendingCatalog();
+    addTearDown(catalog.events.close);
+    await tester.pumpWidget(_testApp(catalog: catalog));
+    await tester.pumpAndSettle();
+
+    final detail = find.byType(SubjectDetailPage);
+    final title = find.text('星海旅人：北境编年史').first;
+    for (var visit = 0; visit < 2; visit++) {
+      await tester.tap(title);
+      await tester.pump();
+      final route = ModalRoute.of(tester.element(detail))!;
+      final animation = route.animation!;
+      final capture = tester
+          .widget<SnapshotWidget>(
+            find
+                .ancestor(of: detail, matching: find.byType(SnapshotWidget))
+                .first,
+          )
+          .controller;
+      expect(animation.value, 0);
+      expect(capture.allowSnapshotting, isTrue);
+      var captureChanges = 0;
+      capture.addListener(() => captureChanges++);
+      final back = _barAction('返回').hitTestable();
+      for (var frame = 0; frame < 16 && back.evaluate().isEmpty; frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(animation.status, AnimationStatus.forward);
+      expect(back, findsOneWidget);
+      await tester.tap(back);
+      await tester.pump();
+      expect(animation.status, AnimationStatus.reverse);
+      expect(capture.allowSnapshotting, isTrue);
+      expect(captureChanges, 0);
+      await tester.pumpAndSettle();
+      expect(detail, findsNothing);
+      expect(catalog.detailRequests, 0);
+      expect(catalog.episodeRequests, 0);
+    }
+
+    await tester.tap(title);
+    await tester.pumpAndSettle();
+    expect(detail, findsOneWidget);
+    expect(catalog.detailRequests, 1);
+    expect(catalog.episodeRequests, 1);
     expect(tester.takeException(), isNull);
   });
 
@@ -1385,6 +1469,7 @@ class _PendingCatalog extends MockCatalogRepository implements OnlineCatalog {
   final events = StreamController<void>.broadcast();
   final characters = Completer<List<SubjectCharacter>>();
   final credits = Completer<List<SubjectPerson>>();
+  int detailRequests = 0;
   int episodeRequests = 0;
   int episodeReads = 0;
   int sourceReads = 0;
@@ -1426,6 +1511,7 @@ class _PendingCatalog extends MockCatalogRepository implements OnlineCatalog {
 
   @override
   Future<void> loadSubject(int id, {bool includeExtras = true}) async {
+    detailRequests++;
     if (includeExtras) {
       await loadEpisodes(id);
       await loadRelations(id);

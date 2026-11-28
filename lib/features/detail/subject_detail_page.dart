@@ -70,8 +70,9 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
 
   @override
   void didSettleRoute() {
+    final route = routeOf(context);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      if (!mounted || (route != null && !route.isActive)) return;
       setState(() {
         _sectionsReady = true;
         _subject = ref.read(catalogSubjectProvider(widget.subjectId));
@@ -91,7 +92,7 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
   }
 
   void _ensureProbed(AnimeSubject subject) {
-    if (!routeSettled ||
+    if (!_sectionsReady ||
         _probedSubjectId == subject.subjectId ||
         ref.read(playbackSourcesProvider) == null) {
       return;
@@ -564,9 +565,9 @@ class _SubjectDetailPageState extends ConsumerState<SubjectDetailPage>
                         },
                       ),
                     ),
-                  ],
                 },
                 ],
+                  ],
                 ),
               ),
             ),
@@ -947,48 +948,10 @@ class _EpisodeMatrixCard extends StatefulWidget {
 class _EpisodeMatrixCardState extends State<_EpisodeMatrixCard> {
   static const int _pageSize = 24;
   int _pageIndex = 0;
-  final _arrivalSnapshot = SnapshotController();
-  Animation<double>? _arrival;
-  bool _live = false;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final route = routeOf(context);
-    final arrival = route is CardPageRoute<Object?> ? route.animation : null;
-    if (!identical(arrival, _arrival)) {
-      _arrival?.removeStatusListener(_updateSnapshot);
-      _arrival = arrival?..addStatusListener(_updateSnapshot);
-    }
-    _updateSnapshot();
-  }
-
-  void _updateSnapshot([AnimationStatus? _]) {
-    _arrivalSnapshot.allowSnapshotting =
-        !_live &&
-        widget.episodes.isNotEmpty &&
-        _arrival?.status == AnimationStatus.forward;
-  }
-
-  void _revealLiveCard() {
-    if (!_arrivalSnapshot.allowSnapshotting) return;
-    _live = true;
-    _updateSnapshot();
-  }
-
-  @override
-  void dispose() {
-    _arrival?.removeStatusListener(_updateSnapshot);
-    _arrivalSnapshot.dispose();
-    super.dispose();
-  }
 
   @override
   void didUpdateWidget(covariant _EpisodeMatrixCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.episodes, widget.episodes)) {
-      _revealLiveCard();
-    }
     final totalPages = (widget.episodes.length / _pageSize).ceil();
     if (totalPages > 0 && _pageIndex >= totalPages) {
       _pageIndex = 0;
@@ -1002,7 +965,7 @@ class _EpisodeMatrixCardState extends State<_EpisodeMatrixCard> {
     final totalPages = (episodes.length / _pageSize).ceil();
     final safePage = totalPages == 0 ? 0 : _pageIndex.clamp(0, totalPages - 1);
     final start = safePage * _pageSize;
-    final visible = episodes.skip(start).take(_pageSize).toList();
+    final visible = episodes.skip(start).take(_pageSize);
 
     return KonekoCard(
       corner: 30,
@@ -1028,10 +991,7 @@ class _EpisodeMatrixCardState extends State<_EpisodeMatrixCard> {
                     value: safePage,
                     textBuilder: (idx) =>
                         '${idx * _pageSize + 1}-${((idx + 1) * _pageSize).clamp(1, episodes.length)} 话',
-                    onChanged: (idx) {
-                      _revealLiveCard();
-                      setState(() => _pageIndex = idx);
-                    },
+                    onChanged: (idx) => setState(() => _pageIndex = idx),
                   )
                 else if (episodes.isNotEmpty)
                   Text(
@@ -1052,22 +1012,14 @@ class _EpisodeMatrixCardState extends State<_EpisodeMatrixCard> {
             alignment: Alignment.topCenter,
             child: KonekoSkeletonFade(
               child: episodes.isNotEmpty
-                  ? Listener(
+                  ? RepaintBoundary(
                       key: const ValueKey('episodes-live'),
-                      onPointerDown: (_) => _revealLiveCard(),
-                      child: SnapshotWidget(
-                        key: const ValueKey('episode-arrival-snapshot'),
-                        controller: _arrivalSnapshot,
-                        mode: SnapshotMode.permissive,
-                        autoresize: true,
-                        child: Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            for (final ep in visible)
-                              _episodeCell(context, ep),
-                          ],
-                        ),
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          for (final ep in visible) _episodeCell(context, ep),
+                        ],
                       ),
                     )
                   : widget.isLoading

@@ -174,8 +174,9 @@ mixin RouteSettledMixin<T extends StatefulWidget> on State<T> {
   }
 
   Future<void> _waitForArrival() async {
+    final routes = routesCarrying(context).toList();
     await whenRouteSettled(context);
-    if (!mounted) {
+    if (!mounted || routes.any((route) => !route.isActive)) {
       return;
     }
     _routeSettled = true;
@@ -225,13 +226,14 @@ mixin ArrivalCacheExtentMixin<T extends StatefulWidget> on State<T> {
   }
 
   Future<void> _widen() async {
+    final routes = routesCarrying(context).toList();
     await whenRouteSettled(context);
-    if (!mounted) {
+    if (!mounted || routes.any((route) => !route.isActive)) {
       return;
     }
     await whenNothingAnimates();
     for (var step = 1; step < _steps.length; step++) {
-      if (!mounted) {
+      if (!mounted || routes.any((route) => !route.isActive)) {
         return;
       }
       setState(() => _step = step);

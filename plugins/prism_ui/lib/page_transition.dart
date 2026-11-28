@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 import 'package:prism_ui/deferred_push.dart';
 import 'package:prism_ui/drag_back.dart';
@@ -147,6 +148,10 @@ mixin CardRouteMixin<T> on ModalRoute<T> {
   @protected
   bool get recedesCovered => false;
 
+  /// A card that is painted offscreen before its push can capture that paint.
+  @protected
+  bool get prepareArrivalSnapshot => false;
+
   final _coveredByZoom = ValueNotifier(false);
   final _coveredByOpaque = ValueNotifier(false);
 
@@ -229,19 +234,15 @@ mixin CardRouteMixin<T> on ModalRoute<T> {
   @protected
   void updateBarItems() => _barItems.value = computeBarItems();
 
-  // Impeller redraws a moving page in full each frame.
   final _motionSnapshot = SnapshotController();
   Animation<double>? _sheetCover;
   var _glass = false;
   var _touchReleased = false;
+  var _finishedArrival = false;
 
-  // Impeller redraws a moving page (and re-captures its LiquidGlass panes) in
-  // full on every frame unless snapshotted. Snapshot covered pages while
-  // visibly moving (releasing early on touch or near the end of pop settle),
-  // incoming non-zoom CardPageRoutes once DeferredPushRouteMixin releases,
-  // and interactive drag-back gestures. Intentionally avoid snapshotting
-  // button-triggered pops (`animation.status == reverse`) so press highlights
-  // smoothly release while the body RepaintBoundary stays GPU-cached.
+  // A page already captured at the start of a push can use that same image
+  // when the user reverses it before it arrives. A settled button pop keeps
+  // the page live, including the pressed button's release.
   void _updateMotionSnapshot() {
     final animation = this.animation!;
     final secondary = secondaryAnimation!;
@@ -259,11 +260,14 @@ mixin CardRouteMixin<T> on ModalRoute<T> {
       final DeferredPushRouteMixin<T> deferred => deferred.isDeferredPushReady,
       _ => true,
     };
-    final incomingPushSnapshot =
+    final ownSnapshot =
         !_touchReleased &&
         !recedesCovered &&
-        animation.status == AnimationStatus.forward &&
-        pushReady;
+        ((animation.status == AnimationStatus.forward &&
+                (prepareArrivalSnapshot || pushReady)) ||
+            (prepareArrivalSnapshot &&
+                !_finishedArrival &&
+                animation.status == AnimationStatus.reverse));
     _motionSnapshot.allowSnapshotting =
         underMovingSheet ||
         (_coveredByZoom.value
@@ -272,7 +276,7 @@ mixin CardRouteMixin<T> on ModalRoute<T> {
                   animation.isCompleted &&
                   secondary.isAnimating
             : coveredMoving ||
-                  incomingPushSnapshot ||
+                  ownSnapshot ||
                   (!recedesCovered &&
                       ((animation.status.isAnimating && dragged) ||
                           _isDragBackActive)));
@@ -284,6 +288,24 @@ mixin CardRouteMixin<T> on ModalRoute<T> {
     }
     _touchReleased = true;
     _motionSnapshot.allowSnapshotting = false;
+  }
+
+  bool get _preparingOrEntering =>
+      prepareArrivalSnapshot && animation?.status == AnimationStatus.forward;
+
+  void _handleSnapshotPointerDown(PointerDownEvent _) {
+    if (!_preparingOrEntering) _releaseSnapshotForTouch();
+  }
+
+  void _handleSnapshotPointerUp(PointerEvent _) {
+    if (!_preparingOrEntering || !_motionSnapshot.allowSnapshotting) return;
+    // A back tap can admit its pop asynchronously. Leave the capture intact
+    // until the pointer's action has been dispatched, then unfreeze live taps.
+    final scheduler = SchedulerBinding.instance;
+    scheduler.addPostFrameCallback((_) {
+      if (isActive && _preparingOrEntering) _releaseSnapshotForTouch();
+    });
+    scheduler.ensureVisualUpdate();
   }
 
   void _handleSecondaryTick() {
@@ -316,6 +338,11 @@ mixin CardRouteMixin<T> on ModalRoute<T> {
     }
     updateBarItems();
     _updateMotionSnapshot();
+  }
+
+  void _handlePrimaryStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed) _finishedArrival = true;
+    _handleStatus(status);
   }
 
   void _handleSheetCoverStatus(AnimationStatus _) => _updateMotionSnapshot();
@@ -377,13 +404,21 @@ mixin CardRouteMixin<T> on ModalRoute<T> {
     }
     _syncCoveredByOpaque();
     super.didChangeNext(next);
-    retakeSnapshot();
+    if (next == null && secondaryAnimation?.status == AnimationStatus.reverse) {
+      _updateMotionSnapshot();
+    } else {
+      retakeSnapshot();
+    }
   }
 
   @override
   void didPopNext(Route<dynamic> nextRoute) {
     super.didPopNext(nextRoute);
-    retakeSnapshot();
+    if (secondaryAnimation?.status == AnimationStatus.reverse) {
+      _updateMotionSnapshot();
+    } else {
+      retakeSnapshot();
+    }
   }
 
   @override
@@ -391,7 +426,7 @@ mixin CardRouteMixin<T> on ModalRoute<T> {
     super.install();
     animation!
       ..addListener(updateBarItems)
-      ..addStatusListener(_handleStatus);
+      ..addStatusListener(_handlePrimaryStatus);
     secondaryAnimation!
       ..addListener(_handleSecondaryTick)
       ..addStatusListener(_handleStatus);
@@ -408,7 +443,7 @@ mixin CardRouteMixin<T> on ModalRoute<T> {
   void dispose() {
     animation!
       ..removeListener(updateBarItems)
-      ..removeStatusListener(_handleStatus);
+      ..removeStatusListener(_handlePrimaryStatus);
     secondaryAnimation!
       ..removeListener(_handleSecondaryTick)
       ..removeStatusListener(_handleStatus);
@@ -431,7 +466,10 @@ mixin CardRouteMixin<T> on ModalRoute<T> {
     // for it, and they come out as glass rather than a flat tint.
     return Listener(
       behavior: HitTestBehavior.translucent,
-      onPointerDown: (_) => _releaseSnapshotForTouch(),
+      onPointerDown: _handleSnapshotPointerDown,
+      onPointerMove: (_) => _releaseSnapshotForTouch(),
+      onPointerUp: _handleSnapshotPointerUp,
+      onPointerCancel: _handleSnapshotPointerUp,
       child: RepaintBoundary(
         child: SnapshotWidget(
           controller: _motionSnapshot,
