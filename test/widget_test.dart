@@ -474,15 +474,15 @@ void main() {
     );
     final rangeTrigger = find.descendant(
       of: detail,
-      matching: find.text('1-24'),
+      matching: find.text('1-24 话'),
     );
     await tester.scrollUntilVisible(rangeTrigger, 160, scrollable: scrollable);
     await tester.pumpAndSettle();
     expect(rangeTrigger, findsOneWidget);
     await tester.tap(rangeTrigger);
     await tester.pumpAndSettle();
-    expect(find.text('25-25'), findsOneWidget);
-    await tester.tap(find.text('25-25'));
+    expect(find.text('25-25 话'), findsOneWidget);
+    await tester.tap(find.text('25-25 话'));
     await tester.pumpAndSettle();
     expect(position.pixels, greaterThan(0));
     expect(tester.takeException(), isNull);
