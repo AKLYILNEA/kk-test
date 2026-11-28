@@ -43,12 +43,96 @@ class KonekoSync implements TrackingSync {
   ];
 
   @override
-  Future<int> syncBangumi() =>
-      _bangumi ??= _syncBangumi().whenComplete(() => _bangumi = null);
+  Future<int> syncBangumi({
+    BangumiSyncPriority priority = BangumiSyncPriority.timeFirst,
+  }) =>
+      _bangumi ??= _syncBangumi(priority).whenComplete(() => _bangumi = null);
 
-  Future<int> _syncBangumi() async {
+  @override
+  Future<String> testBangumi() async {
     final token = (await _vault.read()).bangumiToken.trim();
-    if (token.isEmpty) throw StateError('请先在服务设置中填写 Bangumi Access Token');
+    if (token.isEmpty) throw StateError('请先填写 Bangumi Access Token');
+    final account = jsonObject(await _catalog.get('/v0/me', token: token));
+    final nickname = jsonString(account['nickname']).trim();
+    final username = jsonString(account['username']).trim();
+    if (username.isEmpty && nickname.isEmpty) {
+      throw StateError('Bangumi 账号验证失败，请检查 Token 是否有效');
+    }
+    return nickname.isNotEmpty ? nickname : username;
+  }
+
+  @override
+  Future<void> pushBangumiCollection(
+    int subjectId,
+    CollectionStatus status, {
+    int? watchedEpisode,
+  }) async {
+    final token = (await _vault.read()).bangumiToken.trim();
+    if (token.isEmpty) return;
+    final path = '/v0/users/-/collections/$subjectId';
+    await _catalog.write(path, 'POST', token, {
+      'type': _statuses.indexOf(status) + 1,
+    });
+    if (watchedEpisode != null && watchedEpisode > 0) {
+      final ids = await _resolveEpisodeIds(subjectId, {watchedEpisode});
+      if (ids.isNotEmpty) {
+        await _catalog.write('$path/episodes', 'PATCH', token, {
+          'episode_id': ids,
+          'type': 2,
+        });
+        await _catalog.write(path, 'POST', token, {
+          'type': _statuses.indexOf(status) + 1,
+        });
+      }
+    }
+    await _store.update(
+      (now) => now.copyWith(
+        collectionChanges: {
+          for (final change in now.collectionChanges.entries)
+            if (change.key != subjectId) change.key: change.value,
+        },
+      ),
+    );
+  }
+
+  Future<List<int>> _resolveEpisodeIds(
+    int subjectId,
+    Set<int> episodeNumbers,
+  ) async {
+    final ids = <int>[];
+    for (var offset = 0; offset < 1000; offset += 100) {
+      final response = jsonObject(
+        await _catalog.get(
+          '/v0/episodes',
+          query: {
+            'subject_id': subjectId,
+            'type': 0,
+            'limit': 100,
+            'offset': offset,
+          },
+        ),
+      );
+      final rows = jsonList(response['data']);
+      for (final row in rows.map(jsonObject)) {
+        final number = jsonInt(row['sort']);
+        final episodeId = jsonInt(row['id']);
+        if (row['sort'] == number &&
+            episodeNumbers.contains(number) &&
+            episodeId > 0) {
+          ids.add(episodeId);
+        }
+      }
+      if (rows.length < 100 ||
+          offset + rows.length >= jsonInt(response['total'])) {
+        break;
+      }
+    }
+    return ids;
+  }
+
+  Future<int> _syncBangumi(BangumiSyncPriority priority) async {
+    final token = (await _vault.read()).bangumiToken.trim();
+    if (token.isEmpty) throw StateError('请先在同步设置中填写 Bangumi Access Token');
     final account = jsonObject(await _catalog.get('/v0/me', token: token));
     final username = jsonString(account['username']);
     if (username.isEmpty) throw StateError('Bangumi 账号验证失败');
@@ -87,17 +171,45 @@ class KonekoSync implements TrackingSync {
       }
     }
     _catalog.rememberExternal(metadata);
+    final remoteById = {for (final entry in remote) entry.subjectId: entry};
+
     await _store.update((local) {
-      final pending = local.collectionChanges;
-      return mergeTracking(
-        local,
-        TrackingSnapshot(
-          collections: [
-            for (final entry in remote)
-              if (!pending.containsKey(entry.subjectId)) entry,
-          ],
-        ),
-      );
+      final localById = {
+        for (final entry in local.collections) entry.subjectId: entry,
+      };
+      final pending = Map<int, DateTime>.of(local.collectionChanges);
+      final merged = <int, CollectionEntry>{...localById};
+      for (final entry in remote) {
+        final existing = localById[entry.subjectId];
+        if (existing == null) {
+          merged[entry.subjectId] = entry;
+          continue;
+        }
+        switch (priority) {
+          case BangumiSyncPriority.bangumiFirst:
+            merged[entry.subjectId] = entry;
+            pending.remove(entry.subjectId);
+          case BangumiSyncPriority.localFirst:
+            if (existing.status != entry.status) {
+              pending.putIfAbsent(entry.subjectId, () => existing.updatedAt);
+            }
+          case BangumiSyncPriority.timeFirst:
+            if (!pending.containsKey(entry.subjectId) &&
+                !existing.updatedAt.isAfter(entry.updatedAt)) {
+              merged[entry.subjectId] = entry;
+            }
+        }
+      }
+      if (priority == BangumiSyncPriority.localFirst) {
+        for (final entry in local.collections) {
+          if (!remoteById.containsKey(entry.subjectId)) {
+            pending.putIfAbsent(entry.subjectId, () => entry.updatedAt);
+          }
+        }
+      }
+      final list = merged.values.toList()
+        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      return local.copyWith(collections: list, collectionChanges: pending);
     });
 
     final current = _store.current;
@@ -116,34 +228,7 @@ class KonekoSync implements TrackingSync {
               .toSet() ??
           const <int>{};
       if (completed.isNotEmpty) {
-        final ids = <int>[];
-        for (var offset = 0; offset < 1000; offset += 100) {
-          final response = jsonObject(
-            await _catalog.get(
-              '/v0/episodes',
-              query: {
-                'subject_id': id,
-                'type': 0,
-                'limit': 100,
-                'offset': offset,
-              },
-            ),
-          );
-          final rows = jsonList(response['data']);
-          for (final row in rows.map(jsonObject)) {
-            final number = jsonInt(row['sort']);
-            final episodeId = jsonInt(row['id']);
-            if (row['sort'] == number &&
-                completed.contains(number) &&
-                episodeId > 0) {
-              ids.add(episodeId);
-            }
-          }
-          if (rows.length < 100 ||
-              offset + rows.length >= jsonInt(response['total'])) {
-            break;
-          }
-        }
+        final ids = await _resolveEpisodeIds(id, completed);
         // Create the collection if needed before registering episode progress.
         await _catalog.write(path, 'POST', token, {
           'type': _statuses.indexOf(entry.status) + 1,
@@ -173,13 +258,39 @@ class KonekoSync implements TrackingSync {
   }
 
   @override
-  Future<int> syncWebDav() =>
-      _webdav ??= _syncWebDav().whenComplete(() => _webdav = null);
-
-  Future<int> _syncWebDav() async {
+  Future<void> testWebDav() async {
     final settings = await _vault.read();
     if (settings.webdavUrl.trim().isEmpty) {
-      throw StateError('请先在服务设置中填写 WebDAV 地址');
+      throw StateError('请先填写 WebDAV 服务器地址');
+    }
+    final address = networkUri(settings.webdavUrl).toString();
+    final client = dav.newClient(
+      address,
+      user: settings.webdavUser,
+      password: settings.webdavPassword,
+    );
+    client.c.options
+      ..connectTimeout = const Duration(seconds: 10)
+      ..receiveTimeout = const Duration(seconds: 20)
+      ..sendTimeout = const Duration(seconds: 20)
+      ..followRedirects = false;
+    await client.ping();
+  }
+
+  @override
+  Future<int> syncWebDav({bool syncHistory = true, bool syncCollect = true}) =>
+      _webdav ??= _syncWebDav(
+        syncHistory: syncHistory,
+        syncCollect: syncCollect,
+      ).whenComplete(() => _webdav = null);
+
+  Future<int> _syncWebDav({
+    required bool syncHistory,
+    required bool syncCollect,
+  }) async {
+    final settings = await _vault.read();
+    if (settings.webdavUrl.trim().isEmpty) {
+      throw StateError('请先在同步设置中填写 WebDAV 地址');
     }
     final address = networkUri(settings.webdavUrl).toString();
     final client = dav.newClient(
@@ -212,7 +323,12 @@ class KonekoSync implements TrackingSync {
 
     final legacy = await _readKazumi(client);
     remote = mergeTracking(remote, legacy);
-    await _store.update((local) => mergeTracking(local, remote));
+    final filteredRemote = TrackingSnapshot(
+      collections: syncCollect ? remote.collections : const [],
+      history: syncHistory ? remote.history : const [],
+      removedHistory: syncHistory ? remote.removedHistory : const {},
+    );
+    await _store.update((local) => mergeTracking(local, filteredRemote));
     var device = _preferences.getString('koneko_webdav_device');
     if (device == null) {
       device = const Uuid().v4();
@@ -222,13 +338,18 @@ class KonekoSync implements TrackingSync {
     }
     final destination = '$ownRoot/$device.json';
     final temporary = '$destination.pending';
-    final snapshot = _store.current.copyWith(collectionChanges: const {});
+    final current = _store.current;
+    final snapshot = TrackingSnapshot(
+      collections: syncCollect ? current.collections : const [],
+      history: syncHistory ? current.history : const [],
+      removedHistory: syncHistory ? current.removedHistory : const {},
+    );
     await client.write(
       temporary,
       utf8.encode(jsonEncode(encodeTracking(snapshot))),
     );
     await client.rename(temporary, destination, true);
-    return remote.history.length + remote.collections.length;
+    return filteredRemote.history.length + filteredRemote.collections.length;
   }
 
   Future<TrackingSnapshot> _readKazumi(dav.Client client) async {

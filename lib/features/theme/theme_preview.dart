@@ -169,7 +169,6 @@ class _ThemeLivePreviewState extends ConsumerState<ThemeLivePreview>
       pureBlack,
       primaryColor,
       colorStyle,
-      floatingBar,
       tabAnimation,
       liquidGlass,
     ) = ref.watch(
@@ -179,7 +178,6 @@ class _ThemeLivePreviewState extends ConsumerState<ThemeLivePreview>
           s.pureBlack,
           s.primaryColor,
           s.colorStyle,
-          s.floatingNavigationBar,
           s.tabAnimation,
           s.liquidGlass != LiquidGlassMode.none,
         ),
@@ -219,11 +217,11 @@ class _ThemeLivePreviewState extends ConsumerState<ThemeLivePreview>
                 builder: (_, animatedScheme, _) => AnimatedSwitcher(
                   duration: _duration,
                   child: AnimatedBuilder(
-                    key: ValueKey((floatingBar, liquidGlass)),
+                    key: ValueKey(liquidGlass),
                     animation: _slideCurve,
                     builder: (_, _) => MiniScreen(
                       colorScheme: animatedScheme,
-                      floatingBar: floatingBar,
+                      floatingBar: true,
                       liquidGlass: liquidGlass,
                       selected: _selected,
                       previous: _previous,

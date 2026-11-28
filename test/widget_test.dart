@@ -13,8 +13,10 @@ import 'package:koneko/common/ui_localizations.dart';
 import 'package:koneko/features/about/about_page.dart';
 import 'package:koneko/features/detail/subject_detail_page.dart';
 import 'package:koneko/features/discover/discover_page.dart';
+import 'package:koneko/features/my/service_settings_page.dart';
 import 'package:koneko/features/player/player_page.dart';
 import 'package:koneko/features/player/rule_verify_page.dart';
+import 'package:koneko/features/rules/rules_page.dart';
 import 'package:koneko/features/theme/theme_page.dart';
 import 'package:koneko/features/theme/theme_preview.dart';
 import 'package:koneko/main.dart';
@@ -470,13 +472,18 @@ void main() {
       find.descendant(of: detail, matching: find.text('展开全部')),
       findsOneWidget,
     );
-    final secondRange = find.descendant(
+    final rangeTrigger = find.descendant(
       of: detail,
-      matching: find.text('25-25'),
+      matching: find.text('1-24'),
     );
-    await tester.scrollUntilVisible(secondRange, 160, scrollable: scrollable);
+    await tester.scrollUntilVisible(rangeTrigger, 160, scrollable: scrollable);
     await tester.pumpAndSettle();
-    expect(secondRange, findsOneWidget);
+    expect(rangeTrigger, findsOneWidget);
+    await tester.tap(rangeTrigger);
+    await tester.pumpAndSettle();
+    expect(find.text('25-25'), findsOneWidget);
+    await tester.tap(find.text('25-25'));
+    await tester.pumpAndSettle();
     expect(position.pixels, greaterThan(0));
     expect(tester.takeException(), isNull);
   });
@@ -932,14 +939,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('鲜艳'), findsOneWidget);
 
-      await tester.scrollUntilVisible(
-        find.text('导航栏样式'),
-        180,
-        scrollable: themeScroll,
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('悬浮'), findsOneWidget);
-      expect(find.text('贴底'), findsOneWidget);
+      expect(find.text('导航栏样式'), findsNothing);
 
       // Pop back and verify PlayerPage has only one clean danmaku switch
       await tester.tap(_barAction('返回'));
@@ -954,6 +954,110 @@ void main() {
       expect(find.byType(KonekoDanmakuSwitch), findsOneWidget);
       expect(find.byTooltip('关闭弹幕'), findsNothing);
       expect(find.byTooltip('开启弹幕'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'v0.0.25: 4 watching items stay visible across tab switches, short synopsis has no hero jump, and sync/rules use FlClash dialogs',
+    (tester) async {
+      _setViewport(tester, const Size(420, 880));
+      final fourWatching = [
+        CollectionEntry(
+          subjectId: 1001,
+          status: CollectionStatus.watching,
+          watchedEpisodes: 3,
+          updatedAt: DateTime(2026, 4, 10),
+        ),
+        CollectionEntry(
+          subjectId: 1002,
+          status: CollectionStatus.watching,
+          watchedEpisodes: 5,
+          updatedAt: DateTime(2026, 4, 9),
+        ),
+        CollectionEntry(
+          subjectId: 1003,
+          status: CollectionStatus.watching,
+          watchedEpisodes: 2,
+          updatedAt: DateTime(2026, 4, 8),
+        ),
+        CollectionEntry(
+          subjectId: 1004,
+          status: CollectionStatus.watching,
+          watchedEpisodes: 1,
+          updatedAt: DateTime(2026, 4, 7),
+        ),
+      ];
+      final shortCatalog = _PartialDetailCatalog(shortSummary: true);
+      addTearDown(shortCatalog.events.close);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            catalogRepositoryProvider.overrideWithValue(shortCatalog),
+            ruleRepositoryProvider.overrideWithValue(MockRuleRepository()),
+            libraryProvider.overrideWith(
+              () => _CustomFixtureLibrary(fourWatching),
+            ),
+            historyProvider.overrideWith(_FixtureHistory.new),
+          ],
+          child: const KonekoApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 1) Short-synopsis detail page must not jump when skeleton resolves.
+      await tester.tap(find.text(_PartialDetailCatalog.title).first);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pump();
+      final detail = find.byType(SubjectDetailPage);
+      final tabBar = find.descendant(of: detail, matching: find.text('评论'));
+      final beforeY = tester.getTopLeft(tabBar).dy;
+      shortCatalog.completeAll();
+      await tester.pumpAndSettle();
+      final afterY = tester.getTopLeft(tabBar).dy;
+      expect((afterY - beforeY).abs(), lessThan(8));
+
+      await tester.tap(_barAction('返回'));
+      await tester.pumpAndSettle();
+
+      // 2) Cycle all 4 bottom tabs sequentially with 4 watching items.
+      final dock = find.byType(NavigationDock);
+      await tester.tap(find.descendant(of: dock, matching: find.text('时间表')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.descendant(of: dock, matching: find.text('追番')));
+      await tester.pumpAndSettle();
+      expect(find.text('在看  4'), findsOneWidget);
+      expect(find.text('微风书屋的夏日来信'), findsOneWidget);
+      await tester.tap(find.descendant(of: dock, matching: find.text('我的')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.descendant(of: dock, matching: find.text('追番')));
+      await tester.pumpAndSettle();
+      expect(find.text('在看  4'), findsOneWidget);
+      expect(find.text('微风书屋的夏日来信'), findsOneWidget);
+
+      // 3) Sync settings page uses zero bare inline TextFields & has priority popup.
+      await tester.tap(find.descendant(of: dock, matching: find.text('我的')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('同步设置'));
+      await tester.pumpAndSettle();
+      expect(find.byType(ServiceSettingsPage), findsOneWidget);
+      expect(find.byType(TextField), findsNothing);
+      expect(
+        find.byType(KonekoOptionsItem<BangumiSyncPriority>),
+        findsOneWidget,
+      );
+      await tester.tap(_barAction('返回'));
+      await tester.pumpAndSettle();
+
+      // 4) Rules page supports sort mode and rich rule metadata.
+      await tester.tap(find.text('规则管理'));
+      await tester.pumpAndSettle();
+      expect(find.byType(RulesPage), findsOneWidget);
+      await tester.tap(_barAction('调整规则排序'));
+      await tester.pumpAndSettle();
+      expect(find.byType(SliverReorderableList), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
@@ -985,6 +1089,15 @@ Widget _testApp({CatalogRepository? catalog}) => ProviderScope(
 class _FixtureLibrary extends LibraryNotifier {
   @override
   List<CollectionEntry> build() => MockSeedData.initialCollections();
+}
+
+class _CustomFixtureLibrary extends LibraryNotifier {
+  _CustomFixtureLibrary(this._initial);
+
+  final List<CollectionEntry> _initial;
+
+  @override
+  List<CollectionEntry> build() => _initial;
 }
 
 class _FixtureHistory extends HistoryNotifier {
@@ -1120,6 +1233,9 @@ class _LongTitleCatalog extends _PendingCatalog {
 }
 
 class _PartialDetailCatalog extends _PendingCatalog {
+  _PartialDetailCatalog({this.shortSummary = false});
+
+  final bool shortSummary;
   static const title = '占位骨架测试番剧';
   static const id = 777001;
   final detail = Completer<void>();
@@ -1147,7 +1263,9 @@ class _PartialDetailCatalog extends _PendingCatalog {
       title: title,
       originalTitle: '',
       summary: _detailLoaded
-          ? List.filled(18, '这是一段用于校验详情页占位骨架无缝切换的简介文本。').join()
+          ? (shortSummary
+                ? '简短的一行剧情简介。'
+                : List.filled(18, '这是一段用于校验详情页占位骨架无缝切换的简介文本。').join())
           : '',
       score: _detailLoaded ? 8.4 : 0,
       rank: _detailLoaded ? 215 : 0,

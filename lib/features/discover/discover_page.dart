@@ -225,7 +225,6 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage>
     var draft = _filter;
     var draftHideWatched = _hideWatched;
     var draftHideDropped = _hideDropped;
-    final customTag = TextEditingController();
     final now = DateTime.now();
     final recentSeasons = <AnimeSeason>[];
     var y = now.year;
@@ -248,11 +247,18 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage>
         return StatefulBuilder(
           builder: (sheetContext, setSheetState) {
             final colorScheme = sheetContext.colorScheme;
-            void addCustomTag() {
-              final tag = customTag.text.trim();
+            Future<void> openCustomTagDialog() async {
+              final value = await showFloatingDialog<String>(
+                context: sheetContext,
+                child: const InputDialog(
+                  title: '添加自定义标签',
+                  value: '',
+                  hintText: '例如：京阿尼、剧场版、科幻',
+                ),
+              );
+              final tag = value?.trim() ?? '';
               if (tag.isEmpty || draft.tags.contains(tag)) return;
               draft = draft.copyWith(tags: [...draft.tags, tag]);
-              customTag.clear();
               setSheetState(() {});
             }
 
@@ -306,60 +312,43 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage>
                       KonekoCard(
                         corner: 22,
                         padding: const EdgeInsets.all(14),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          spacing: 12,
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
                           children: [
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                for (final tag in allTags)
-                                  KonekoChip(
-                                    label: tag,
-                                    height: 32,
-                                    fontSize: 12.5,
-                                    selected: draft.tags.contains(tag),
-                                    backgroundColor: draft.tags.contains(tag)
-                                        ? colorScheme.primary
-                                        : SurfaceLevel.block.colorOf(
-                                            colorScheme,
-                                          ),
-                                    onPressed: () {
-                                      final nextTags = draft.tags.contains(tag)
-                                          ? draft.tags
-                                                .where((t) => t != tag)
-                                                .toList()
-                                          : [...draft.tags, tag];
-                                      draft = draft.copyWith(tags: nextTags);
-                                      setSheetState(() {});
-                                    },
-                                  ),
-                              ],
-                            ),
-                            Row(
-                              spacing: 8,
-                              children: [
-                                Expanded(
-                                  child: TextField(
-                                    controller: customTag,
-                                    autocorrect: false,
-                                    decoration: const InputDecoration(
-                                      hintText: '输入自定义标签（如：京阿尼、剧场版）',
-                                    ),
-                                    onSubmitted: (_) => addCustomTag(),
-                                  ),
-                                ),
-                                KonekoChip(
-                                  label: '添加',
-                                  height: 36,
-                                  fontSize: 13,
-                                  backgroundColor: colorScheme.primary
-                                      .withValues(alpha: 0.14),
-                                  foregroundColor: colorScheme.primary,
-                                  onPressed: addCustomTag,
-                                ),
-                              ],
+                            for (final tag in allTags)
+                              KonekoChip(
+                                label: tag,
+                                height: 32,
+                                fontSize: 12.5,
+                                selected: draft.tags.contains(tag),
+                                backgroundColor: draft.tags.contains(tag)
+                                    ? colorScheme.primary
+                                    : SurfaceLevel.block.colorOf(colorScheme),
+                                onPressed: () {
+                                  final nextTags = draft.tags.contains(tag)
+                                      ? draft.tags
+                                            .where((t) => t != tag)
+                                            .toList()
+                                      : [...draft.tags, tag];
+                                  draft = draft.copyWith(tags: nextTags);
+                                  setSheetState(() {});
+                                },
+                              ),
+                            KonekoChip(
+                              label: '自定义标签',
+                              height: 32,
+                              fontSize: 12.5,
+                              leading: GlyphIcon(
+                                KonekoGlyphs.add,
+                                size: 13,
+                                color: colorScheme.primary,
+                              ),
+                              backgroundColor: colorScheme.primary.withValues(
+                                alpha: 0.12,
+                              ),
+                              foregroundColor: colorScheme.primary,
+                              onPressed: () => unawaited(openCustomTagDialog()),
                             ),
                           ],
                         ),
@@ -591,7 +580,6 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage>
         ],
       ),
     );
-    customTag.dispose();
 
     if (!mounted || applied != true) return;
     setState(() {

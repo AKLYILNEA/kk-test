@@ -652,105 +652,136 @@ class _HeroCard extends StatelessWidget {
                           ),
                         ],
                       ),
-                      if (hasRating || showRatingSkeleton) ...[
-                        const SizedBox(height: 12),
-                        KonekoSkeletonFade(
-                          child: hasRating
-                              ? Column(
-                                  key: const ValueKey('hero-rating-live'),
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  spacing: 6,
-                                  children: [
-                                    if (subject.score > 0)
-                                      Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        spacing: 7,
-                                        children: [
-                                          KonekoStarRating(
-                                            score: subject.score,
-                                            starSize: 16,
-                                            spacing: 2,
-                                          ),
-                                          Text(
-                                            subject.score.toStringAsFixed(1),
-                                            style: AppTextStyle.headline
-                                                .of(context, emphasized: true)
-                                                .copyWith(
-                                                  color: colorScheme.onSurface,
-                                                  fontFeatures: const [
-                                                    FontFeature.tabularFigures(),
-                                                  ],
-                                                ),
-                                          ),
-                                        ],
-                                      ),
-                                    if (subject.rank > 0)
-                                      _BangumiRankLine(rank: subject.rank),
-                                  ],
-                                )
-                              : const KonekoSkeletonPulse(
-                                  key: ValueKey('hero-rating-skeleton'),
-                                  child: Column(
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        height: 46,
+                        child: Align(
+                          alignment: AlignmentDirectional.bottomStart,
+                          child: KonekoSkeletonFade(
+                            child: hasRating
+                                ? Column(
+                                    key: const ValueKey('hero-rating-live'),
+                                    mainAxisSize: MainAxisSize.min,
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
-                                    spacing: 6,
+                                    spacing: 4,
                                     children: [
-                                      KonekoSkeletonBox(
-                                        width: 124,
-                                        height: 18,
-                                        corner: 7,
-                                      ),
-                                      KonekoSkeletonBox(
-                                        width: 108,
-                                        height: 16,
-                                        corner: 6,
-                                      ),
+                                      if (subject.score > 0)
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          spacing: 7,
+                                          children: [
+                                            KonekoStarRating(
+                                              score: subject.score,
+                                              starSize: 16,
+                                              spacing: 2,
+                                            ),
+                                            Text(
+                                              subject.score.toStringAsFixed(1),
+                                              style: AppTextStyle.headline
+                                                  .of(context, emphasized: true)
+                                                  .copyWith(
+                                                    color:
+                                                        colorScheme.onSurface,
+                                                    fontFeatures: const [
+                                                      FontFeature.tabularFigures(),
+                                                    ],
+                                                  ),
+                                            ),
+                                          ],
+                                        ),
+                                      if (subject.rank > 0)
+                                        _BangumiRankLine(rank: subject.rank),
                                     ],
+                                  )
+                                : showRatingSkeleton
+                                ? const KonekoSkeletonPulse(
+                                    key: ValueKey('hero-rating-skeleton'),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      spacing: 6,
+                                      children: [
+                                        KonekoSkeletonBox(
+                                          width: 124,
+                                          height: 18,
+                                          corner: 7,
+                                        ),
+                                        KonekoSkeletonBox(
+                                          width: 108,
+                                          height: 16,
+                                          corner: 6,
+                                        ),
+                                      ],
+                                    ),
+                                  )
+                                : Text(
+                                    '暂无评分',
+                                    key: const ValueKey('hero-rating-empty'),
+                                    style: AppTextStyle.caption1
+                                        .of(context)
+                                        .copyWith(
+                                          color: colorScheme.onSurfaceVariant,
+                                        ),
                                   ),
-                                ),
+                          ),
                         ),
-                      ],
+                      ),
                     ],
                   ),
                 ),
               ),
             ],
           ),
-          if (hasMeta || showMetaSkeleton) ...[
-            const SizedBox(height: 12),
-            KonekoSkeletonFade(
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 24,
+            child: KonekoSkeletonFade(
               child: hasMeta
-                  ? Wrap(
+                  ? SingleChildScrollView(
                       key: const ValueKey('hero-meta-live'),
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: [
-                        if (subject.year > 0)
-                          KonekoChip(
-                            label: subject.seasonLabel.isNotEmpty
-                                ? subject.seasonLabel
-                                : '${subject.year} 年',
-                          ),
-                        if (subject.studio.trim().isNotEmpty)
-                          KonekoChip(label: subject.studio.trim()),
-                        if (subject.totalEpisodes > 0)
-                          KonekoChip(label: '共 ${subject.totalEpisodes} 话'),
-                      ],
-                    )
-                  : const KonekoSkeletonPulse(
-                      key: ValueKey('hero-meta-skeleton'),
-                      child: Wrap(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
                         spacing: 6,
-                        runSpacing: 6,
                         children: [
-                          KonekoSkeletonBox(width: 68, height: 26, corner: 13),
-                          KonekoSkeletonBox(width: 88, height: 26, corner: 13),
-                          KonekoSkeletonBox(width: 60, height: 26, corner: 13),
+                          if (subject.year > 0)
+                            KonekoChip(
+                              label: subject.seasonLabel.isNotEmpty
+                                  ? subject.seasonLabel
+                                  : '${subject.year} 年',
+                            ),
+                          if (subject.studio.trim().isNotEmpty)
+                            KonekoChip(label: subject.studio.trim()),
+                          if (subject.totalEpisodes > 0)
+                            KonekoChip(label: '共 ${subject.totalEpisodes} 话'),
                         ],
+                      ),
+                    )
+                  : showMetaSkeleton
+                  ? const KonekoSkeletonPulse(
+                      key: ValueKey('hero-meta-skeleton'),
+                      child: Row(
+                        spacing: 6,
+                        children: [
+                          KonekoSkeletonBox(width: 68, height: 24, corner: 12),
+                          KonekoSkeletonBox(width: 88, height: 24, corner: 12),
+                          KonekoSkeletonBox(width: 60, height: 24, corner: 12),
+                        ],
+                      ),
+                    )
+                  : Align(
+                      key: const ValueKey('hero-meta-empty'),
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Text(
+                        '动画',
+                        style: AppTextStyle.caption1
+                            .of(context)
+                            .copyWith(color: colorScheme.onSurfaceVariant),
                       ),
                     ),
             ),
-          ],
+          ),
           const SizedBox(height: 16),
           PressSurface(
             fill: colorScheme.primary,
@@ -809,24 +840,36 @@ class _HeroCard extends StatelessWidget {
                 ),
             ],
           ),
-          AnimatedSize(
-            duration: context.motionDuration(const Duration(milliseconds: 220)),
-            curve: Curves.easeOutCubic,
-            alignment: Alignment.topCenter,
+          Padding(
+            padding: const EdgeInsets.only(top: 14),
             child: KonekoSkeletonFade(
               child: summary.isNotEmpty
-                  ? Padding(
+                  ? SubjectSynopsis(
                       key: const ValueKey('hero-synopsis-live'),
-                      padding: const EdgeInsets.only(top: 14),
-                      child: SubjectSynopsis(summary: summary),
+                      summary: summary,
                     )
                   : showSummarySkeleton
-                  ? const Padding(
+                  ? const _SynopsisSkeletonBlock(
                       key: ValueKey('hero-synopsis-skeleton'),
-                      padding: EdgeInsets.only(top: 14),
-                      child: _SynopsisSkeletonBlock(),
                     )
-                  : const SizedBox.shrink(key: ValueKey('hero-synopsis-empty')),
+                  : KonekoBlock(
+                      key: const ValueKey('hero-synopsis-empty'),
+                      corner: 16,
+                      padding: const EdgeInsets.all(12),
+                      child: SizedBox(
+                        width: double.infinity,
+                        height: 60,
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            '暂无剧情简介',
+                            style: AppTextStyle.caption1
+                                .of(context)
+                                .copyWith(color: colorScheme.onSurfaceVariant),
+                          ),
+                        ),
+                      ),
+                    ),
             ),
           ),
         ],
@@ -966,106 +1009,95 @@ class _EpisodeMatrixCardState extends State<_EpisodeMatrixCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '选集',
-                  style: AppTextStyle.headline
-                      .of(context, emphasized: true)
-                      .copyWith(color: colorScheme.onSurface),
+          SizedBox(
+            height: 28,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '选集',
+                    style: AppTextStyle.headline
+                        .of(context, emphasized: true)
+                        .copyWith(color: colorScheme.onSurface),
+                  ),
                 ),
-              ),
-              if (episodes.isNotEmpty)
-                Text(
-                  '共 ${episodes.length} 话',
-                  style: AppTextStyle.footnote
-                      .of(context)
-                      .copyWith(color: colorScheme.onSurfaceVariant),
-                )
-              else if (widget.isLoading)
-                const KonekoSkeletonBox(width: 52, height: 14, corner: 7),
-            ],
+                if (totalPages > 1)
+                  KonekoPopupTrigger<int>(
+                    options: [for (var idx = 0; idx < totalPages; idx++) idx],
+                    value: safePage,
+                    textBuilder: (idx) =>
+                        '${idx * _pageSize + 1}-${((idx + 1) * _pageSize).clamp(1, episodes.length)} 话',
+                    onChanged: (idx) {
+                      _revealLiveCard();
+                      setState(() => _pageIndex = idx);
+                    },
+                  )
+                else if (episodes.isNotEmpty)
+                  Text(
+                    '共 ${episodes.length} 话',
+                    style: AppTextStyle.footnote
+                        .of(context)
+                        .copyWith(color: colorScheme.onSurfaceVariant),
+                  )
+                else if (widget.isLoading)
+                  const KonekoSkeletonBox(width: 52, height: 14, corner: 7),
+              ],
+            ),
           ),
+          const SizedBox(height: 12),
           AnimatedSize(
             duration: context.motionDuration(const Duration(milliseconds: 220)),
             curve: Curves.easeOutCubic,
             alignment: Alignment.topCenter,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (totalPages > 1) ...[
-                  const SizedBox(height: 10),
-                  KonekoAutoScrollChipBar(
-                    height: 32,
-                    chipHeight: 28,
-                    fontSize: 11.5,
-                    elevated: false,
-                    padding: EdgeInsets.zero,
-                    unselectedColor: SurfaceLevel.block.colorOf(colorScheme),
-                    labels: [
-                      for (var idx = 0; idx < totalPages; idx++)
-                        '${idx * _pageSize + 1}-${((idx + 1) * _pageSize).clamp(1, episodes.length)}',
-                    ],
-                    selectedIndex: safePage,
-                    onSelected: (idx) {
-                      _revealLiveCard();
-                      setState(() => _pageIndex = idx);
-                    },
-                  ),
-                ],
-                const SizedBox(height: 12),
-                KonekoSkeletonFade(
-                  child: episodes.isNotEmpty
-                      ? Listener(
-                          key: const ValueKey('episodes-live'),
-                          onPointerDown: (_) => _revealLiveCard(),
-                          child: SnapshotWidget(
-                            key: const ValueKey('episode-arrival-snapshot'),
-                            controller: _arrivalSnapshot,
-                            mode: SnapshotMode.permissive,
-                            autoresize: true,
-                            child: Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                for (final ep in visible)
-                                  _episodeCell(context, ep),
-                              ],
-                            ),
-                          ),
-                        )
-                      : widget.isLoading
-                      ? _EpisodeGridSkeleton(
-                          key: const ValueKey('episodes-skeleton'),
-                          count: widget.expectedCount > 0
-                              ? widget.expectedCount.clamp(1, 24)
-                              : 12,
-                        )
-                      : Row(
-                          key: const ValueKey('episodes-empty'),
+            child: KonekoSkeletonFade(
+              child: episodes.isNotEmpty
+                  ? Listener(
+                      key: const ValueKey('episodes-live'),
+                      onPointerDown: (_) => _revealLiveCard(),
+                      child: SnapshotWidget(
+                        key: const ValueKey('episode-arrival-snapshot'),
+                        controller: _arrivalSnapshot,
+                        mode: SnapshotMode.permissive,
+                        autoresize: true,
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
                           children: [
-                            Expanded(
-                              child: Text(
-                                '暂无剧集资料，可在播放器内选集',
-                                style: AppTextStyle.footnote
-                                    .of(context)
-                                    .copyWith(
-                                      color: colorScheme.onSurfaceVariant,
-                                    ),
-                              ),
-                            ),
-                            if (widget.onRetry != null)
-                              KonekoChip(
-                                label: '重试',
-                                height: 28,
-                                fontSize: 12,
-                                onPressed: widget.onRetry,
-                              ),
+                            for (final ep in visible)
+                              _episodeCell(context, ep),
                           ],
                         ),
-                ),
-              ],
+                      ),
+                    )
+                  : widget.isLoading
+                  ? _EpisodeGridSkeleton(
+                      key: const ValueKey('episodes-skeleton'),
+                      count: widget.expectedCount > 0
+                          ? widget.expectedCount.clamp(1, 24)
+                          : 12,
+                    )
+                  : Row(
+                      key: const ValueKey('episodes-empty'),
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '暂无剧集资料，可在播放器内选集',
+                            style: AppTextStyle.footnote
+                                .of(context)
+                                .copyWith(
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                          ),
+                        ),
+                        if (widget.onRetry != null)
+                          KonekoChip(
+                            label: '重试',
+                            height: 28,
+                            fontSize: 12,
+                            onPressed: widget.onRetry,
+                          ),
+                      ],
+                    ),
             ),
           ),
         ],
@@ -1455,13 +1487,12 @@ class _RuleSourcesCard extends StatelessWidget {
           if (!hasAny)
             TextButton(onPressed: onManage, child: const Text('添加播放规则'))
           else if (hasLiveResolver && !ready)
-            const KonekoSkeletonPulse(
+            KonekoSkeletonPulse(
               child: Column(
                 spacing: 8,
                 children: [
-                  _SourceSkeletonTile(),
-                  _SourceSkeletonTile(),
-                  _SourceSkeletonTile(),
+                  for (var i = 0; i < enabledRules.length.clamp(1, 6); i++)
+                    const _SourceSkeletonTile(),
                 ],
               ),
             )
@@ -1707,7 +1738,7 @@ class _RuleSourcesCard extends StatelessWidget {
 }
 
 class _SynopsisSkeletonBlock extends StatelessWidget {
-  const _SynopsisSkeletonBlock();
+  const _SynopsisSkeletonBlock({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -1715,26 +1746,23 @@ class _SynopsisSkeletonBlock extends StatelessWidget {
       child: KonekoBlock(
         corner: 18,
         padding: EdgeInsets.fromLTRB(14, 12, 14, 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            KonekoSkeletonBox(width: double.infinity, height: 15, corner: 6),
-            SizedBox(height: 9),
-            FractionallySizedBox(
-              widthFactor: 0.94,
-              child: KonekoSkeletonBox(height: 15, corner: 6),
-            ),
-            SizedBox(height: 9),
-            FractionallySizedBox(
-              widthFactor: 0.72,
-              child: KonekoSkeletonBox(height: 15, corner: 6),
-            ),
-            SizedBox(height: 10),
-            Align(
-              alignment: AlignmentDirectional.centerEnd,
-              child: KonekoSkeletonBox(width: 52, height: 14, corner: 7),
-            ),
-          ],
+        child: SizedBox(
+          height: 60,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              KonekoSkeletonBox(width: double.infinity, height: 14, corner: 6),
+              FractionallySizedBox(
+                widthFactor: 0.92,
+                child: KonekoSkeletonBox(height: 14, corner: 6),
+              ),
+              FractionallySizedBox(
+                widthFactor: 0.64,
+                child: KonekoSkeletonBox(height: 14, corner: 6),
+              ),
+            ],
+          ),
         ),
       ),
     );

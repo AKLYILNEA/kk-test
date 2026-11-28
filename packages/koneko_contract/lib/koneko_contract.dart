@@ -12,6 +12,17 @@ enum CollectionStatus {
   final String label;
 }
 
+/// Conflict resolution strategy when syncing collections with Bangumi (aligned with Kazumi).
+enum BangumiSyncPriority {
+  localFirst('以本机为准', '冲突时用本机状态覆盖 Bangumi'),
+  bangumiFirst('以 Bangumi 为准', '冲突时用 Bangumi 状态覆盖本机'),
+  timeFirst('保留最近更新', '自动比较双方更新时间保留最新状态');
+
+  const BangumiSyncPriority(this.label, this.description);
+  final String label;
+  final String description;
+}
+
 /// Four-state episode lifecycle inspired by Animeko.
 enum EpisodeWatchState { watched, current, aired, unaired }
 
@@ -102,6 +113,9 @@ class RulePluginMeta {
     required this.supportsDanmaku,
     required this.latencyMs,
     required this.lastCheckedLabel,
+    this.antiCrawlerEnabled = false,
+    this.adBlocker = false,
+    this.multiSources = true,
   });
 
   final String id;
@@ -114,6 +128,9 @@ class RulePluginMeta {
   final bool supportsDanmaku;
   final int latencyMs;
   final String lastCheckedLabel;
+  final bool antiCrawlerEnabled;
+  final bool adBlocker;
+  final bool multiSources;
 
   RulePluginMeta copyWith({
     bool? enabled,
@@ -131,6 +148,9 @@ class RulePluginMeta {
       supportsDanmaku: supportsDanmaku,
       latencyMs: latencyMs ?? this.latencyMs,
       lastCheckedLabel: lastCheckedLabel ?? this.lastCheckedLabel,
+      antiCrawlerEnabled: antiCrawlerEnabled,
+      adBlocker: adBlocker,
+      multiSources: multiSources,
     );
   }
 }

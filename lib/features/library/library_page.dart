@@ -156,8 +156,16 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                                   const ServiceSettingsPage(),
                                 );
                               } else {
+                                final syncPrefs = ref.read(
+                                  syncSettingsProvider,
+                                );
                                 unawaited(
-                                  _runSync(sync.syncBangumi, 'Bangumi'),
+                                  _runSync(
+                                    () => sync.syncBangumi(
+                                      priority: syncPrefs.bangumiPriority,
+                                    ),
+                                    'Bangumi',
+                                  ),
                                 );
                               }
                             },
@@ -179,7 +187,18 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                                   const ServiceSettingsPage(),
                                 );
                               } else {
-                                unawaited(_runSync(sync.syncWebDav, 'WebDAV'));
+                                final syncPrefs = ref.read(
+                                  syncSettingsProvider,
+                                );
+                                unawaited(
+                                  _runSync(
+                                    () => sync.syncWebDav(
+                                      syncHistory: syncPrefs.webdavSyncHistory,
+                                      syncCollect: syncPrefs.webdavSyncCollect,
+                                    ),
+                                    'WebDAV',
+                                  ),
+                                );
                               }
                             },
                     ),
@@ -224,7 +243,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
     final filtered = tabEntries.where((entry) {
       final subject = catalog.getSubjectById(entry.subjectId);
       if (subject == null) {
-        return q.isEmpty && loadingSubjects;
+        return q.isEmpty;
       }
       if (q.isEmpty) return true;
       return subject.title.toLowerCase().contains(q) ||
@@ -279,115 +298,178 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                 ? 4
                 : 3;
 
-            return ArrivalCacheExtentBuilder(
-              builder: (context, cacheExtent) => CustomScrollView(
-                scrollCacheExtent: cacheExtent,
-                slivers: [
-                  const KonekoScrollStart(),
-                  SliverToBoxAdapter(
-                    child: KonekoAutoScrollChipBar(
-                      height: 46,
-                      chipHeight: 34,
-                      fontSize: 13,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 6,
-                      ),
-                      labels: [
-                        for (final (status, label) in _tabs)
-                          '$label  ${countOf(status)}',
-                      ],
-                      selectedIndex: _selectedTabIndex,
-                      onSelected: (index) =>
-                          setState(() => _selectedTabIndex = index),
+            return CustomScrollView(
+              slivers: [
+                const KonekoScrollStart(),
+                SliverToBoxAdapter(
+                  child: KonekoAutoScrollChipBar(
+                    height: 46,
+                    chipHeight: 34,
+                    fontSize: 13,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 6,
                     ),
+                    labels: [
+                      for (final (status, label) in _tabs)
+                        '$label  ${countOf(status)}',
+                    ],
+                    selectedIndex: _selectedTabIndex,
+                    onSelected: (index) =>
+                        setState(() => _selectedTabIndex = index),
                   ),
-                  if (showEntranceSkeleton)
-                    SliverPadding(
-                      key: const ValueKey('library-loading-skeleton'),
-                      padding: EdgeInsets.fromLTRB(
-                        12,
-                        10,
-                        12,
-                        24 + widget.bottomPadding,
+                ),
+                if (showEntranceSkeleton)
+                  SliverPadding(
+                    key: const ValueKey('library-loading-skeleton'),
+                    padding: EdgeInsets.fromLTRB(
+                      12,
+                      10,
+                      12,
+                      24 + widget.bottomPadding,
+                    ),
+                    sliver: SliverGrid(
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: columns,
+                        crossAxisSpacing: 10,
+                        mainAxisSpacing: 12,
+                        childAspectRatio: 0.56,
                       ),
-                      sliver: SliverGrid(
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: columns,
-                          crossAxisSpacing: 10,
-                          mainAxisSpacing: 12,
-                          childAspectRatio: 0.56,
-                        ),
-                        delegate: SliverChildBuilderDelegate(
-                          (_, _) => const _LibraryCardSkeleton(),
-                          childCount: tabEntries.isNotEmpty
-                              ? tabEntries.length.clamp(3, columns * 3)
-                              : columns * 2,
-                        ),
+                      delegate: SliverChildBuilderDelegate(
+                        (_, _) => const _LibraryCardSkeleton(),
+                        childCount: tabEntries.isNotEmpty
+                            ? tabEntries.length.clamp(3, columns * 3)
+                            : columns * 2,
                       ),
-                    )
-                  else if (filtered.isEmpty)
-                    SliverFillRemaining(
-                      hasScrollBody: false,
-                      child: Center(
-                        child: Text(
-                          _query.trim().isNotEmpty ? '没有匹配的追番记录' : '该分类下暂无番剧',
-                          style: AppTextStyle.subheadline
-                              .of(context)
-                              .copyWith(color: colorScheme.onSurfaceVariant),
-                        ),
+                    ),
+                  )
+                else if (filtered.isEmpty)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Center(
+                      child: Text(
+                        _query.trim().isNotEmpty ? '没有匹配的追番记录' : '该分类下暂无番剧',
+                        style: AppTextStyle.subheadline
+                            .of(context)
+                            .copyWith(color: colorScheme.onSurfaceVariant),
                       ),
-                    )
-                  else
-                    SliverPadding(
-                      padding: EdgeInsets.fromLTRB(
-                        12,
-                        10,
-                        12,
-                        24 + widget.bottomPadding,
+                    ),
+                  )
+                else
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(
+                      12,
+                      10,
+                      12,
+                      24 + widget.bottomPadding,
+                    ),
+                    sliver: SliverGrid(
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: columns,
+                        crossAxisSpacing: 10,
+                        mainAxisSpacing: 12,
+                        childAspectRatio: 0.56,
                       ),
-                      sliver: SliverGrid(
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: columns,
-                          crossAxisSpacing: 10,
-                          mainAxisSpacing: 12,
-                          childAspectRatio: 0.56,
-                        ),
-                        delegate: SliverChildBuilderDelegate((context, index) {
-                          final entry = filtered[index];
-                          final subject = catalog.getSubjectById(
-                            entry.subjectId,
-                          );
-                          if (subject == null) {
+                      delegate: SliverChildBuilderDelegate((context, index) {
+                        final entry = filtered[index];
+                        final subject = catalog.getSubjectById(entry.subjectId);
+                        if (subject == null) {
+                          if (loadingSubjects) {
                             return _LibraryCardSkeleton(
                               key: ValueKey('library-slot-${entry.subjectId}'),
                             );
                           }
-                          return RepaintBoundary(
-                            child: UnifiedAnimeCard(
-                              subject: subject,
-                              corner: 16,
-                              compact: true,
-                              statusGlyph: konekoStatusGlyph(
-                                entry.status,
-                                forBadge: true,
-                              ),
-                              statusColor: konekoStatusColor(entry.status),
-                              statusTooltip: '修改「${subject.title}」的追番状态',
-                              onStatusTap: () => _pickStatus(subject, entry),
-                              onTap: () => BaseNavigator.push<void>(
-                                context,
-                                SubjectDetailPage(subjectId: subject.subjectId),
-                              ),
+                          return _LibraryFallbackCard(
+                            key: ValueKey('library-fallback-${entry.subjectId}'),
+                            entry: entry,
+                            onTap: () => BaseNavigator.push<void>(
+                              context,
+                              SubjectDetailPage(subjectId: entry.subjectId),
                             ),
                           );
-                        }, childCount: filtered.length),
-                      ),
+                        }
+                        return RepaintBoundary(
+                          child: UnifiedAnimeCard(
+                            subject: subject,
+                            corner: 16,
+                            compact: true,
+                            statusGlyph: konekoStatusGlyph(
+                              entry.status,
+                              forBadge: true,
+                            ),
+                            statusColor: konekoStatusColor(entry.status),
+                            statusTooltip: '修改「${subject.title}」的追番状态',
+                            onStatusTap: () => _pickStatus(subject, entry),
+                            onTap: () => BaseNavigator.push<void>(
+                              context,
+                              SubjectDetailPage(subjectId: subject.subjectId),
+                            ),
+                          ),
+                        );
+                      }, childCount: filtered.length),
                     ),
-                ],
-              ),
+                  ),
+              ],
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+class _LibraryFallbackCard extends StatelessWidget {
+  const _LibraryFallbackCard({
+    super.key,
+    required this.entry,
+    required this.onTap,
+  });
+
+  final CollectionEntry entry;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = context.colorScheme;
+    final shape = SuperellipseBorder(borderRadius: AppRadius.all(16));
+    return DecoratedBox(
+      decoration: ShapeDecoration(
+        shape: shape,
+        shadows: konekoCardShadows(colorScheme),
+      ),
+      child: PressSurface(
+        fill: SurfaceLevel.card.colorOf(colorScheme),
+        shape: shape,
+        clipsChild: true,
+        onPressed: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            spacing: 8,
+            children: [
+              GlyphIcon(
+                KonekoGlyphs.heart,
+                size: 22,
+                color: konekoStatusColor(entry.status),
+              ),
+              Text(
+                '条目 #${entry.subjectId}',
+                maxLines: 2,
+                textAlign: TextAlign.center,
+                overflow: TextOverflow.ellipsis,
+                style: AppTextStyle.caption1
+                    .of(context, emphasized: true)
+                    .copyWith(color: colorScheme.onSurface),
+              ),
+              Text(
+                '点击加载详情',
+                style: AppTextStyle.caption2
+                    .of(context)
+                    .copyWith(color: colorScheme.onSurfaceVariant),
+              ),
+            ],
+          ),
         ),
       ),
     );

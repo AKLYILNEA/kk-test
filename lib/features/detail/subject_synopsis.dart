@@ -49,8 +49,10 @@ class _SubjectSynopsisState extends State<SubjectSynopsis> {
     return KonekoBlock(
       corner: 18,
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 60),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
           final inputs = (
             widget.summary,
             style,
@@ -125,6 +127,7 @@ class _SubjectSynopsisState extends State<SubjectSynopsis> {
             ],
           );
         },
+        ),
       ),
     );
   }

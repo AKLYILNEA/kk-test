@@ -46,74 +46,38 @@ class HomeShell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final isMobile = ViewScope.isMobileOf(context);
     final colorScheme = context.colorScheme;
-    final (mode, floatingBar) = ref.watch(
-      themeSettingsProvider.select(
-        (settings) => (settings.tabAnimation, settings.floatingNavigationBar),
-      ),
+    final mode = ref.watch(
+      themeSettingsProvider.select((settings) => settings.tabAnimation),
     );
 
     if (isMobile) {
-      if (floatingBar) {
-        final dockInset = NavigationDock.insetOf(context) + 8;
-        final pages = _ShellPages(
-          count: _mobileDestinations.length,
-          mode: mode,
-          bottomPadding: dockInset,
-        );
-
-        return Surface(
-          color: SurfaceLevel.page.colorOf(colorScheme),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              pages,
-              Align(
-                alignment: Alignment.bottomCenter,
-                child: Consumer(
-                  builder: (context, ref, _) => BarItemPresence.held(
-                    child: NavigationDock(
-                      destinations: _mobileDestinations,
-                      selectedIndex: ref.watch(
-                        navIndexProvider.select(_mobileIndexOf),
-                      ),
-                      onSelected: (index) => ref
-                          .read(navIndexProvider.notifier)
-                          .select(_mobileIndices[index]),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      }
+      final dockInset = NavigationDock.insetOf(context) + 8;
+      final pages = _ShellPages(
+        count: _mobileDestinations.length,
+        mode: mode,
+        bottomPadding: dockInset,
+      );
 
       return Surface(
         color: SurfaceLevel.page.colorOf(colorScheme),
-        child: Column(
+        child: Stack(
+          fit: StackFit.expand,
           children: [
-            Expanded(
-              child: _ShellPages(
-                count: _mobileDestinations.length,
-                mode: mode,
-                bottomPadding: 0,
-              ),
-            ),
-            Consumer(
-              builder: (context, ref, _) => NavigationBar(
-                destinations: [
-                  for (final dest in _mobileDestinations)
-                    NavigationDestination(
-                      icon: GlyphIcon(dest.glyph),
-                      label: dest.label,
+            pages,
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: Consumer(
+                builder: (context, ref, _) => BarItemPresence.held(
+                  child: NavigationDock(
+                    destinations: _mobileDestinations,
+                    selectedIndex: ref.watch(
+                      navIndexProvider.select(_mobileIndexOf),
                     ),
-                ],
-                selectedIndex: ref.watch(
-                  navIndexProvider.select(_mobileIndexOf),
+                    onSelected: (index) => ref
+                        .read(navIndexProvider.notifier)
+                        .select(_mobileIndices[index]),
+                  ),
                 ),
-                onDestinationSelected: (index) => ref
-                    .read(navIndexProvider.notifier)
-                    .select(_mobileIndices[index]),
               ),
             ),
           ],
@@ -367,14 +331,6 @@ class _TabPage extends StatefulWidget {
 }
 
 class _TabPageState extends State<_TabPage> {
-  final _snapshot = SnapshotController();
-
-  @override
-  void dispose() {
-    _snapshot.dispose();
-    super.dispose();
-  }
-
   double get _delta {
     final controller = widget.controller;
     if (!controller.hasClients) return 0;
@@ -392,22 +348,17 @@ class _TabPageState extends State<_TabPage> {
   Widget build(BuildContext context) {
     final glass = LiquidGlassScope.of(context);
     final rtl = Directionality.of(context) == TextDirection.rtl;
-    final liveArrival = widget.fade && !glass && widget.active;
     return AnimatedBuilder(
       animation: widget.controller,
       builder: (_, child) {
         final offset = _delta;
-        _snapshot.allowSnapshotting = !liveArrival && offset.abs() > 0.001;
         final delta = widget.fade ? offset : 0.0;
         return FractionalTranslation(
           translation: Offset(rtl ? delta : -delta, 0),
           child: Opacity(opacity: 1 - delta.abs(), child: child),
         );
       },
-      child: SnapshotWidget(
-        controller: _snapshot,
-        mode: SnapshotMode.permissive,
-        autoresize: true,
+      child: RepaintBoundary(
         child: LiquidGlassHost(enabled: glass, child: widget.child),
       ),
     );

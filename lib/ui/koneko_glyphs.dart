@@ -699,4 +699,12 @@ abstract final class KonekoGlyphs {
       GlyphVertex(16.75, 10.75),
     ], role: GlyphRole.detail),
   ]);
+
+  static const chevronUp = Glyph([
+    GlyphPolyline([
+      GlyphVertex(5.5, 15.25),
+      GlyphVertex(12, 8.75, 0.4),
+      GlyphVertex(18.5, 15.25),
+    ], role: GlyphRole.line),
+  ]);
 }

@@ -63,10 +63,9 @@ class _ThemePageState extends ConsumerState<ThemePage> {
     1 => const _ThemeModeSection(),
     2 => const _PureBlackSection(),
     3 => _ThemeColorSection(onOpenCustomColor: _openCustomColorSheet),
-    4 => const _NavigationBarSection(),
-    5 => const _TabAnimationSection(),
-    6 => const _LiquidGlassSection(),
-    7 => const _FontAndDanmakuSection(),
+    4 => const _TabAnimationSection(),
+    5 => const _LiquidGlassSection(),
+    6 => const _FontAndDanmakuSection(),
     _ => const _TextScaleSection(),
   };
 
@@ -89,9 +88,9 @@ class _ThemePageState extends ConsumerState<ThemePage> {
                     widget.bottomPadding,
               ),
               sliver: SliverList.builder(
-                itemCount: 9,
+                itemCount: 8,
                 itemBuilder: (context, index) => Padding(
-                  padding: EdgeInsets.only(bottom: index == 8 ? 0 : 16),
+                  padding: EdgeInsets.only(bottom: index == 7 ? 0 : 16),
                   child: _buildSection(context, index),
                 ),
               ),
@@ -108,19 +107,17 @@ class _ThemeModeSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final (themeMode, pureBlack, primaryColor, colorStyle, floatingBar, glass) =
-        ref.watch(
-          themeSettingsProvider.select(
-            (s) => (
-              s.themeMode,
-              s.pureBlack,
-              s.primaryColor,
-              s.colorStyle,
-              s.floatingNavigationBar,
-              s.liquidGlass != LiquidGlassMode.none,
-            ),
-          ),
-        );
+    final (themeMode, pureBlack, primaryColor, colorStyle, glass) = ref.watch(
+      themeSettingsProvider.select(
+        (s) => (
+          s.themeMode,
+          s.pureBlack,
+          s.primaryColor,
+          s.colorStyle,
+          s.liquidGlass != LiquidGlassMode.none,
+        ),
+      ),
+    );
     final notifier = ref.read(themeSettingsProvider.notifier);
     final lightMini = MiniScreen(
       colorScheme: buildKonekoColorScheme(
@@ -128,7 +125,7 @@ class _ThemeModeSection extends ConsumerWidget {
         primaryColor: primaryColor,
         colorStyle: colorStyle,
       ),
-      floatingBar: floatingBar,
+      floatingBar: true,
       liquidGlass: glass,
     );
     final darkMini = MiniScreen(
@@ -138,7 +135,7 @@ class _ThemeModeSection extends ConsumerWidget {
         colorStyle: colorStyle,
         pureBlack: pureBlack,
       ),
-      floatingBar: floatingBar,
+      floatingBar: true,
       liquidGlass: glass,
     );
 
@@ -174,13 +171,12 @@ class _PureBlackSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final (pureBlack, primaryColor, colorStyle, floatingBar, glass) = ref.watch(
+    final (pureBlack, primaryColor, colorStyle, glass) = ref.watch(
       themeSettingsProvider.select(
         (s) => (
           s.pureBlack,
           s.primaryColor,
           s.colorStyle,
-          s.floatingNavigationBar,
           s.liquidGlass != LiquidGlassMode.none,
         ),
       ),
@@ -194,7 +190,7 @@ class _PureBlackSection extends ConsumerWidget {
           colorStyle: colorStyle,
           pureBlack: isPureBlack,
         ),
-        floatingBar: floatingBar,
+        floatingBar: true,
         liquidGlass: glass,
       ),
     );
@@ -328,71 +324,22 @@ class _ThemeColorSection extends ConsumerWidget {
   }
 }
 
-class _NavigationBarSection extends ConsumerWidget {
-  const _NavigationBarSection();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final colorScheme = context.colorScheme;
-    final (floatingBar, glass) = ref.watch(
-      themeSettingsProvider.select(
-        (s) => (
-          s.floatingNavigationBar,
-          s.liquidGlass != LiquidGlassMode.none,
-        ),
-      ),
-    );
-    final notifier = ref.read(themeSettingsProvider.notifier);
-
-    return PreviewChoiceGroup<bool>(
-      info: const Info(label: '导航栏样式', glyph: KonekoGlyphs.dock),
-      value: floatingBar,
-      choices: [
-        PreviewChoice(
-          value: true,
-          label: '悬浮',
-          pictogram: MiniScreenThumb(
-            screen: MiniScreen(
-              colorScheme: colorScheme,
-              floatingBar: true,
-              liquidGlass: glass,
-            ),
-          ),
-        ),
-        PreviewChoice(
-          value: false,
-          label: '贴底',
-          pictogram: MiniScreenThumb(
-            screen: MiniScreen(colorScheme: colorScheme, floatingBar: false),
-          ),
-        ),
-      ],
-      onChanged: (value) =>
-          notifier.update((s) => s.copyWith(floatingNavigationBar: value)),
-    );
-  }
-}
-
 class _TabAnimationSection extends ConsumerWidget {
   const _TabAnimationSection();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colorScheme = context.colorScheme;
-    final (tabAnimation, floatingBar, liquidGlass) = ref.watch(
+    final (tabAnimation, liquidGlass) = ref.watch(
       themeSettingsProvider.select(
-        (s) => (
-          s.tabAnimation,
-          s.floatingNavigationBar,
-          s.liquidGlass != LiquidGlassMode.none,
-        ),
+        (s) => (s.tabAnimation, s.liquidGlass != LiquidGlassMode.none),
       ),
     );
     final notifier = ref.read(themeSettingsProvider.notifier);
     Widget switching(TabAnimationMode mode) => MiniScreenThumb(
       screen: MiniScreen(
         colorScheme: colorScheme,
-        floatingBar: floatingBar,
+        floatingBar: true,
         liquidGlass: liquidGlass,
         selected: 1,
         previous: 0,

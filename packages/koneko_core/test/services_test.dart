@@ -216,6 +216,22 @@ void main() {
       // The persistence queue is flushed by the following import.
       await rules.importRules(jsonEncode(api));
       expect(KazumiRules(preferences).getAllRules().first.enabled, false);
+
+      // Reorder moves 'fixture' after 'fixture api' and persists across reload.
+      final reordered = await rules.reorderRules(0, 2);
+      expect(reordered.map((r) => r.id), ['fixture api', 'fixture']);
+      expect(
+        KazumiRules(preferences).getAllRules().map((r) => r.id),
+        ['fixture api', 'fixture'],
+      );
+
+      // Batch removal removes the specified rule and persists.
+      final remaining = await rules.removeRules(const ['fixture']);
+      expect(remaining.map((r) => r.id), ['fixture api']);
+      expect(
+        KazumiRules(preferences).getAllRules().map((r) => r.id),
+        ['fixture api'],
+      );
     },
   );
 
@@ -232,6 +248,10 @@ void main() {
       final listings = await rules.browse();
       expect(listings.single.name, 'MirrorRule');
       expect(listings.single.version, '1.2');
+      expect(listings.single.author, 'KazumiAuthor');
+      expect(listings.single.lastUpdate, 1730000000000);
+      expect(listings.single.useNativePlayer, isTrue);
+      expect(listings.single.antiCrawlerEnabled, isTrue);
       // First mirror returned HTML error page, second timed out, third succeeded.
       expect(requested.length, 3);
       expect(requested.first, startsWith('https://gh-proxy.org/'));
@@ -602,7 +622,14 @@ class _RuleMirrorAdapter implements HttpClientAdapter {
       if (url.startsWith('https://raw.gitcode.com/')) {
         return ResponseBody.fromString(
           jsonEncode([
-            {'name': 'MirrorRule', 'version': '1.2'},
+            {
+              'name': 'MirrorRule',
+              'version': '1.2',
+              'author': 'KazumiAuthor',
+              'lastUpdate': 1730000000000,
+              'useNativePlayer': true,
+              'antiCrawlerEnabled': true,
+            },
           ]),
           200,
           headers: {

@@ -235,6 +235,108 @@ final danmakuSettingsProvider =
       DanmakuSettingsNotifier.new,
     );
 
+/// Persistent Kazumi-aligned Bangumi & WebDAV sync preferences.
+@immutable
+class SyncSettings {
+  const SyncSettings({
+    this.bangumiAutoSync = false,
+    this.bangumiPriority = BangumiSyncPriority.timeFirst,
+    this.bangumiSyncToast = true,
+    this.webdavEnabled = false,
+    this.webdavSyncHistory = true,
+    this.webdavSyncCollect = true,
+    this.webdavSyncShield = true,
+  });
+
+  final bool bangumiAutoSync;
+  final BangumiSyncPriority bangumiPriority;
+  final bool bangumiSyncToast;
+  final bool webdavEnabled;
+  final bool webdavSyncHistory;
+  final bool webdavSyncCollect;
+  final bool webdavSyncShield;
+
+  SyncSettings copyWith({
+    bool? bangumiAutoSync,
+    BangumiSyncPriority? bangumiPriority,
+    bool? bangumiSyncToast,
+    bool? webdavEnabled,
+    bool? webdavSyncHistory,
+    bool? webdavSyncCollect,
+    bool? webdavSyncShield,
+  }) => SyncSettings(
+    bangumiAutoSync: bangumiAutoSync ?? this.bangumiAutoSync,
+    bangumiPriority: bangumiPriority ?? this.bangumiPriority,
+    bangumiSyncToast: bangumiSyncToast ?? this.bangumiSyncToast,
+    webdavEnabled: webdavEnabled ?? this.webdavEnabled,
+    webdavSyncHistory: webdavSyncHistory ?? this.webdavSyncHistory,
+    webdavSyncCollect: webdavSyncCollect ?? this.webdavSyncCollect,
+    webdavSyncShield: webdavSyncShield ?? this.webdavSyncShield,
+  );
+
+  Map<String, Object?> toJson() => {
+    'bangumiAutoSync': bangumiAutoSync,
+    'bangumiPriority': bangumiPriority.name,
+    'bangumiSyncToast': bangumiSyncToast,
+    'webdavEnabled': webdavEnabled,
+    'webdavSyncHistory': webdavSyncHistory,
+    'webdavSyncCollect': webdavSyncCollect,
+    'webdavSyncShield': webdavSyncShield,
+  };
+
+  static SyncSettings fromJson(Map<String, dynamic> map) => SyncSettings(
+    bangumiAutoSync: map['bangumiAutoSync'] == true,
+    bangumiPriority: BangumiSyncPriority.values.firstWhere(
+      (e) => e.name == map['bangumiPriority'],
+      orElse: () => BangumiSyncPriority.timeFirst,
+    ),
+    bangumiSyncToast: map['bangumiSyncToast'] != false,
+    webdavEnabled: map['webdavEnabled'] == true,
+    webdavSyncHistory: map['webdavSyncHistory'] != false,
+    webdavSyncCollect: map['webdavSyncCollect'] != false,
+    webdavSyncShield: map['webdavSyncShield'] != false,
+  );
+}
+
+class SyncSettingsNotifier extends Notifier<SyncSettings> {
+  static const _prefKey = 'koneko_sync_settings_v1';
+
+  @override
+  SyncSettings build() {
+    unawaited(_load());
+    return const SyncSettings();
+  }
+
+  Future<void> _load() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_prefKey);
+      if (raw == null || raw.isEmpty) return;
+      final map = json.decode(raw);
+      if (map is Map<String, dynamic>) {
+        state = SyncSettings.fromJson(map);
+      }
+    } catch (_) {}
+  }
+
+  void update(SyncSettings Function(SyncSettings current) updater) {
+    state = updater(state);
+    unawaited(_save(state));
+  }
+
+  Future<void> _save(SyncSettings settings) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_prefKey, json.encode(settings.toJson()));
+    } catch (_) {}
+  }
+}
+
+final syncSettingsProvider =
+    NotifierProvider<SyncSettingsNotifier, SyncSettings>(
+      SyncSettingsNotifier.new,
+    );
+
 final _colorSchemeCache = <(Brightness, int, ColorStyle, bool), ColorScheme>{};
 
 /// Generates a [ColorScheme] using prism_ui's HCT seeded scheme, matching FlClash,
@@ -320,6 +422,26 @@ class LibraryNotifier extends Notifier<List<CollectionEntry>> {
     return null;
   }
 
+  void _autoPushBangumi(
+    int subjectId,
+    CollectionStatus status, {
+    int? watchedEpisode,
+  }) {
+    final prefs = ref.read(syncSettingsProvider);
+    if (!prefs.bangumiAutoSync) return;
+    final sync = ref.read(trackingSyncProvider);
+    if (sync == null) return;
+    unawaited(
+      sync
+          .pushBangumiCollection(
+            subjectId,
+            status,
+            watchedEpisode: watchedEpisode,
+          )
+          .onError((Object _, StackTrace _) {}),
+    );
+  }
+
   void setStatus(int subjectId, CollectionStatus status) {
     final now = DateTime.now();
     final entry = entryFor(subjectId);
@@ -340,6 +462,7 @@ class LibraryNotifier extends Notifier<List<CollectionEntry>> {
       subjectId,
       now,
     );
+    _autoPushBangumi(subjectId, status);
   }
 
   void removeSubject(int subjectId) {
@@ -382,6 +505,7 @@ class LibraryNotifier extends Notifier<List<CollectionEntry>> {
       subjectId,
       now,
     );
+    _autoPushBangumi(subjectId, status, watchedEpisode: nextWatched);
   }
 }
 
@@ -513,6 +637,50 @@ class RulesNotifier extends Notifier<List<RulePluginMeta>> {
 
   void replace(List<RulePluginMeta> rules) {
     state = rules;
+  }
+
+  Future<void> reorder(int oldIndex, int newIndex) async {
+    final repo = ref.read(ruleRepositoryProvider);
+    if (repo is ManagedRules) {
+      state = await repo.reorderRules(oldIndex, newIndex);
+    } else {
+      final list = List<RulePluginMeta>.of(state);
+      var target = newIndex;
+      if (oldIndex < target) target -= 1;
+      if (oldIndex < 0 ||
+          oldIndex >= list.length ||
+          target < 0 ||
+          target >= list.length) {
+        return;
+      }
+      final moved = list.removeAt(oldIndex);
+      list.insert(target, moved);
+      state = list;
+    }
+  }
+
+  Future<void> remove(String ruleId) async {
+    final repo = ref.read(ruleRepositoryProvider);
+    if (repo is ManagedRules) {
+      state = await repo.removeRule(ruleId);
+    } else {
+      state = [
+        for (final item in state)
+          if (item.id != ruleId) item,
+      ];
+    }
+  }
+
+  Future<void> removeMany(Set<String> ids) async {
+    final repo = ref.read(ruleRepositoryProvider);
+    if (repo is ManagedRules) {
+      state = await repo.removeRules(ids);
+    } else {
+      state = [
+        for (final item in state)
+          if (!ids.contains(item.id)) item,
+      ];
+    }
   }
 
   Future<void> testLatencies() async {

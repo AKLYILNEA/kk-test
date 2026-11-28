@@ -78,6 +78,9 @@ class KazumiRules implements ManagedRules {
   }
 
   @override
+  String get currentRepository => (_preferences.getString(_repoKey) ?? '').trim();
+
+  @override
   List<RulePluginMeta> getAllRules() => [
     for (final entry in _installed.entries)
       RulePluginMeta(
@@ -91,6 +94,9 @@ class KazumiRules implements ManagedRules {
         supportsDanmaku: true,
         latencyMs: _latencies[entry.key]?.elapsed ?? 0,
         lastCheckedLabel: _latencies[entry.key]?.status ?? '尚未测速',
+        antiCrawlerEnabled: entry.value.plugin.antiCrawlerConfig.enabled,
+        adBlocker: entry.value.plugin.adBlocker,
+        multiSources: entry.value.plugin.muliSources,
       ),
   ];
 
@@ -295,11 +301,19 @@ class KazumiRules implements ManagedRules {
           name.contains('\\')) {
         continue;
       }
+      final rawAnti = item['antiCrawlerConfig'];
+      final antiCrawlerEnabled = rawAnti is Map
+          ? rawAnti['enabled'] == true
+          : item['antiCrawlerEnabled'] == true;
       results.add(
         RuleListing(
           name: name,
           version: '${item['version'] ?? ''}',
           url: _joinRepoFile(activeBase, '$name.json'),
+          author: jsonString(item['author']).trim(),
+          lastUpdate: jsonInt(item['lastUpdate']),
+          useNativePlayer: item['useNativePlayer'] != false,
+          antiCrawlerEnabled: antiCrawlerEnabled,
         ),
       );
     }
@@ -366,6 +380,39 @@ class KazumiRules implements ManagedRules {
   Future<List<RulePluginMeta>> removeRule(String id) async {
     _installed.remove(id);
     _latencies.remove(id);
+    await _persist();
+    return getAllRules();
+  }
+
+  @override
+  Future<List<RulePluginMeta>> removeRules(Set<String> ids) async {
+    for (final id in ids) {
+      _installed.remove(id);
+      _latencies.remove(id);
+    }
+    await _persist();
+    return getAllRules();
+  }
+
+  @override
+  Future<List<RulePluginMeta>> reorderRules(int oldIndex, int newIndex) async {
+    final entries = _installed.entries.toList();
+    if (oldIndex < 0 ||
+        oldIndex >= entries.length ||
+        newIndex < 0 ||
+        newIndex > entries.length) {
+      return getAllRules();
+    }
+    var target = newIndex;
+    if (oldIndex < target) target -= 1;
+    if (target < 0 || target >= entries.length || target == oldIndex) {
+      return getAllRules();
+    }
+    final moved = entries.removeAt(oldIndex);
+    entries.insert(target, moved);
+    _installed
+      ..clear()
+      ..addEntries(entries);
     await _persist();
     return getAllRules();
   }

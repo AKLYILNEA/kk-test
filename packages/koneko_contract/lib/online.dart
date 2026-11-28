@@ -200,18 +200,29 @@ class RuleListing {
     required this.name,
     required this.version,
     required this.url,
+    this.author = '',
+    this.lastUpdate = 0,
+    this.useNativePlayer = true,
+    this.antiCrawlerEnabled = false,
   });
 
   final String name;
   final String version;
   final Uri url;
+  final String author;
+  final int lastUpdate;
+  final bool useNativePlayer;
+  final bool antiCrawlerEnabled;
 }
 
 abstract interface class ManagedRules implements RuleRepository {
+  String get currentRepository;
   Future<List<RuleListing>> browse({String? repository});
   Future<List<RulePluginMeta>> install(Uri url);
   Future<List<RulePluginMeta>> importRules(String text);
   Future<List<RulePluginMeta>> removeRule(String id);
+  Future<List<RulePluginMeta>> removeRules(Set<String> ids);
+  Future<List<RulePluginMeta>> reorderRules(int oldIndex, int newIndex);
   String exportRule(String id);
 }
 
@@ -447,8 +458,17 @@ abstract interface class TrackingStore {
 }
 
 abstract interface class TrackingSync {
-  Future<int> syncBangumi();
-  Future<int> syncWebDav();
+  Future<int> syncBangumi({
+    BangumiSyncPriority priority = BangumiSyncPriority.timeFirst,
+  });
+  Future<void> pushBangumiCollection(
+    int subjectId,
+    CollectionStatus status, {
+    int? watchedEpisode,
+  });
+  Future<String> testBangumi();
+  Future<int> syncWebDav({bool syncHistory = true, bool syncCollect = true});
+  Future<void> testWebDav();
   Future<int> importKazumi(List<int> bytes);
 }
 
