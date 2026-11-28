@@ -140,14 +140,12 @@ class _MobilePages extends ConsumerStatefulWidget {
 class _MobilePagesState extends ConsumerState<_MobilePages>
     with SingleTickerProviderStateMixin {
   late final AnimationController _progress;
-  late final _outgoingOpacity = ReverseAnimation(_progress);
   final _pages = <int, Widget>{};
 
   late int _shown;
   late int _requested;
-  int? _arriving;
-  bool _prepared = false;
-  late TabAnimationMode _mode;
+  int? _preparing;
+  _MobilePageMotion? _motion;
 
   @override
   void initState() {
@@ -157,12 +155,7 @@ class _MobilePagesState extends ConsumerState<_MobilePages>
     _shown = _requested = _mobileIndexOf(ref.read(navIndexProvider));
     _rememberPage(_shown);
     ref.listenManual(navIndexProvider.select(_mobileIndexOf), (_, index) {
-      if (_arriving == null) {
-        _requested = index;
-        _startSwitch();
-      } else {
-        setState(() => _requested = index);
-      }
+      _select(index);
     });
   }
 
@@ -191,55 +184,109 @@ class _MobilePagesState extends ConsumerState<_MobilePages>
     }
   }
 
-  void _startSwitch() {
-    if (_shown == _requested) return;
-    final destination = _requested;
-    final instant = context.disableAnimations;
-    _progress.value = 0;
-    setState(() {
-      _rememberPage(destination);
-      if (instant) {
-        _shown = destination;
-      } else {
-        _mode = widget.mode;
-        _arriving = destination;
+  void _select(int index) {
+    _requested = index;
+    if (context.disableAnimations) {
+      _rememberPage(index);
+      _showAtRest(index);
+      return;
+    }
+    final motion = _motion;
+    if (index == (motion?.destination ?? _shown)) {
+      if (_preparing != null) setState(() => _preparing = null);
+      return;
+    }
+    if (motion?.tracks.containsKey(index) ?? false) {
+      _retarget(index);
+      return;
+    }
+
+    // Prepare a new destination behind the current picture while the current
+    // transition keeps running. Several taps in one frame need only one paint.
+    setState(() => _preparing = index);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _preparing == index && _requested == index) {
+        _retarget(index);
       }
     });
-    if (instant) return;
+  }
 
-    // The first paint prepares both pages at rest while the old scene covers
-    // the incoming one. The first animated frame can reuse both snapshots.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _arriving != destination) return;
-      setState(() => _prepared = true);
-      final fade = _mode == TabAnimationMode.fade;
-      _progress.animateTo(
-        1,
-        duration: fade ? fadeTabDuration : kTabScrollDuration,
-        curve: fade ? fadeTabCurve : Curves.easeOut,
-      );
+  void _retarget(int destination) {
+    final previous = _motion;
+    final fade = previous?.fade ?? (widget.mode == TabAnimationMode.fade);
+    final current = <int, double>{};
+    if (previous == null) {
+      current[_shown] = fade ? 1 : 0;
+    } else {
+      for (final entry in previous.tracks.entries) {
+        final value = entry.value.evaluate(_progress);
+        if ((fade ? value > 0 : value.abs() < 1) || entry.key == destination) {
+          current[entry.key] = value;
+        }
+      }
+    }
+    final rtl = Directionality.of(context) == TextDirection.rtl;
+    final direction = ((destination > (previous?.destination ?? _shown)) != rtl)
+        ? 1.0
+        : -1.0;
+    final entering = current[destination] ?? (fade ? 0.0 : direction);
+    final away = entering == 0 ? -direction : -entering.sign;
+    final tracks = {
+      if (!current.containsKey(destination))
+        destination: Tween<double>(begin: entering, end: fade ? 1 : 0),
+      for (final entry in current.entries)
+        entry.key: Tween<double>(
+          begin: entry.value,
+          end: fade
+              ? (entry.key == destination ? 1 : 0)
+              : (entry.key == destination ? 0 : away),
+        ),
+    };
+
+    _progress.value = 0;
+    setState(() {
+      _motion = _MobilePageMotion(destination, fade: fade, tracks: tracks);
+      _preparing = null;
     });
+    _progress.animateTo(
+      1,
+      duration: previous != null
+          ? const Duration(milliseconds: 180)
+          : fade
+          ? fadeTabDuration
+          : kTabScrollDuration,
+      curve: previous != null
+          ? Curves.easeOutCubic
+          : fade
+          ? fadeTabCurve
+          : Curves.easeOut,
+    );
   }
 
   void _onMotionStatus(AnimationStatus status) {
-    if (status != AnimationStatus.completed) return;
+    final motion = _motion;
+    if (status != AnimationStatus.completed || motion == null) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _progress.isCompleted) _finishSwitch();
+      if (mounted && identical(_motion, motion)) {
+        // A target prepared during this frame still needs its own transition.
+        _showAtRest(motion.destination, keepPreparing: true);
+      }
     });
   }
 
-  void _finishSwitch() {
-    final arriving = _arriving;
-    if (arriving == null) return;
+  void _showAtRest(int index, {bool keepPreparing = false}) {
     _progress.stop();
     setState(() {
-      _shown = arriving;
-      _arriving = null;
-      _prepared = false;
+      _shown = index;
+      _motion = null;
+      if (!keepPreparing) _preparing = null;
     });
-    // The dock responds immediately. Coalesce further taps to the latest
-    // destination so an in-flight pair of pages never jumps mid-transition.
-    _startSwitch();
+  }
+
+  void _finishForTouch(int index) {
+    if (_requested == index && _motion?.destination == index) {
+      _showAtRest(index);
+    }
   }
 
   @override
@@ -250,18 +297,34 @@ class _MobilePagesState extends ConsumerState<_MobilePages>
 
   @override
   Widget build(BuildContext context) {
-    final arriving = _arriving;
-    final fade = arriving != null && _mode == TabAnimationMode.fade;
-    final rtl = Directionality.of(context) == TextDirection.rtl;
-    final direction = arriving != null && (arriving > _shown) != rtl
-        ? 1.0
-        : -1.0;
+    final preparing = _preparing;
+    if (preparing != null) _rememberPage(preparing);
+    final motion = _motion;
+    final visible = [
+      ?preparing,
+      if (motion == null) _shown else ...motion.tracks.keys,
+    ];
+    final active = motion == null && preparing == null;
     final order = [
       for (final index in _pages.keys)
-        if (index != _shown && index != arriving) index,
-      ?arriving,
-      _shown,
+        if (!visible.contains(index)) index,
+      ...visible,
     ];
+
+    final opacities = <int, Animation<double>>{};
+    if (motion != null && motion.fade) {
+      var start = 0.0;
+      var end = 0.0;
+      for (final entry in motion.tracks.entries) {
+        start += entry.value.begin!;
+        end += entry.value.end!;
+        opacities[entry.key] = _TabLayerOpacity(
+          weight: entry.value,
+          totalThroughLayer: Tween<double>(begin: start, end: end),
+        ).animate(_progress);
+      }
+    }
+
     return ClipRect(
       child: Stack(
         fit: StackFit.expand,
@@ -270,25 +333,17 @@ class _MobilePagesState extends ConsumerState<_MobilePages>
             _MobileTabLayer(
               key: ValueKey(index),
               index: index,
-              shown: index == _shown || index == arriving,
-              active: arriving == null && index == _shown,
-              snapshot:
-                  arriving != null && (index == _shown || index == arriving),
-              onTouch: _prepared && index == arriving && arriving == _requested
-                  ? _finishSwitch
+              shown: visible.contains(index),
+              active: active && index == _shown,
+              snapshot: !active && visible.contains(index),
+              onTouch: motion?.destination == index && preparing == null
+                  ? () => _finishForTouch(index)
                   : null,
-              // The departing opaque scene fades over the new scene.
-              opacity: _prepared && fade && index == _shown
-                  ? _outgoingOpacity
-                  : kAlwaysCompleteAnimation,
-              offset: _prepared && !fade
+              opacity: opacities[index] ?? kAlwaysCompleteAnimation,
+              offset: motion?.fade == false && motion!.tracks.containsKey(index)
                   ? Tween<Offset>(
-                      begin: index == arriving
-                          ? Offset(direction, 0)
-                          : Offset.zero,
-                      end: index == arriving
-                          ? Offset.zero
-                          : Offset(-direction, 0),
+                      begin: Offset(motion.tracks[index]!.begin!, 0),
+                      end: Offset(motion.tracks[index]!.end!, 0),
                     ).animate(_progress)
                   : const AlwaysStoppedAnimation(Offset.zero),
               child: _pages[index]!,
@@ -296,6 +351,33 @@ class _MobilePagesState extends ConsumerState<_MobilePages>
         ],
       ),
     );
+  }
+}
+
+class _MobilePageMotion {
+  const _MobilePageMotion(
+    this.destination, {
+    required this.fade,
+    required this.tracks,
+  });
+
+  final int destination;
+  final bool fade;
+  final Map<int, Tween<double>> tracks;
+}
+
+/// Converts a page's share of the final blend to its opacity in the stack.
+/// This preserves the visible blend when a fade is retargeted.
+class _TabLayerOpacity extends Animatable<double> {
+  _TabLayerOpacity({required this.weight, required this.totalThroughLayer});
+
+  final Tween<double> weight;
+  final Tween<double> totalThroughLayer;
+
+  @override
+  double transform(double t) {
+    final remaining = totalThroughLayer.transform(t);
+    return remaining <= 0 ? 0 : (weight.transform(t) / remaining).clamp(0, 1);
   }
 }
 
