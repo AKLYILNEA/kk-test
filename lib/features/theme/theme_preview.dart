@@ -2,7 +2,6 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:koneko/common/constants.dart';
 import 'package:koneko/common/providers.dart';
-import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:prism_ui/prism_ui.dart';
 
 class PreviewChoice<T> {
@@ -17,7 +16,7 @@ class PreviewChoice<T> {
   final Widget pictogram;
 }
 
-/// Elevated preview choice group matching Koneko's unified card shadow language.
+/// 1:1 FlClash grouped choice section with compact mini-screen pictograms.
 class PreviewChoiceGroup<T> extends StatelessWidget {
   const PreviewChoiceGroup({
     super.key,
@@ -39,27 +38,25 @@ class PreviewChoiceGroup<T> extends StatelessWidget {
       children: [
         InfoHeader(info: info),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: KonekoGroup(
-            items: [
-              for (final choice in choices)
-                DecorationListItem(
-                  leading: ExcludeSemantics(child: choice.pictogram),
-                  title: Text(choice.label),
-                  isSelected: choice.value == value,
-                  trailing: choice.value == value
-                      ? const SelectionCheck()
-                      : null,
-                  onPressed: () => onChanged(choice.value),
-                ),
-            ],
-          ),
+          padding: context.listInsets.page(top: infoSectionContentGap),
+          child: generateGroup([
+            for (final choice in choices)
+              DecorationListItem(
+                leading: ExcludeSemantics(child: choice.pictogram),
+                title: Text(choice.label),
+                isSelected: choice.value == value,
+                trailing: choice.value == value ? const SelectionCheck() : null,
+                onPressed: () => onChanged(choice.value),
+              ),
+          ]),
         ),
       ],
     );
   }
 }
 
+/// The foot of a [MiniScreen], where the options differ, drawn at the size of
+/// an icon (1:1 FlClash [MiniScreenThumb], zero extra shadows).
 class MiniScreenThumb extends StatelessWidget {
   const MiniScreenThumb({super.key, required this.screen});
 
@@ -104,8 +101,10 @@ class _ColorSchemeTween extends Tween<ColorScheme> {
   ColorScheme lerp(double t) => ColorScheme.lerp(begin!, end!, t);
 }
 
-/// Interactive live mini-phone preview of Koneko's theme settings with distinct
-/// layouts for all 4 destinations (推荐 / 时间表 / 追番 / 我的).
+/// 1:1 FlClash interactive mini-phone preview: flat raised container, clean
+/// shadowless superellipse frame, clickable bottom destinations (推荐 / 时间表
+/// / 追番 / 我的) to preview theme mode, pure black, palette, dock style,
+/// tab animation, and liquid glass in real time.
 class ThemeLivePreview extends ConsumerStatefulWidget {
   const ThemeLivePreview({super.key});
 
@@ -115,7 +114,7 @@ class ThemeLivePreview extends ConsumerStatefulWidget {
 
 class _ThemeLivePreviewState extends ConsumerState<ThemeLivePreview>
     with SingleTickerProviderStateMixin {
-  static const double _phoneWidth = 172;
+  static const double _phoneWidth = 168;
   static const _duration = Duration(milliseconds: 300);
 
   late final AnimationController _slide = AnimationController(
@@ -165,19 +164,27 @@ class _ThemeLivePreviewState extends ConsumerState<ThemeLivePreview>
 
   @override
   Widget build(BuildContext context) {
-    final (themeMode, primaryColor, colorStyle, tabAnimation, liquidGlass) =
-        ref.watch(
-          themeSettingsProvider.select(
-            (s) => (
-              s.themeMode,
-              s.primaryColor,
-              s.colorStyle,
-              s.tabAnimation,
-              s.liquidGlass != LiquidGlassMode.none,
-            ),
-          ),
-        );
-    final outerScheme = context.colorScheme;
+    final (
+      themeMode,
+      pureBlack,
+      primaryColor,
+      colorStyle,
+      floatingBar,
+      tabAnimation,
+      liquidGlass,
+    ) = ref.watch(
+      themeSettingsProvider.select(
+        (s) => (
+          s.themeMode,
+          s.pureBlack,
+          s.primaryColor,
+          s.colorStyle,
+          s.floatingNavigationBar,
+          s.tabAnimation,
+          s.liquidGlass != LiquidGlassMode.none,
+        ),
+      ),
+    );
     final brightness = switch (themeMode) {
       ThemeMode.light => Brightness.light,
       ThemeMode.dark => Brightness.dark,
@@ -187,62 +194,42 @@ class _ThemeLivePreviewState extends ConsumerState<ThemeLivePreview>
       brightness: brightness,
       primaryColor: primaryColor,
       colorStyle: colorStyle,
+      pureBlack: pureBlack,
     );
     final corner = AppCorner.fit(_phoneWidth);
 
-    return RepaintBoundary(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16),
-        padding: const EdgeInsets.symmetric(vertical: 22),
-        alignment: Alignment.center,
-        decoration: ShapeDecoration(
-          color: SurfaceLevel.card.colorOf(outerScheme),
-          shape: AppShape.xxl,
-          shadows: konekoCardShadows(outerScheme),
-        ),
-        child: DecoratedBox(
-          decoration: ShapeDecoration(
-            shape: SuperellipseBorder(
-              borderRadius: AppRadius.all(corner),
-              side: BorderSide(
-                color: outerScheme.outlineVariant.withValues(alpha: 0.24),
-                width: 1,
-              ),
-            ),
-            shadows: [
-              BoxShadow(
-                color: outerScheme.shadow.withValues(alpha: 0.14),
-                blurRadius: 18,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: SizedBox(
-            width: _phoneWidth,
-            child: AspectRatio(
-              aspectRatio: 9 / 17,
-              child: ClipRSuperellipse(
-                borderRadius: AppRadius.all(corner),
-                child: RepaintBoundary(
-                  child: TweenAnimationBuilder<ColorScheme>(
-                    tween: _ColorSchemeTween(end: scheme),
-                    duration: _duration,
-                    builder: (_, animatedScheme, _) => AnimatedSwitcher(
-                      duration: _duration,
-                      child: AnimatedBuilder(
-                        key: ValueKey(liquidGlass),
-                        animation: _slideCurve,
-                        builder: (_, _) => MiniScreen(
-                          colorScheme: animatedScheme,
-                          floatingBar: true,
-                          liquidGlass: liquidGlass,
-                          selected: _selected,
-                          previous: _previous,
-                          progress: _previous == null ? 1 : _slideCurve.value,
-                          tabAnimation: tabAnimation,
-                          onSelect: _select,
-                        ),
-                      ),
+    return Container(
+      margin: EdgeInsets.symmetric(horizontal: context.listInsets.margin),
+      padding: const EdgeInsets.symmetric(vertical: 24),
+      alignment: Alignment.center,
+      decoration: ShapeDecoration(
+        color: context.raisedSurfaceLevel.colorOf(context.colorScheme),
+        shape: AppShape.xxl,
+      ),
+      child: SizedBox(
+        width: _phoneWidth,
+        child: AspectRatio(
+          aspectRatio: 9 / 17,
+          child: ClipRSuperellipse(
+            borderRadius: AppRadius.all(corner),
+            child: RepaintBoundary(
+              child: TweenAnimationBuilder<ColorScheme>(
+                tween: _ColorSchemeTween(end: scheme),
+                duration: _duration,
+                builder: (_, animatedScheme, _) => AnimatedSwitcher(
+                  duration: _duration,
+                  child: AnimatedBuilder(
+                    key: ValueKey((floatingBar, liquidGlass)),
+                    animation: _slideCurve,
+                    builder: (_, _) => MiniScreen(
+                      colorScheme: animatedScheme,
+                      floatingBar: floatingBar,
+                      liquidGlass: liquidGlass,
+                      selected: _selected,
+                      previous: _previous,
+                      progress: _previous == null ? 1 : _slideCurve.value,
+                      tabAnimation: tabAnimation,
+                      onSelect: _select,
                     ),
                   ),
                 ),
@@ -255,6 +242,10 @@ class _ThemeLivePreviewState extends ConsumerState<ThemeLivePreview>
   }
 }
 
+enum _MiniPage { home, schedule, library, my }
+
+/// A phone-shaped architectural sketch of Koneko's home destinations drawn in
+/// [colorScheme], following FlClash's clean shadowless geometric sketch style.
 class MiniScreen extends StatelessWidget {
   const MiniScreen({
     super.key,
@@ -298,12 +289,15 @@ class MiniScreen extends StatelessWidget {
     if (onSelect == null) return sketch;
     return LayoutBuilder(
       builder: (_, constraints) {
-        final g = _MiniGeometry(constraints.biggest, floatingBar: floatingBar);
+        final geometry = _MiniGeometry(
+          constraints.biggest,
+          floatingBar: floatingBar,
+        );
         return Stack(
           children: [
             sketch,
             Positioned.fromRect(
-              rect: g.bar,
+              rect: geometry.bar,
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -363,8 +357,8 @@ class _DiagonalClipper extends CustomClipper<Path> {
 class _MiniGeometry {
   _MiniGeometry(this.size, {required bool floatingBar})
     : unit = size.width / 20 {
-    margin = unit * 1.4;
-    final barHeight = floatingBar ? unit * 3.1 : unit * 3.5;
+    margin = unit * 1.5;
+    final barHeight = floatingBar ? unit * 3.2 : unit * 3.6;
     pageBottom = floatingBar ? 0 : barHeight;
     bar = floatingBar
         ? Rect.fromLTWH(
@@ -404,6 +398,9 @@ class _MiniScreenPainter extends CustomPainter {
 
   bool get _glass => floatingBar && liquidGlass;
 
+  static _MiniPage _pageOf(int index) =>
+      _MiniPage.values[index % _MiniPage.values.length];
+
   static void _fill(
     Canvas canvas,
     Rect rect,
@@ -434,24 +431,12 @@ class _MiniScreenPainter extends CustomPainter {
     final unit = geometry.unit;
     final dock = SurfaceLevel.floatingOf(colorScheme).colorOf(colorScheme);
     final shadow = BoxShadow(
-      color: colorScheme.shadow.withValues(alpha: 0.14),
+      color: colorScheme.shadow.withValues(alpha: 0.12),
       blurRadius: unit,
       offset: Offset(0, unit * 0.3),
     );
     if (_glass) {
-      final path = AppShape.full.getOuterPath(geometry.bar);
-      final style = LiquidGlassStyle.pill(colorScheme);
-      canvas
-        ..save()
-        ..clipPath(path);
-      _paintPages(
-        canvas,
-        geometry,
-        blur: MaskFilter.blur(BlurStyle.normal, unit * 0.4),
-      );
-      canvas
-        ..drawPath(path, Paint()..color = style.tint)
-        ..restore();
+      _paintGlassBar(canvas, geometry, shadow);
     } else if (floatingBar) {
       _fill(canvas, geometry.bar, dock, AppShape.full, shadows: [shadow]);
     } else {
@@ -462,43 +447,99 @@ class _MiniScreenPainter extends CustomPainter {
 
   void _paintPages(Canvas canvas, _MiniGeometry geometry, {MaskFilter? blur}) {
     final size = geometry.size;
-    final dark = colorScheme.brightness == Brightness.dark;
-    // Distinct slightly-contrasted page backdrop so mini cards stand out clearly
-    final pageBg = dark
-        ? Color.lerp(SurfaceLevel.page.colorOf(colorScheme), Colors.black, 0.25)!
-        : SurfaceLevel.page.colorOf(colorScheme);
-    canvas.drawRect(Offset.zero & size, Paint()..color = pageBg);
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()..color = SurfaceLevel.page.colorOf(colorScheme),
+    );
     canvas.save();
     canvas.clipRect(Offset.zero & size, doAntiAlias: false);
-    final prev = previous;
-    if (prev == null) {
+    final previous = this.previous;
+    if (previous == null) {
       _paintPage(canvas, geometry, selected, 0, blur: blur);
     } else if (tabAnimation == TabAnimationMode.fade) {
-      _paintPage(canvas, geometry, prev, 0, opacity: 1 - progress, blur: blur);
-      _paintPage(canvas, geometry, selected, 0, opacity: progress, blur: blur);
-    } else {
-      final dir = prev > selected ? -1 : 1;
       _paintPage(
         canvas,
         geometry,
-        prev,
-        -dir * size.width * progress,
+        previous,
+        0,
+        opacity: 1 - progress,
+        blur: blur,
+      );
+      _paintPage(canvas, geometry, selected, 0, opacity: progress, blur: blur);
+    } else {
+      final direction = previous > selected ? -1 : 1;
+      _paintPage(
+        canvas,
+        geometry,
+        previous,
+        -direction * size.width * progress,
         blur: blur,
       );
       _paintPage(
         canvas,
         geometry,
         selected,
-        dir * size.width * (1 - progress),
+        direction * size.width * (1 - progress),
         blur: blur,
       );
     }
     canvas.restore();
   }
 
+  /// Authentic FlClash frosted glass dock: casts shadow strictly outside the
+  /// pill, blurs the underlying page inside, overlays the glass tint, and
+  /// strokes a diagonal specular rim.
+  void _paintGlassBar(Canvas canvas, _MiniGeometry geometry, BoxShadow shadow) {
+    final bar = geometry.bar;
+    final unit = geometry.unit;
+    final path = AppShape.full.getOuterPath(bar);
+    final style = LiquidGlassStyle.pill(colorScheme);
+    canvas
+      ..save()
+      ..clipPath(
+        Path()
+          ..fillType = PathFillType.evenOdd
+          ..addRect(bar.inflate(unit * 3))
+          ..addPath(path, Offset.zero),
+      );
+    AppShape.full.paintInterior(
+      canvas,
+      bar.shift(shadow.offset),
+      shadow.toPaint(),
+    );
+    canvas
+      ..restore()
+      ..save()
+      ..clipPath(path);
+    _paintPages(
+      canvas,
+      geometry,
+      blur: MaskFilter.blur(BlurStyle.normal, unit * 0.4),
+    );
+    final rimWidth = unit * 0.15;
+    canvas
+      ..drawPath(path, Paint()..color = style.tint)
+      ..drawPath(
+        AppShape.full.getOuterPath(bar.deflate(rimWidth / 2)),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = rimWidth
+          ..shader = LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Colors.white.withValues(alpha: style.rim),
+              Colors.white.withValues(alpha: style.rim * 0.15),
+              Colors.white.withValues(alpha: style.rim * 0.5),
+            ],
+          ).createShader(bar),
+      )
+      ..restore();
+  }
+
   void _paintPage(
     Canvas canvas,
-    _MiniGeometry g,
+    _MiniGeometry geometry,
     int index,
     double offset, {
     double opacity = 1,
@@ -506,13 +547,13 @@ class _MiniScreenPainter extends CustomPainter {
   }) {
     final alpha = (opacity * 255).round().clamp(0, 255);
     if (alpha == 0) return;
-    final u = g.unit;
-    final m = g.margin;
+    final size = geometry.size;
+    final margin = geometry.margin;
     final content = Rect.fromLTRB(
-      offset + m,
-      m,
-      offset + g.size.width - m,
-      g.size.height - g.pageBottom,
+      offset + margin,
+      margin,
+      offset + size.width - margin,
+      size.height - geometry.pageBottom,
     );
     if (alpha < 255) {
       canvas.saveLayer(null, Paint()..color = Color.fromARGB(alpha, 0, 0, 0));
@@ -520,263 +561,13 @@ class _MiniScreenPainter extends CustomPainter {
       canvas.save();
     }
     canvas.clipRect(content, doAntiAlias: false);
-
-    final dark = colorScheme.brightness == Brightness.dark;
-    final card = SurfaceLevel.card.colorOf(colorScheme);
-    final text = colorScheme.onSurface.withValues(alpha: 0.78);
-    final line = colorScheme.onSurfaceVariant.withValues(alpha: 0.44);
-    final cardShadows = blur != null
-        ? null
-        : [
-            BoxShadow(
-              color: colorScheme.shadow.withValues(alpha: dark ? 0.32 : 0.10),
-              blurRadius: u * 0.85,
-              offset: Offset(0, u * 0.25),
-            ),
-          ];
-
-    // Distinct tinted anime poster art tones so covers pop cleanly in light & dark mode
-    final posters = <Color>[
-      colorScheme.primary.withValues(alpha: dark ? 0.45 : 0.34),
-      colorScheme.tertiary.withValues(alpha: dark ? 0.45 : 0.34),
-      colorScheme.secondary.withValues(alpha: dark ? 0.48 : 0.36),
-      Color.lerp(colorScheme.primary, colorScheme.tertiary, 0.5)!
-          .withValues(alpha: dark ? 0.45 : 0.34),
-    ];
-
-    Rect r(double x, double y, double w, double h) => Rect.fromLTWH(
-      content.left + x * u,
-      content.top + y * u,
-      w * u,
-      h * u,
-    );
-    final w = content.width / u;
-
-    // Header title + right action circle
-    _fill(canvas, r(0, 0.5, 5.4, 1.15), text, AppShape.full, blur: blur);
-    _fill(
+    _PageSketch(
       canvas,
-      r(w - 2.0, 0.1, 2.0, 2.0),
-      card,
-      AppShape.circle,
-      shadows: cardShadows,
+      colorScheme,
+      geometry.unit,
+      content,
       blur: blur,
-    );
-
-    switch (index % 4) {
-      case 0:
-        // Page 0 · 推荐: Animeko featured showcase banner + tag strip + 2-col anime grid
-        _fill(
-          canvas,
-          r(0, 2.7, w, 6.2),
-          colorScheme.primary.withValues(alpha: dark ? 0.42 : 0.26),
-          AppShape.md,
-          shadows: cardShadows,
-          blur: blur,
-        );
-        _fill(
-          canvas,
-          r(0.8, 3.4, 3.4, 4.8),
-          colorScheme.primary.withValues(alpha: dark ? 0.72 : 0.55),
-          AppShape.sm,
-          blur: blur,
-        );
-        _fill(canvas, r(5.0, 3.8, 3.0, 0.8), colorScheme.primary, AppShape.full, blur: blur);
-        _fill(canvas, r(5.0, 5.2, 8.6, 0.9), text, AppShape.full, blur: blur);
-        _fill(canvas, r(5.0, 6.6, 6.0, 0.7), line, AppShape.full, blur: blur);
-        // Carousel indicator dots
-        _fill(canvas, r(w / 2 - 1.8, 9.3, 1.6, 0.45), colorScheme.primary, AppShape.full, blur: blur);
-        _fill(canvas, r(w / 2 + 0.3, 9.3, 0.5, 0.45), line, AppShape.full, blur: blur);
-        _fill(canvas, r(w / 2 + 1.2, 9.3, 0.5, 0.45), line, AppShape.full, blur: blur);
-        // Tag pills
-        for (var i = 0; i < 4; i++) {
-          _fill(
-            canvas,
-            r(i * 4.2, 10.4, 3.5, 1.3),
-            i == 0 ? colorScheme.primary : card,
-            AppShape.full,
-            shadows: i == 0 ? null : cardShadows,
-            blur: blur,
-          );
-        }
-        // 2-col elevated anime cards with distinct tinted covers
-        final cw = (w - 0.9) / 2;
-        for (var row = 0; row < 2; row++) {
-          for (var col = 0; col < 2; col++) {
-            final x = col * (cw + 0.9);
-            final y = 12.5 + row * 9.8;
-            final posterColor = posters[(row * 2 + col) % posters.length];
-            _fill(
-              canvas,
-              r(x, y, cw, 9.0),
-              card,
-              AppShape.md,
-              shadows: cardShadows,
-              blur: blur,
-            );
-            _fill(canvas, r(x, y, cw, 6.1), posterColor, AppShape.md, blur: blur);
-            _fill(canvas, r(x + 0.7, y + 6.8, cw - 1.6, 0.75), text, AppShape.full, blur: blur);
-            _fill(canvas, r(x + 0.7, y + 7.9, cw * 0.55, 0.55), line, AppShape.full, blur: blur);
-          }
-        }
-      case 1:
-        // Page 1 · 时间表: Weekday selector strip + horizontal airing schedule cards
-        for (var i = 0; i < 5; i++) {
-          _fill(
-            canvas,
-            r(i * 3.45, 2.7, 2.9, 1.45),
-            i == 1 ? colorScheme.primary : card,
-            AppShape.full,
-            shadows: i == 1 ? null : cardShadows,
-            blur: blur,
-          );
-        }
-        for (var i = 0; i < 4; i++) {
-          final y = 5.0 + i * 5.8;
-          _fill(
-            canvas,
-            r(0, y, w, 5.0),
-            card,
-            AppShape.md,
-            shadows: cardShadows,
-            blur: blur,
-          );
-          _fill(
-            canvas,
-            r(0.7, y + 0.7, 2.7, 3.6),
-            posters[i % posters.length],
-            AppShape.sm,
-            blur: blur,
-          );
-          _fill(canvas, r(4.1, y + 1.0, 7.6, 0.85), text, AppShape.full, blur: blur);
-          _fill(canvas, r(4.1, y + 2.35, 5.2, 0.65), line, AppShape.full, blur: blur);
-          _fill(
-            canvas,
-            r(w - 3.3, y + 3.1, 2.5, 1.1),
-            colorScheme.primary.withValues(alpha: 0.22),
-            AppShape.full,
-            blur: blur,
-          );
-        }
-      case 2:
-        // Page 2 · 追番: Status filter chips + 3-col compact poster grid with top-right status icons
-        for (var i = 0; i < 4; i++) {
-          _fill(
-            canvas,
-            r(i * 4.2, 2.7, 3.6, 1.35),
-            i == 0 ? colorScheme.primary : card,
-            AppShape.full,
-            shadows: i == 0 ? null : cardShadows,
-            blur: blur,
-          );
-        }
-        final cw3 = (w - 1.4) / 3;
-        final statusColors = [
-          colorScheme.primary,
-          const Color(0xFFE07A5F),
-          const Color(0xFF2E9E6B),
-        ];
-        for (var row = 0; row < 3; row++) {
-          for (var col = 0; col < 3; col++) {
-            final x = col * (cw3 + 0.7);
-            final y = 4.9 + row * 8.1;
-            _fill(
-              canvas,
-              r(x, y, cw3, 7.3),
-              card,
-              AppShape.sm,
-              shadows: cardShadows,
-              blur: blur,
-            );
-            _fill(
-              canvas,
-              r(x, y, cw3, 5.0),
-              posters[(row * 3 + col) % posters.length],
-              AppShape.sm,
-              blur: blur,
-            );
-            // Top-right circular status icon dot
-            _fill(
-              canvas,
-              r(x + cw3 - 1.35, y + 0.4, 0.95, 0.95),
-              statusColors[(row + col) % statusColors.length],
-              AppShape.circle,
-              blur: blur,
-            );
-            _fill(
-              canvas,
-              r(x + 0.5, y + 5.6, cw3 - 1.0, 0.65),
-              text,
-              AppShape.full,
-              blur: blur,
-            );
-          }
-        }
-      default:
-        // Page 3 · 我的: Bangumi profile card + grouped settings rows + About card
-        _fill(
-          canvas,
-          r(0, 2.7, w, 4.8),
-          card,
-          AppShape.md,
-          shadows: cardShadows,
-          blur: blur,
-        );
-        _fill(
-          canvas,
-          r(1.0, 3.7, 2.8, 2.8),
-          const Color(0xFFF09199).withValues(alpha: 0.45),
-          AppShape.circle,
-          blur: blur,
-        );
-        _fill(canvas, r(4.6, 4.0, 5.4, 0.9), text, AppShape.full, blur: blur);
-        _fill(canvas, r(4.6, 5.4, 7.2, 0.65), line, AppShape.full, blur: blur);
-        // Grouped settings list card
-        _fill(
-          canvas,
-          r(0, 8.6, w, 13.6),
-          card,
-          AppShape.md,
-          shadows: cardShadows,
-          blur: blur,
-        );
-        for (var i = 0; i < 5; i++) {
-          final rowY = 9.4 + i * 2.55;
-          _fill(
-            canvas,
-            r(1.0, rowY, 1.4, 1.4),
-            colorScheme.primary.withValues(alpha: 0.72),
-            AppShape.sm,
-            blur: blur,
-          );
-          _fill(
-            canvas,
-            r(3.2, rowY + 0.3, 6.4 - (i % 2) * 1.4, 0.8),
-            text,
-            AppShape.full,
-            blur: blur,
-          );
-          _fill(
-            canvas,
-            r(w - 1.6, rowY + 0.35, 0.6, 0.6),
-            line,
-            AppShape.circle,
-            blur: blur,
-          );
-        }
-        // Bottom About mini card
-        _fill(
-          canvas,
-          r(0, 23.2, w, 3.2),
-          card,
-          AppShape.md,
-          shadows: cardShadows,
-          blur: blur,
-        );
-        _fill(canvas, r(1.0, 24.1, 1.4, 1.4), colorScheme.primary, AppShape.circle, blur: blur);
-        _fill(canvas, r(3.2, 24.4, 5.0, 0.8), text, AppShape.full, blur: blur);
-    }
-
+    ).paint(_pageOf(index));
     canvas.restore();
   }
 
@@ -788,7 +579,7 @@ class _MiniScreenPainter extends CustomPainter {
         : SurfaceLevel.floatingOf(colorScheme).next.colorOf(colorScheme);
     for (var i = 0; i < MiniScreen.destinationCount; i++) {
       final center = Offset(bar.left + cell * i + cell / 2, bar.center.dy);
-      final iconCenter = center.translate(0, -unit * 0.4);
+      final icon = center.translate(0, -unit * 0.4);
       final isSelected = i == selected;
       if (isSelected) {
         _fill(
@@ -800,7 +591,7 @@ class _MiniScreenPainter extends CustomPainter {
                   height: bar.height - unit * 0.5,
                 )
               : Rect.fromCenter(
-                  center: iconCenter,
+                  center: icon,
                   width: unit * 2.8,
                   height: unit * 1.5,
                 ),
@@ -813,7 +604,7 @@ class _MiniScreenPainter extends CustomPainter {
           : colorScheme.onSurfaceVariant;
       _fill(
         canvas,
-        Rect.fromCircle(center: iconCenter, radius: unit * 0.45),
+        Rect.fromCircle(center: icon, radius: unit * 0.45),
         ink,
         AppShape.circle,
       );
@@ -839,4 +630,253 @@ class _MiniScreenPainter extends CustomPainter {
       oldDelegate.previous != previous ||
       oldDelegate.progress != progress ||
       oldDelegate.tabAnimation != tabAnimation;
+}
+
+/// Pure shadowless FlClash geometric page sketch laid out in 1/20th-width units.
+class _PageSketch {
+  _PageSketch(
+    this.canvas,
+    this.colorScheme,
+    this.unit,
+    this.content, {
+    this.blur,
+  }) : width = content.width / unit,
+       card = SurfaceLevel.card.colorOf(colorScheme),
+       inset = SurfaceLevel.inset.colorOf(colorScheme),
+       text = colorScheme.onSurface.withValues(alpha: 0.72),
+       line = colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+       faint = colorScheme.onSurfaceVariant.withValues(alpha: 0.16);
+
+  static const double _gap = 0.65;
+
+  final Canvas canvas;
+  final ColorScheme colorScheme;
+  final double unit;
+  final Rect content;
+  final MaskFilter? blur;
+  final double width;
+  final Color card;
+  final Color inset;
+  final Color text;
+  final Color line;
+  final Color faint;
+
+  void paint(_MiniPage page) {
+    switch (page) {
+      case _MiniPage.home:
+        _home(_header(actions: 1));
+      case _MiniPage.schedule:
+        _schedule(_header(actions: 1));
+      case _MiniPage.library:
+        _library(_header(actions: 2));
+      case _MiniPage.my:
+        _my(_header(actions: 0));
+    }
+  }
+
+  Rect _rect(double x, double y, double w, double h) => Rect.fromLTWH(
+    content.left + x * unit,
+    content.top + y * unit,
+    w * unit,
+    h * unit,
+  );
+
+  ShapeBorder _shape(double extent) =>
+      AppShape.all(AppCorner.fit(unit * extent));
+
+  void _block(Rect rect, Color color, {double extent = 5}) {
+    _MiniScreenPainter._fill(canvas, rect, color, _shape(extent), blur: blur);
+  }
+
+  void _pill(double x, double y, double w, double h, Color color) {
+    _MiniScreenPainter._fill(
+      canvas,
+      _rect(x, y, w, h),
+      color,
+      AppShape.full,
+      blur: blur,
+    );
+  }
+
+  void _dot(double x, double y, double radius, Color color) {
+    _MiniScreenPainter._fill(
+      canvas,
+      _rect(x - radius, y - radius, radius * 2, radius * 2),
+      color,
+      AppShape.circle,
+      blur: blur,
+    );
+  }
+
+  double _header({required int actions}) {
+    _pill(0, 0.45, 6.2, 1.1, text);
+    for (var i = 0; i < actions; i++) {
+      final x = width - 1 - i * 2.4;
+      _dot(x, 1, 1, card);
+      _dot(x, 1, 0.3, line);
+    }
+    return 2.8;
+  }
+
+  void _home(double top) {
+    var y = top;
+    // Featured hero card with soft primary halo (1:1 FlClash dashboard hero feel)
+    final hero = _rect(0, y, width, 6.6);
+    final playX = width - 2.6;
+    final playY = y + 3.3;
+    _block(hero, card);
+    canvas
+      ..save()
+      ..clipPath(_shape(5).getOuterPath(hero))
+      ..drawCircle(
+        _rect(playX, playY, 0, 0).topLeft,
+        unit * 4.4,
+        Paint()
+          ..color = colorScheme.primary.withValues(alpha: 0.12)
+          ..maskFilter = blur,
+      )
+      ..restore();
+    _block(_rect(1.0, y + 0.9, 3.2, 4.8), inset, extent: 2.8);
+    _pill(5.0, y + 1.2, 3.0, 0.65, colorScheme.primary.withValues(alpha: 0.24));
+    _pill(5.0, y + 2.4, 5.4, 0.9, text);
+    _pill(5.0, y + 3.8, 3.8, 0.65, line);
+    _dot(playX, playY, 1.5, colorScheme.primary);
+    _dot(playX, playY, 0.45, colorScheme.onPrimary);
+    y += 6.6 + _gap;
+
+    // Filter chip strip
+    final chipW = (width - 1.5) / 4;
+    for (var i = 0; i < 4; i++) {
+      _pill(
+        i * (chipW + 0.5),
+        y + 0.1,
+        chipW,
+        1.45,
+        i == 0 ? colorScheme.primary : card,
+      );
+    }
+    y += 1.6 + _gap;
+
+    // Clean 2-col anime poster grid (extends under dock so Liquid Glass shows through)
+    final colW = (width - _gap) / 2;
+    for (var row = 0; row < 3; row++) {
+      for (var col = 0; col < 2; col++) {
+        final x = col * (colW + _gap);
+        final cardRect = _rect(x, y, colW, 8.2);
+        _block(cardRect, card, extent: 4.2);
+        _block(
+          _rect(x + 0.55, y + 0.55, colW - 1.1, 5.0),
+          (row + col).isEven
+              ? colorScheme.primary.withValues(alpha: 0.16)
+              : inset,
+          extent: 3.0,
+        );
+        _pill(x + 0.7, y + 6.1, colW - 2.2, 0.7, text);
+        _pill(x + 0.7, y + 7.1, colW * 0.48, 0.5, faint);
+      }
+      y += 8.2 + _gap;
+    }
+  }
+
+  void _schedule(double top) {
+    var y = top;
+    // Weekday segmented strip
+    final segW = (width - 1.6) / 5;
+    for (var i = 0; i < 5; i++) {
+      _pill(
+        i * (segW + 0.4),
+        y,
+        segW,
+        1.5,
+        i == 1 ? colorScheme.primary : card,
+      );
+    }
+    y += 1.6 + _gap;
+
+    // Dense schedule rows running cleanly under the dock (ideal for glass thumb)
+    for (var i = 0; i < 8; i++) {
+      _block(_rect(0, y, width, 3.0), card, extent: 3.6);
+      _block(_rect(0.7, y + 0.5, 1.7, 2.0), inset, extent: 1.8);
+      _pill(3.1, y + 0.75, 4.2 + (i % 3) * 1.1, 0.7, text);
+      _pill(3.1, y + 1.8, 3.4, 0.5, faint);
+      _pill(
+        width - 3.6,
+        y + 1.05,
+        2.6,
+        0.9,
+        i == 0 ? colorScheme.primary.withValues(alpha: 0.2) : inset,
+      );
+      y += 3.0 + _gap;
+    }
+  }
+
+  void _library(double top) {
+    var y = top;
+    final segW = (width - 1.2) / 3;
+    for (var i = 0; i < 3; i++) {
+      _pill(
+        i * (segW + 0.6),
+        y,
+        segW,
+        1.5,
+        i == 0 ? colorScheme.primary : card,
+      );
+    }
+    y += 1.6 + _gap;
+
+    final colW = (width - _gap * 2) / 3;
+    for (var row = 0; row < 4; row++) {
+      for (var col = 0; col < 3; col++) {
+        final x = col * (colW + _gap);
+        _block(_rect(x, y, colW, 6.4), card, extent: 3.4);
+        _block(
+          _rect(x + 0.4, y + 0.4, colW - 0.8, 4.1),
+          (row * 3 + col) % 3 == 0
+              ? colorScheme.primary.withValues(alpha: 0.18)
+              : inset,
+          extent: 2.2,
+        );
+        _dot(
+          x + colW - 0.95,
+          y + 0.95,
+          0.35,
+          col == 0 ? colorScheme.primary : line,
+        );
+        _pill(x + 0.45, y + 5.05, colW - 1.1, 0.6, line);
+      }
+      y += 6.4 + _gap;
+    }
+  }
+
+  void _my(double top) {
+    const rowHeight = 2.4;
+    var y = top;
+    // Profile header card
+    _block(_rect(0, y, width, 4.0), card);
+    _dot(2.0, y + 2.0, 1.1, colorScheme.primary.withValues(alpha: 0.22));
+    _pill(3.8, y + 1.2, 4.6, 0.75, text);
+    _pill(3.8, y + 2.3, 6.0, 0.55, faint);
+    y += 4.0 + _gap * 1.6;
+
+    // FlClash grouped settings sections with crisp hairline dividers
+    for (final rows in [4, 5]) {
+      _pill(0.8, y + 0.2, 2.2, 0.5, faint);
+      y += 1.25;
+      _block(_rect(0, y, width, rows * rowHeight), card);
+      for (var i = 0; i < rows; i++) {
+        final row = y + i * rowHeight;
+        _dot(1.3, row + rowHeight / 2, 0.45, line);
+        _pill(2.6, row + 0.85, 4 + (i * 3 + rows) % 4, 0.7, line);
+        if (i < rows - 1) {
+          canvas.drawRect(
+            _rect(2.6, row + rowHeight - 0.03, width - 3.4, 0.06),
+            Paint()
+              ..color = faint
+              ..maskFilter = blur,
+          );
+        }
+      }
+      y += rows * rowHeight + _gap * 2;
+    }
+  }
 }

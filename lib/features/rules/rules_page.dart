@@ -477,6 +477,7 @@ class _RuleStorePageState extends ConsumerState<_RuleStorePage>
     return KonekoScaffold(
       title: '规则仓库',
       showBack: true,
+      loading: _loading,
       searchConfig: KonekoSearchConfig(
         tooltip: '搜索规则',
         hintText: '搜索仓库内的播放规则...',
@@ -486,11 +487,12 @@ class _RuleStorePageState extends ConsumerState<_RuleStorePage>
         IconButtonData(
           glyph: KonekoGlyphs.refresh,
           tooltip: '重新加载',
-          isLoading: _loading,
-          onPressed: () {
-            final url = _customRepoUrl.trim();
-            _reload(repository: url.isEmpty ? null : url);
-          },
+          onPressed: _loading
+              ? null
+              : () {
+                  final url = _customRepoUrl.trim();
+                  _reload(repository: url.isEmpty ? null : url);
+                },
         ),
       ],
       body: ArrivalCacheExtentBuilder(
@@ -527,7 +529,7 @@ class _RuleStorePageState extends ConsumerState<_RuleStorePage>
                 const SliverToBoxAdapter(
                   child: Padding(
                     padding: EdgeInsets.symmetric(vertical: 48),
-                    child: Center(child: ActivityIndicator()),
+                    child: Center(child: ActivityIndicator.page()),
                   ),
                 )
               else if (_loadError != null)

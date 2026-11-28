@@ -110,7 +110,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   String? _errorVerifyRuleId;
   String? _errorVerifyRuleName;
   String? _activeHitUrl;
-  int _danmakuRefreshPulse = 0;
   late String? _loadingHint = widget.offline != null
       ? '正在打开离线缓存…'
       : (widget.initialRuleName.isNotEmpty
@@ -1276,7 +1275,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                             mainAxisSize: MainAxisSize.min,
                             spacing: 10,
                             children: [
-                              const ActivityIndicator(),
+                              const ActivityIndicator.page(),
                               Text(
                                 '正在检索弹弹Play 弹幕库…',
                                 style: AppTextStyle.footnote
@@ -1785,9 +1784,12 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                 spacing: 10,
                 children: [
                   const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: ActivityIndicator(color: Colors.white),
+                    width: 36,
+                    height: 24,
+                    child: FittedBox(
+                      fit: BoxFit.contain,
+                      child: ActivityIndicator.page(color: Colors.white),
+                    ),
                   ),
                   Flexible(
                     child: Text(
@@ -2121,18 +2123,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                           ],
                         ),
                       ),
-                    ),
-                    _bareIcon(
-                      glyph: KonekoGlyphs.danmaku,
-                      tooltip: _showDanmaku ? '关闭弹幕' : '开启弹幕',
-                      size: _fullscreen ? 20 : 18.5,
-                      activeIndicator: _showDanmaku,
-                      dimmed: !_showDanmaku,
-                      onPressed: () {
-                        setState(() => _showDanmaku = !_showDanmaku);
-                        if (_showDanmaku) unawaited(_loadDanmaku());
-                        _armHudAutoHide();
-                      },
                     ),
                     if (_fullscreen)
                       _bareIcon(
@@ -2705,7 +2695,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                       ],
                     ),
                   ),
-                  Switch(
+                  KonekoDanmakuSwitch(
                     value: _showDanmaku,
                     onChanged: (value) {
                       setState(() => _showDanmaku = value);
@@ -2741,7 +2731,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                       glyph: KonekoGlyphs.refresh,
                       icon: KonekoSpinningRefreshIcon(
                         spinning: _danmakuLoading,
-                        pulse: _danmakuRefreshPulse,
                         size: 13.5,
                         color: _danmakuLoading
                             ? colorScheme.primary
@@ -2750,10 +2739,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                       label: _danmakuLoading ? '拉取中' : '重新拉取',
                       onPressed: _danmakuLoading
                           ? null
-                          : () {
-                              setState(() => _danmakuRefreshPulse++);
-                              unawaited(_loadDanmaku());
-                            },
+                          : () => unawaited(_loadDanmaku()),
                     ),
                   ),
                 ],
@@ -2797,12 +2783,21 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                           .copyWith(color: colorScheme.onSurface),
                     ),
                   ),
-                  Text(
-                    epNumbers.isEmpty ? '匹配中' : '共 ${epNumbers.length} 话',
-                    style: AppTextStyle.footnote
-                        .of(context)
-                        .copyWith(color: colorScheme.onSurfaceVariant),
-                  ),
+                  if (totalPages > 1)
+                    KonekoPopupTrigger<int>(
+                      options: [for (var idx = 0; idx < totalPages; idx++) idx],
+                      value: safePage,
+                      textBuilder: (idx) =>
+                          '${idx * _pageSize + 1}-${((idx + 1) * _pageSize).clamp(1, epNumbers.length)} 话',
+                      onChanged: (idx) => setState(() => _epPageIndex = idx),
+                    )
+                  else
+                    Text(
+                      epNumbers.isEmpty ? '匹配中' : '共 ${epNumbers.length} 话',
+                      style: AppTextStyle.footnote
+                          .of(context)
+                          .copyWith(color: colorScheme.onSurfaceVariant),
+                    ),
                 ],
               ),
               if (!offline && lines.length > 1) ...[
@@ -2839,23 +2834,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                       );
                     },
                   ),
-                ),
-              ],
-              if (totalPages > 1) ...[
-                const SizedBox(height: 12),
-                KonekoAutoScrollChipBar(
-                  height: 32,
-                  chipHeight: 28,
-                  fontSize: 11.5,
-                  elevated: false,
-                  padding: EdgeInsets.zero,
-                  unselectedColor: SurfaceLevel.block.colorOf(colorScheme),
-                  labels: [
-                    for (var idx = 0; idx < totalPages; idx++)
-                      '${idx * _pageSize + 1}-${((idx + 1) * _pageSize).clamp(1, epNumbers.length)}',
-                  ],
-                  selectedIndex: safePage,
-                  onSelected: (idx) => setState(() => _epPageIndex = idx),
                 ),
               ],
               const SizedBox(height: 14),
@@ -3386,14 +3364,35 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       (episode) => episode.number == _episode + 1,
     );
 
-    void cycleSpeed() {
-      const speeds = [1.0, 1.25, 1.5, 2.0, 0.75];
-      setState(
-        () => _speed = speeds[(speeds.indexOf(_speed) + 1) % speeds.length],
-      );
-      unawaited(session?.setRate(_speed));
+    const speeds = [0.75, 1.0, 1.25, 1.5, 2.0];
+    void selectSpeed(double next) {
+      setState(() => _speed = next);
+      unawaited(session?.setRate(next));
       _armHudAutoHide();
     }
+
+    Widget buildSpeedMenu({required String label}) => PopupAnchor(
+      targetBuilder: (open) => _HudTextButton(
+        label: label,
+        active: _speed != 1,
+        onTap: !_loaded
+            ? null
+            : () {
+                _hudTimer?.cancel();
+                open();
+              },
+      ),
+      popupBuilder: (_) => PopupMenu(
+        items: [
+          for (final s in speeds)
+            PopupMenuItem(
+              label: _formatSpeed(s),
+              checked: s == _speed,
+              onPressed: () => selectSpeed(s),
+            ),
+        ],
+      ),
+    );
 
     final scrubber = _VideoProgressBar(
       progress: progress,
@@ -3485,11 +3484,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                     ),
                   ),
                   const Spacer(),
-                  _HudTextButton(
-                    label: _formatSpeed(_speed),
-                    active: _speed != 1,
-                    onTap: !_loaded ? null : cycleSpeed,
-                  ),
+                  buildSpeedMenu(label: _formatSpeed(_speed)),
                   _bareIcon(
                     glyph: KonekoGlyphs.fullscreen,
                     tooltip: '全屏播放',
@@ -3574,10 +3569,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                         : null,
                   ),
                 const Spacer(),
-                _HudTextButton(
+                buildSpeedMenu(
                   label: _speed == 1 ? '倍速' : _formatSpeed(_speed),
-                  active: _speed != 1,
-                  onTap: !_loaded ? null : cycleSpeed,
                 ),
                 _HudTextButton(
                   label: '超分',
@@ -3821,18 +3814,37 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 spacing: 8,
                 children: [
-                  Text(
-                    _danmakuError ??
-                        (_danmaku.isEmpty ? '当前话暂无弹幕' : _danmakuSummary()),
-                    style: _style(context),
-                  ),
-                  _HudAction(
-                    label: _showDanmaku ? '隐藏弹幕' : '显示弹幕',
-                    selected: _showDanmaku,
-                    onTap: () {
-                      setState(() => _showDanmaku = !_showDanmaku);
-                      if (_showDanmaku) unawaited(_loadDanmaku());
-                    },
+                  Row(
+                    spacing: 10,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          spacing: 2,
+                          children: [
+                            Text('显示弹幕', style: _style(context)),
+                            Text(
+                              _danmakuError ??
+                                  (_danmaku.isEmpty
+                                      ? '当前话暂无弹幕'
+                                      : _danmakuSummary()),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: _style(context, small: true).copyWith(
+                                color: Colors.white.withValues(alpha: 0.62),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      KonekoDanmakuSwitch(
+                        value: _showDanmaku,
+                        onChanged: (value) {
+                          setState(() => _showDanmaku = value);
+                          if (value) unawaited(_loadDanmaku());
+                        },
+                      ),
+                    ],
                   ),
                   _HudAction(
                     label: '弹幕设置',
@@ -3848,16 +3860,12 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                     label: _danmakuLoading ? '正在拉取弹幕…' : '重新加载弹幕',
                     leading: KonekoSpinningRefreshIcon(
                       spinning: _danmakuLoading,
-                      pulse: _danmakuRefreshPulse,
                       size: 13,
                       color: Colors.white,
                     ),
                     onTap: _danmakuLoading
                         ? null
-                        : () {
-                            setState(() => _danmakuRefreshPulse++);
-                            unawaited(_loadDanmaku());
-                          },
+                        : () => unawaited(_loadDanmaku()),
                   ),
                   _HudAction(
                     label: '手动匹配弹幕',
@@ -3889,8 +3897,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     required String tooltip,
     VoidCallback? onPressed,
     double size = 19,
-    bool activeIndicator = false,
-    bool dimmed = false,
   }) => Tooltip(
     message: tooltip,
     child: SizedBox(
@@ -3900,30 +3906,14 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
         fill: Colors.transparent,
         shape: AppShape.full,
         onPressed: onPressed,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            GlyphIcon(
-              glyph,
-              size: size,
-              color: onPressed == null
-                  ? Colors.white.withValues(alpha: 0.34)
-                  : dimmed
-                  ? Colors.white.withValues(alpha: 0.45)
-                  : Colors.white,
-            ),
-            if (activeIndicator) ...[
-              const SizedBox(height: 2),
-              Container(
-                width: 4,
-                height: 4,
-                decoration: const ShapeDecoration(
-                  color: Colors.white,
-                  shape: AppShape.full,
-                ),
-              ),
-            ],
-          ],
+        child: Center(
+          child: GlyphIcon(
+            glyph,
+            size: size,
+            color: onPressed == null
+                ? Colors.white.withValues(alpha: 0.34)
+                : Colors.white,
+          ),
         ),
       ),
     ),

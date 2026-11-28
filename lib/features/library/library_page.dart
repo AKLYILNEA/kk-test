@@ -116,35 +116,25 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
       bodyBuilder: (sheetContext) {
         return StatefulBuilder(
           builder: (sheetContext, setSheetState) {
-            final colorScheme = sheetContext.colorScheme;
             return ListView(
               shrinkWrap: true,
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
               children: [
-                const ListHeader(title: '排序'),
-                KonekoCard(
-                  corner: 22,
-                  padding: const EdgeInsets.all(14),
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final option in _LibrarySort.values)
-                        KonekoChip(
-                          label: option.label,
-                          height: 34,
-                          fontSize: 13,
-                          selected: _sort == option,
-                          backgroundColor: _sort == option
-                              ? colorScheme.primary
-                              : SurfaceLevel.block.colorOf(colorScheme),
-                          onPressed: () {
-                            setState(() => _sort = option);
-                            setSheetState(() {});
-                          },
-                        ),
-                    ],
-                  ),
+                const ListHeader(title: '显示'),
+                KonekoGroup(
+                  items: [
+                    KonekoOptionsItem<_LibrarySort>(
+                      leading: const GlyphIcon(KonekoGlyphs.tune),
+                      title: const Text('排序方式'),
+                      options: _LibrarySort.values,
+                      value: _sort,
+                      textBuilder: (option) => option.label,
+                      onChanged: (option) {
+                        setState(() => _sort = option);
+                        setSheetState(() {});
+                      },
+                    ),
+                  ],
                 ),
                 const ListHeader(title: '同步'),
                 KonekoGroup(

@@ -93,53 +93,71 @@ class _DanmakuPreviewSection extends ConsumerWidget {
 class _DanmakuAreaSection extends ConsumerWidget {
   const _DanmakuAreaSection();
 
+  static const _weightOptions = <int>[2, 3, 4, 5, 6, 7];
+  static const _speedOptions = <double>[5, 7, 9, 11, 14];
+
+  static String _areaLabel(double ratio) {
+    for (final (preset, label) in DanmakuSettingsPage._areaPresets) {
+      if ((ratio - preset).abs() < 0.02) return label;
+    }
+    return '${(ratio * 100).round()}%';
+  }
+
+  static String _speedLabel(double seconds) => switch (seconds.round()) {
+    <= 5 => '极快 (5 秒)',
+    <= 7 => '较快 (7 秒)',
+    <= 9 => '标准 (9 秒)',
+    <= 11 => '舒适 (11 秒)',
+    _ => '慢速 (${seconds.round()} 秒)',
+  };
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final colorScheme = context.colorScheme;
-    final area = ref.watch(danmakuSettingsProvider.select((s) => s.area));
+    final (area, fontWeight, duration) = ref.watch(
+      danmakuSettingsProvider.select(
+        (s) => (s.area, s.fontWeight, s.duration),
+      ),
+    );
     final notifier = ref.read(danmakuSettingsProvider.notifier);
+    final matchedArea = DanmakuSettingsPage._areaPresets
+        .map((e) => e.$1)
+        .firstWhere((v) => (area - v).abs() < 0.02, orElse: () => 0.50);
+    final matchedWeight = _weightOptions.contains(fontWeight)
+        ? fontWeight
+        : fontWeight.clamp(2, 7);
+    final matchedSpeed = _speedOptions.reduce(
+      (a, b) => (duration - a).abs() <= (duration - b).abs() ? a : b,
+    );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const ListHeader(title: '显示区域'),
-        KonekoCard(
-          corner: 24,
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            spacing: 10,
-            children: [
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final (ratio, label) in DanmakuSettingsPage._areaPresets)
-                    KonekoChip(
-                      label: label,
-                      height: 32,
-                      fontSize: 12.5,
-                      selected: (area - ratio).abs() < 0.02,
-                      backgroundColor: (area - ratio).abs() < 0.02
-                          ? colorScheme.primary
-                          : SurfaceLevel.block.colorOf(colorScheme),
-                      onPressed: () =>
-                          notifier.update((s) => s.copyWith(area: ratio)),
-                    ),
-                ],
-              ),
-              _SliderRow(
-                label: '屏幕占比',
-                valueText: '${(area * 100).round()}%',
-                value: area,
-                min: 0.125,
-                max: 1.0,
-                onChanged: (v) {
-                  final snapped = (v * 8).round() / 8;
-                  notifier.update((s) => s.copyWith(area: snapped));
-                },
-              ),
-            ],
-          ),
+        const ListHeader(title: '常用预设'),
+        KonekoGroup(
+          items: [
+            KonekoOptionsItem<double>(
+              title: const Text('显示区域'),
+              options: [for (final (ratio, _) in DanmakuSettingsPage._areaPresets) ratio],
+              value: matchedArea,
+              textBuilder: _areaLabel,
+              onChanged: (v) => notifier.update((s) => s.copyWith(area: v)),
+            ),
+            KonekoOptionsItem<int>(
+              title: const Text('弹幕字重'),
+              options: _weightOptions,
+              value: matchedWeight,
+              textBuilder: DanmakuSettingsPage._weightLabel,
+              onChanged: (v) =>
+                  notifier.update((s) => s.copyWith(fontWeight: v)),
+            ),
+            KonekoOptionsItem<double>(
+              title: const Text('滚动速度'),
+              options: _speedOptions,
+              value: matchedSpeed,
+              textBuilder: _speedLabel,
+              onChanged: (v) => notifier.update((s) => s.copyWith(duration: v)),
+            ),
+          ],
         ),
       ],
     );
@@ -152,22 +170,20 @@ class _DanmakuStyleSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final (
+      area,
       fontSize,
-      fontWeight,
       strokeEnabled,
       strokeWidth,
       opacity,
-      duration,
       lineHeight,
     ) = ref.watch(
       danmakuSettingsProvider.select(
         (s) => (
+          s.area,
           s.fontSize,
-          s.fontWeight,
           s.strokeEnabled,
           s.strokeWidth,
           s.opacity,
-          s.duration,
           s.lineHeight,
         ),
       ),
@@ -176,7 +192,7 @@ class _DanmakuStyleSection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const ListHeader(title: '样式'),
+        const ListHeader(title: '精细微调'),
         KonekoCard(
           corner: 24,
           padding: const EdgeInsets.all(14),
@@ -184,6 +200,17 @@ class _DanmakuStyleSection extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             spacing: 10,
             children: [
+              _SliderRow(
+                label: '区域占比',
+                valueText: '${(area * 100).round()}%',
+                value: area,
+                min: 0.125,
+                max: 1.0,
+                onChanged: (v) {
+                  final snapped = (v * 8).round() / 8;
+                  notifier.update((s) => s.copyWith(area: snapped));
+                },
+              ),
               _SliderRow(
                 label: '字号',
                 valueText: '${fontSize.round()} px',
@@ -193,15 +220,6 @@ class _DanmakuStyleSection extends ConsumerWidget {
                 onChanged: (v) => notifier.update(
                   (s) => s.copyWith(fontSize: v.roundToDouble()),
                 ),
-              ),
-              _SliderRow(
-                label: '字重',
-                valueText: DanmakuSettingsPage._weightLabel(fontWeight),
-                value: fontWeight.toDouble(),
-                min: 1,
-                max: 9,
-                onChanged: (v) =>
-                    notifier.update((s) => s.copyWith(fontWeight: v.round())),
               ),
               _SliderRow(
                 label: '描边',
@@ -226,16 +244,6 @@ class _DanmakuStyleSection extends ConsumerWidget {
                 onChanged: (v) => notifier.update(
                   (s) =>
                       s.copyWith(opacity: double.parse(v.toStringAsFixed(2))),
-                ),
-              ),
-              _SliderRow(
-                label: '滚动时长',
-                valueText: '${duration.round()} 秒',
-                value: duration,
-                min: 3,
-                max: 16,
-                onChanged: (v) => notifier.update(
-                  (s) => s.copyWith(duration: v.roundToDouble()),
                 ),
               ),
               _SliderRow(

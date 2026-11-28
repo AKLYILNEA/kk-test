@@ -192,7 +192,7 @@ class _HomePageState extends ConsumerState<HomePage>
                     hasScrollBody: false,
                     child: Center(
                       child: loading.isLoading || _loadingMore
-                          ? const ActivityIndicator()
+                          ? const ActivityIndicator.page()
                           : Text(loading.hasError ? '加载失败，请稍后重试' : '暂无番剧'),
                     ),
                   )

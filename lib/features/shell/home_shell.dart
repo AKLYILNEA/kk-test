@@ -46,38 +46,74 @@ class HomeShell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final isMobile = ViewScope.isMobileOf(context);
     final colorScheme = context.colorScheme;
-    final mode = ref.watch(
-      themeSettingsProvider.select((settings) => settings.tabAnimation),
+    final (mode, floatingBar) = ref.watch(
+      themeSettingsProvider.select(
+        (settings) => (settings.tabAnimation, settings.floatingNavigationBar),
+      ),
     );
 
     if (isMobile) {
-      final dockInset = NavigationDock.insetOf(context) + 8;
-      final pages = _ShellPages(
-        count: _mobileDestinations.length,
-        mode: mode,
-        bottomPadding: dockInset,
-      );
+      if (floatingBar) {
+        final dockInset = NavigationDock.insetOf(context) + 8;
+        final pages = _ShellPages(
+          count: _mobileDestinations.length,
+          mode: mode,
+          bottomPadding: dockInset,
+        );
+
+        return Surface(
+          color: SurfaceLevel.page.colorOf(colorScheme),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              pages,
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: Consumer(
+                  builder: (context, ref, _) => BarItemPresence.held(
+                    child: NavigationDock(
+                      destinations: _mobileDestinations,
+                      selectedIndex: ref.watch(
+                        navIndexProvider.select(_mobileIndexOf),
+                      ),
+                      onSelected: (index) => ref
+                          .read(navIndexProvider.notifier)
+                          .select(_mobileIndices[index]),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
 
       return Surface(
         color: SurfaceLevel.page.colorOf(colorScheme),
-        child: Stack(
-          fit: StackFit.expand,
+        child: Column(
           children: [
-            pages,
-            Align(
-              alignment: Alignment.bottomCenter,
-              child: Consumer(
-                builder: (context, ref, _) => BarItemPresence.held(
-                  child: NavigationDock(
-                    destinations: _mobileDestinations,
-                    selectedIndex: ref.watch(
-                      navIndexProvider.select(_mobileIndexOf),
+            Expanded(
+              child: _ShellPages(
+                count: _mobileDestinations.length,
+                mode: mode,
+                bottomPadding: 0,
+              ),
+            ),
+            Consumer(
+              builder: (context, ref, _) => NavigationBar(
+                destinations: [
+                  for (final dest in _mobileDestinations)
+                    NavigationDestination(
+                      icon: GlyphIcon(dest.glyph),
+                      label: dest.label,
                     ),
-                    onSelected: (index) => ref
-                        .read(navIndexProvider.notifier)
-                        .select(_mobileIndices[index]),
-                  ),
+                ],
+                selectedIndex: ref.watch(
+                  navIndexProvider.select(_mobileIndexOf),
                 ),
+                onDestinationSelected: (index) => ref
+                    .read(navIndexProvider.notifier)
+                    .select(_mobileIndices[index]),
               ),
             ),
           ],

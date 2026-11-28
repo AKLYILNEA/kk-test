@@ -215,7 +215,7 @@ class _ServiceSettingsPageState extends ConsumerState<ServiceSettingsPage>
           ),
         ],
         body: _loading
-            ? const Center(child: ActivityIndicator())
+            ? const Center(child: ActivityIndicator.page())
             : ArrivalCacheExtentBuilder(
                 builder: (context, cacheExtent) => CustomScrollView(
                   scrollCacheExtent: cacheExtent,

@@ -669,6 +669,7 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage>
     return KonekoScaffold(
       title: '发现搜索',
       showBack: widget.showBack,
+      loading: _searching,
       actions: [
         IconButtonData(
           glyph: KonekoGlyphs.tune,
@@ -892,7 +893,7 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage>
                 if (_searching)
                   const SliverFillRemaining(
                     hasScrollBody: false,
-                    child: Center(child: ActivityIndicator()),
+                    child: Center(child: ActivityIndicator.page()),
                   )
                 else if (_searchError != null && results.isEmpty)
                   SliverFillRemaining(

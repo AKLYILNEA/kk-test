@@ -104,9 +104,9 @@ class _KonekoCommentsPanelState extends ConsumerState<KonekoCommentsPanel> {
         ),
         KonekoRefreshChip(
           label: '刷新',
-          loading: commentsAsync.isLoading,
+          loading: commentsAsync.isLoading && items.isNotEmpty,
           elevated: widget.embedded,
-          onPressed: _refresh,
+          onPressed: commentsAsync.isLoading ? null : _refresh,
         ),
       ],
     );
@@ -115,7 +115,7 @@ class _KonekoCommentsPanelState extends ConsumerState<KonekoCommentsPanel> {
       if (commentsAsync.isLoading && items.isEmpty) {
         return const Padding(
           padding: EdgeInsets.symmetric(vertical: 32),
-          child: Center(child: ActivityIndicator()),
+          child: Center(child: ActivityIndicator.page()),
         );
       }
       if (commentsAsync.hasError && items.isEmpty) {

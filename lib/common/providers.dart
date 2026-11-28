@@ -118,13 +118,13 @@ class ThemeSettings {
         : kDefaultPrimaryColors;
     return ThemeSettings(
       themeMode: parseMode(map['themeMode']),
-      pureBlack: false,
+      pureBlack: map['pureBlack'] == true,
       primaryColor: map.containsKey('primaryColor')
           ? map['primaryColor'] as int?
           : kDefaultPrimaryColor,
       primaryColors: colors.isEmpty ? kDefaultPrimaryColors : colors,
       colorStyle: parseStyle(map['colorStyle']),
-      floatingNavigationBar: true,
+      floatingNavigationBar: map['floatingNavigationBar'] != false,
       tabAnimation: parseAnim(map['tabAnimation']),
       liquidGlass: parseGlass(map['liquidGlass']),
       customTextScaleEnabled: map['customTextScaleEnabled'] == true,
@@ -235,10 +235,10 @@ final danmakuSettingsProvider =
       DanmakuSettingsNotifier.new,
     );
 
-final _colorSchemeCache = <(Brightness, int, ColorStyle), ColorScheme>{};
+final _colorSchemeCache = <(Brightness, int, ColorStyle, bool), ColorScheme>{};
 
 /// Generates a [ColorScheme] using prism_ui's HCT seeded scheme, matching FlClash,
-/// cached by `(brightness, seed, style)` to avoid redundant HCT solves.
+/// cached by `(brightness, seed, style, pureBlack)` to avoid redundant HCT solves.
 ColorScheme buildKonekoColorScheme({
   required Brightness brightness,
   required int? primaryColor,
@@ -247,15 +247,15 @@ ColorScheme buildKonekoColorScheme({
   Color? overrideColor,
 }) {
   final seed = overrideColor ?? Color(primaryColor ?? kDefaultPrimaryColor);
-  final key = (brightness, seed.toARGB32(), colorStyle);
+  final key = (brightness, seed.toARGB32(), colorStyle, pureBlack);
   final cached = _colorSchemeCache[key];
   if (cached != null) return cached;
   final scheme = seededColorScheme(
     seedColor: seed,
     brightness: brightness,
     style: colorStyle,
-  );
-  if (_colorSchemeCache.length >= 24) {
+  ).toPureBlack(pureBlack);
+  if (_colorSchemeCache.length >= 32) {
     _colorSchemeCache.remove(_colorSchemeCache.keys.first);
   }
   _colorSchemeCache[key] = scheme;

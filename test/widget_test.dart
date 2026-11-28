@@ -892,6 +892,71 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'theme page matches FlClash preview, popup options, and single player danmaku toggle',
+    (tester) async {
+      _setViewport(tester, const Size(420, 880));
+      await tester.pumpWidget(_testApp());
+      await tester.pumpAndSettle();
+
+      // Open ThemePage via My tab
+      final dock = find.byType(NavigationDock);
+      await tester.tap(find.descendant(of: dock, matching: find.text('我的')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('外观主题'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ThemeLivePreview), findsOneWidget);
+      expect(find.text('纯黑模式'), findsOneWidget);
+
+      final themeScroll = find
+          .descendant(
+            of: find.byType(ThemePage),
+            matching: find.byType(Scrollable),
+          )
+          .first;
+      await tester.scrollUntilVisible(
+        find.text('色彩风格'),
+        180,
+        scrollable: themeScroll,
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(KonekoOptionsItem<ColorStyle>), findsOneWidget);
+
+      // Tapping right-anchored options item opens silky PopupMenu
+      await tester.tap(find.text('色彩风格'));
+      await tester.pumpAndSettle();
+      expect(find.text('鲜艳'), findsOneWidget);
+      await tester.tap(find.text('鲜艳'));
+      await tester.pumpAndSettle();
+      expect(find.text('鲜艳'), findsOneWidget);
+
+      await tester.scrollUntilVisible(
+        find.text('导航栏样式'),
+        180,
+        scrollable: themeScroll,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('悬浮'), findsOneWidget);
+      expect(find.text('贴底'), findsOneWidget);
+
+      // Pop back and verify PlayerPage has only one clean danmaku switch
+      await tester.tap(_barAction('返回'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.descendant(of: dock, matching: find.text('推荐')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('星海旅人：北境编年史').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('播放 · 第').first);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(KonekoDanmakuSwitch), findsOneWidget);
+      expect(find.byTooltip('关闭弹幕'), findsNothing);
+      expect(find.byTooltip('开启弹幕'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
 
 Finder _barAction(String tooltip) => find.byWidgetPredicate(

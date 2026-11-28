@@ -35,6 +35,7 @@ class KonekoScaffold extends StatefulWidget {
     this.searchConfig,
     this.barBackgroundColor,
     this.leadingShadows = const [],
+    this.loading = false,
   });
 
   final String title;
@@ -44,6 +45,7 @@ class KonekoScaffold extends StatefulWidget {
   final KonekoSearchConfig? searchConfig;
   final Color? barBackgroundColor;
   final List<BoxShadow> leadingShadows;
+  final bool loading;
 
   @override
   State<KonekoScaffold> createState() => _KonekoScaffoldState();
@@ -73,6 +75,9 @@ class _KonekoScaffoldState extends State<KonekoScaffold>
   final ValueNotifier<_SearchOrigin?> _searchOrigin = ValueNotifier(null);
   final ValueNotifier<bool> _searchCovered = ValueNotifier(false);
   final ValueNotifier<bool> _searching = ValueNotifier(false);
+  late final ValueNotifier<bool> _loadingNotifier = ValueNotifier(
+    widget.loading,
+  );
 
   final GlobalKey _barKey = GlobalKey();
   final GlobalKey _searchButtonKey = GlobalKey();
@@ -94,6 +99,14 @@ class _KonekoScaffoldState extends State<KonekoScaffold>
   }
 
   @override
+  void didUpdateWidget(covariant KonekoScaffold oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.loading != oldWidget.loading) {
+      _loadingNotifier.value = widget.loading;
+    }
+  }
+
+  @override
   void dispose() {
     _searchFocusNode.removeListener(_handleSearchFocusChange);
     _searchController.dispose();
@@ -102,6 +115,7 @@ class _KonekoScaffoldState extends State<KonekoScaffold>
     _searchOrigin.dispose();
     _searchCovered.dispose();
     _searching.dispose();
+    _loadingNotifier.dispose();
     super.dispose();
   }
 
@@ -197,13 +211,12 @@ class _KonekoScaffoldState extends State<KonekoScaffold>
     final compactTitle =
         mobile && routeOf(context)?.impliesAppBarDismissal == true;
     final search = widget.searchConfig;
-    const idle = AlwaysStoppedAnimation(false);
 
     return PrismScaffold(
       bar: ScaffoldBar(
         isCompact: false,
         listenable: Listenable.merge([_searching, _searchCovered]),
-        loading: idle,
+        loading: _loadingNotifier,
         backgroundColor: widget.barBackgroundColor,
         builder: (context) {
           final colorScheme = context.colorScheme;

@@ -658,4 +658,62 @@ abstract final class KonekoGlyphs {
       GlyphVertex(13.5, 12.6),
     ], role: GlyphRole.detail),
   ]);
+
+  static const dock = Glyph([
+    GlyphBox(2.5, 6.0, 21.5, 18.0, 3.5),
+    GlyphCircle(7.8, 12.0, 1.8, role: GlyphRole.detail, solid: true),
+    GlyphPolyline([
+      GlyphVertex(11.4, 12.0),
+      GlyphVertex(17.2, 12.0),
+    ], role: GlyphRole.detail),
+  ]);
+
+  static const pureBlack = Glyph([
+    GlyphBox(3, 3.5, 21, 16.5, 2.5),
+    GlyphPath(
+      'M7 6H17A1.5 1.5 0 0 1 18.5 7.5V12.5A1.5 1.5 0 0 1 17 14H7A1.5 1.5 0 0 1 5.5 12.5V7.5A1.5 1.5 0 0 1 7 6Z',
+      role: GlyphRole.detail,
+      solid: true,
+    ),
+    GlyphPolyline([
+      GlyphVertex(12, 16.5),
+      GlyphVertex(12, 20.4),
+    ], role: GlyphRole.line),
+    GlyphPolyline([
+      GlyphVertex(8, 20.4),
+      GlyphVertex(16, 20.4),
+    ], role: GlyphRole.line),
+  ]);
+
+  static const eyedropper = Glyph([
+    GlyphPolyline([
+      GlyphVertex(4.79, 19.21, 0.9),
+      GlyphVertex(8.46, 18.08, 1.2),
+      GlyphVertex(14.4, 12.14, 0.5),
+      GlyphVertex(16.24, 13.98, 1),
+      GlyphVertex(18.79, 11.43, 1),
+      GlyphVertex(17.73, 10.37, 0.5),
+      GlyphVertex(21.4, 6.7, 2.9),
+      GlyphVertex(17.3, 2.6, 2.9),
+      GlyphVertex(13.63, 6.27, 0.5),
+      GlyphVertex(12.57, 5.21, 1),
+      GlyphVertex(10.02, 7.76, 1),
+      GlyphVertex(11.86, 9.6, 0.5),
+      GlyphVertex(5.92, 15.54, 1.2),
+    ], closed: true),
+  ]);
+
+  static const edit = Glyph([
+    GlyphPolyline([
+      GlyphVertex(4, 20, 1),
+      GlyphVertex(8.75, 18.75, 1),
+      GlyphVertex(20.25, 7.25, 1.5),
+      GlyphVertex(16.75, 3.75, 1.5),
+      GlyphVertex(5.25, 15.25, 1),
+    ], closed: true),
+    GlyphPolyline([
+      GlyphVertex(13.25, 7.25),
+      GlyphVertex(16.75, 10.75),
+    ], role: GlyphRole.detail),
+  ]);
 }

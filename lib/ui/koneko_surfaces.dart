@@ -613,11 +613,10 @@ class KonekoChip extends StatelessWidget {
   }
 }
 
-/// GPU-composited clockwise spinning refresh glyph used across all refresh
-/// buttons in Koneko. Continuously spins while [spinning] is true, eases to an
-/// upright finish when loading ends, and plays a crisp 360° pulse whenever
-/// [pulse] increments.
-class KonekoSpinningRefreshIcon extends StatefulWidget {
+/// FlClash-aligned refresh icon indicator: stays crisp and stationary at rest,
+/// and crossfades smoothly into a subtle [ActivityIndicator] only while
+/// [spinning] is true (never spinning the arrow glyph itself).
+class KonekoSpinningRefreshIcon extends StatelessWidget {
   const KonekoSpinningRefreshIcon({
     super.key,
     this.spinning = false,
@@ -632,100 +631,32 @@ class KonekoSpinningRefreshIcon extends StatefulWidget {
   final Color? color;
 
   @override
-  State<KonekoSpinningRefreshIcon> createState() =>
-      _KonekoSpinningRefreshIconState();
-}
-
-class _KonekoSpinningRefreshIconState extends State<KonekoSpinningRefreshIcon>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 760),
-  );
-  bool _animDisabled = false;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _animDisabled = MediaQuery.disableAnimationsOf(context);
-    if (_animDisabled) {
-      _controller.stop();
-      _controller.value = 0;
-    } else if (widget.spinning && !_controller.isAnimating) {
-      _controller.repeat();
-    }
-  }
-
-  @override
-  void didUpdateWidget(covariant KonekoSpinningRefreshIcon oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (_animDisabled) {
-      _controller.stop();
-      _controller.value = 0;
-      return;
-    }
-    if (widget.spinning && !oldWidget.spinning) {
-      _controller.repeat();
-    } else if (!widget.spinning && oldWidget.spinning) {
-      _finishGracefully();
-    } else if (!widget.spinning && widget.pulse != oldWidget.pulse) {
-      _runPulse();
-    }
-  }
-
-  void _finishGracefully() {
-    if (!_controller.isAnimating && _controller.value == 0) return;
-    final remaining = (1.0 - _controller.value).clamp(0.15, 1.0);
-    unawaited(
-      _controller
-          .animateTo(
-            1.0,
-            duration: Duration(milliseconds: (420 * remaining).round()),
-            curve: Curves.easeOutCubic,
-          )
-          .then((_) {
-            if (mounted && !widget.spinning) _controller.value = 0;
-          }),
-    );
-  }
-
-  void _runPulse() {
-    _controller.value = 0;
-    unawaited(
-      _controller
-          .animateTo(
-            1.0,
-            duration: const Duration(milliseconds: 540),
-            curve: Curves.easeOutCubic,
-          )
-          .then((_) {
-            if (mounted && !widget.spinning) _controller.value = 0;
-          }),
-    );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final glyph = GlyphIcon(
-      KonekoGlyphs.refresh,
-      size: widget.size,
-      color: widget.color,
+    final effectiveSize = size ?? 14.0;
+    return AnimatedSwitcher(
+      duration: context.motionDuration(const Duration(milliseconds: 180)),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      child: spinning
+          ? SizedBox.square(
+              key: const ValueKey('loading'),
+              dimension: effectiveSize,
+              child: ActivityIndicator(size: effectiveSize, color: color),
+            )
+          : GlyphIcon(
+              KonekoGlyphs.refresh,
+              key: const ValueKey('idle'),
+              size: effectiveSize,
+              color: color,
+            ),
     );
-    if (_animDisabled) return glyph;
-    return RotationTransition(turns: _controller, child: glyph);
   }
 }
 
-/// Unified FlClash-styled refresh pill button shared across cards, sheets, and
-/// empty/error states. Tapping always triggers a smooth 360° spin and stays
-/// continuously spinning while [loading] is true.
-class KonekoRefreshChip extends StatefulWidget {
+/// FlClash-styled refresh pill button shared across cards, sheets, and
+/// empty/error states. Keeps a crisp static refresh glyph at rest and
+/// crossfades into a compact [ActivityIndicator] only while [loading] is true.
+class KonekoRefreshChip extends StatelessWidget {
   const KonekoRefreshChip({
     super.key,
     this.label = '刷新',
@@ -754,97 +685,284 @@ class KonekoRefreshChip extends StatefulWidget {
   final Color? foregroundColor;
 
   @override
-  State<KonekoRefreshChip> createState() => _KonekoRefreshChipState();
-}
-
-class _KonekoRefreshChipState extends State<KonekoRefreshChip> {
-  int _pulse = 0;
-
-  void _handleTap() {
-    if (widget.loading) return;
-    setState(() => _pulse++);
-    widget.onPressed?.call();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
     final bg =
-        widget.backgroundColor ??
-        (widget.prominent
+        backgroundColor ??
+        (prominent
             ? colorScheme.primary
-            : widget.elevated
+            : elevated
             ? SurfaceLevel.card.colorOf(colorScheme)
             : SurfaceLevel.block.colorOf(colorScheme));
     final fg =
-        widget.foregroundColor ??
-        (widget.prominent ? colorScheme.onPrimary : colorScheme.onSurface);
-    final iconColor = widget.prominent
+        foregroundColor ??
+        (prominent ? colorScheme.onPrimary : colorScheme.onSurface);
+    final iconColor = prominent
         ? fg
-        : widget.foregroundColor ?? colorScheme.primary;
-    final displayLabel = widget.loading && widget.loadingLabel != null
-        ? widget.loadingLabel!
-        : widget.label;
+        : foregroundColor ?? colorScheme.primary;
+    final displayLabel = loading && loadingLabel != null
+        ? loadingLabel!
+        : label;
 
     return KonekoChip(
       label: displayLabel,
-      height: widget.height,
-      fontSize: widget.fontSize,
-      elevated: widget.elevated,
+      height: height,
+      fontSize: fontSize,
+      elevated: elevated,
       backgroundColor: bg,
       foregroundColor: fg,
       leading: KonekoSpinningRefreshIcon(
-        spinning: widget.loading,
-        pulse: _pulse,
-        size: widget.iconSize,
+        spinning: loading,
+        size: iconSize,
         color: iconColor,
       ),
-      onPressed: widget.onPressed == null || widget.loading ? null : _handleTap,
+      onPressed: onPressed == null || loading ? null : onPressed,
     );
   }
 }
 
-/// AppBar / Sheet header action button wrapper that automatically animates
-/// [KonekoGlyphs.refresh] actions with the unified 360° spin both on tap and
-/// while [IconButtonData.isLoading] is true.
-class KonekoBarActionButton extends StatefulWidget {
+/// AppBar / Sheet header action button wrapper using prism_ui's authentic
+/// [AppBarActionButton] behavior (stationary icon at rest, clean crossfade to
+/// [ActivityIndicator] only when [IconButtonData.isLoading] is true).
+class KonekoBarActionButton extends StatelessWidget {
   const KonekoBarActionButton({super.key, required this.data, this.icon});
 
   final IconButtonData data;
   final Widget? icon;
 
   @override
-  State<KonekoBarActionButton> createState() => _KonekoBarActionButtonState();
+  Widget build(BuildContext context) {
+    return AppBarActionButton(data: data, icon: icon);
+  }
 }
 
-class _KonekoBarActionButtonState extends State<KonekoBarActionButton> {
-  int _pulse = 0;
+/// 1:1 FlClash `ListItem.options` row: title on the left, current value with
+/// [Glyphs.picker] chevron on the right, opening prism_ui's silky spring
+/// [PopupAnchor] + [PopupMenu] popover right out of the value control.
+class KonekoOptionsItem<T> extends StatelessWidget {
+  const KonekoOptionsItem({
+    super.key,
+    required this.title,
+    this.subtitle,
+    this.leading,
+    required this.options,
+    required this.value,
+    required this.textBuilder,
+    required this.onChanged,
+    this.sectionStarts = const {},
+  });
+
+  final Widget title;
+  final Widget? subtitle;
+  final Widget? leading;
+  final List<T> options;
+  final T value;
+  final String Function(T value) textBuilder;
+  final ValueChanged<T> onChanged;
+  final Set<T> sectionStarts;
+
+  static const double _padding = 8.0;
+  static const double _endInset = _padding + 5.7;
 
   @override
   Widget build(BuildContext context) {
-    final data = widget.data;
-    if (widget.icon == null && identical(data.glyph, KonekoGlyphs.refresh)) {
-      final effective = IconButtonData(
-        glyph: data.glyph,
-        tooltip: data.tooltip,
-        isSelected: data.isSelected,
-        isLoading: false,
-        onPressed: data.isLoading || data.onPressed == null
-            ? null
-            : () {
-                setState(() => _pulse++);
-                data.onPressed?.call();
-              },
-      );
-      return AppBarActionButton(
-        data: effective,
-        icon: KonekoSpinningRefreshIcon(
-          spinning: data.isLoading,
-          pulse: _pulse,
+    final insets = context.listInsets;
+    PopupOpen? openMenu;
+    return DecorationListItem(
+      leading: leading,
+      title: title,
+      subtitle: subtitle,
+      contentPadding: EdgeInsetsDirectional.only(
+        start: insets.leading,
+        end: insets.trailing - _endInset,
+      ),
+      onPressed: () => openMenu?.call(),
+      trailing: PopupAnchor(
+        targetBuilder: (open) {
+          openMenu = open;
+          return TextButton(
+            onPressed: open,
+            style: ButtonStyle.from(
+              foregroundColor: context.colorScheme.onSurfaceVariant,
+              textStyle: context.listTitleStyle,
+              padding: const EdgeInsets.symmetric(horizontal: _padding),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              spacing: 4,
+              children: [
+                Flexible(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 160),
+                    child: PopupValueText(
+                      textBuilder(value),
+                      alignment: AlignmentDirectional.centerEnd,
+                    ),
+                  ),
+                ),
+                const GlyphIcon(Glyphs.picker),
+              ],
+            ),
+          );
+        },
+        popupBuilder: (_) => PopupMenu(
+          items: [
+            for (final option in options)
+              PopupMenuItem(
+                label: textBuilder(option),
+                checked: option == value,
+                section: sectionStarts.contains(option)
+                    ? const PopupMenuSection()
+                    : null,
+                onPressed: () => onChanged(option),
+              ),
+          ],
         ),
-      );
-    }
-    return AppBarActionButton(data: data, icon: widget.icon);
+      ),
+    );
+  }
+}
+
+/// Compact right-anchored silky [PopupMenu] trigger button for card headers
+/// and player controls (matching FlClash's anchored popover language).
+class KonekoPopupTrigger<T> extends StatelessWidget {
+  const KonekoPopupTrigger({
+    super.key,
+    required this.options,
+    required this.value,
+    required this.textBuilder,
+    required this.onChanged,
+    this.displayLabel,
+    this.foregroundColor,
+    this.backgroundColor,
+    this.enabled = true,
+  });
+
+  final List<T> options;
+  final T value;
+  final String Function(T value) textBuilder;
+  final ValueChanged<T> onChanged;
+  final String? displayLabel;
+  final Color? foregroundColor;
+  final Color? backgroundColor;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = context.colorScheme;
+    final fg = foregroundColor ?? colorScheme.onSurfaceVariant;
+    final label = displayLabel ?? textBuilder(value);
+
+    return PopupAnchor(
+      targetBuilder: (open) => PressSurface(
+        fill: backgroundColor ?? Colors.transparent,
+        shape: AppShape.full,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        onPressed: enabled ? open : null,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          spacing: 3,
+          children: [
+            DefaultTextStyle(
+              style: AppTextStyle.footnote
+                  .of(context, emphasized: true)
+                  .copyWith(
+                    color: enabled ? fg : fg.withValues(alpha: 0.4),
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+              child: PopupValueText(
+                label,
+                alignment: AlignmentDirectional.centerEnd,
+              ),
+            ),
+            GlyphIcon(
+              Glyphs.picker,
+              size: 14,
+              color: enabled ? fg : fg.withValues(alpha: 0.4),
+            ),
+          ],
+        ),
+      ),
+      popupBuilder: (_) => PopupMenu(
+        items: [
+          for (final option in options)
+            PopupMenuItem(
+              label: textBuilder(option),
+              checked: option == value,
+              onPressed: () => onChanged(option),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Sleek, compact capsule toggle switch tailored for the player's danmaku card:
+/// pure white elevated circular thumb over a crisp primary/neutral pill track.
+class KonekoDanmakuSwitch extends StatelessWidget {
+  const KonekoDanmakuSwitch({
+    super.key,
+    required this.value,
+    required this.onChanged,
+    this.semanticLabel = '弹幕开关',
+  });
+
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final String semanticLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = context.colorScheme;
+    final isDark = colorScheme.brightness == Brightness.dark;
+    final offTrack = isDark
+        ? Colors.white.withValues(alpha: 0.16)
+        : colorScheme.onSurface.withValues(alpha: 0.14);
+    final duration = context.motionDuration(const Duration(milliseconds: 220));
+
+    return Semantics(
+      label: semanticLabel,
+      toggled: value,
+      button: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => onChanged(!value),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: AnimatedContainer(
+            duration: duration,
+            curve: Curves.easeOutCubic,
+            width: 44,
+            height: 26,
+            padding: const EdgeInsets.all(3),
+            decoration: ShapeDecoration(
+              color: value ? colorScheme.primary : offTrack,
+              shape: AppShape.full,
+            ),
+            child: AnimatedAlign(
+              duration: duration,
+              curve: Curves.easeOutBack,
+              alignment: value ? Alignment.centerRight : Alignment.centerLeft,
+              child: Container(
+                width: 20,
+                height: 20,
+                decoration: ShapeDecoration(
+                  color: Colors.white,
+                  shape: AppShape.circle,
+                  shadows: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.16),
+                      blurRadius: 4,
+                      offset: const Offset(0, 1.5),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
