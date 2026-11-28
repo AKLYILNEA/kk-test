@@ -854,11 +854,11 @@ class _HeroCard extends StatelessWidget {
                     )
                   : KonekoBlock(
                       key: const ValueKey('hero-synopsis-empty'),
-                      corner: 16,
-                      padding: const EdgeInsets.all(12),
+                      corner: 18,
+                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
                       child: SizedBox(
                         width: double.infinity,
-                        height: 60,
+                        height: kSynopsisCollapsedHeight,
                         child: Align(
                           alignment: Alignment.centerLeft,
                           child: Text(
@@ -1747,19 +1747,25 @@ class _SynopsisSkeletonBlock extends StatelessWidget {
         corner: 18,
         padding: EdgeInsets.fromLTRB(14, 12, 14, 12),
         child: SizedBox(
-          height: 60,
+          height: kSynopsisCollapsedHeight,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               KonekoSkeletonBox(width: double.infinity, height: 14, corner: 6),
+              SizedBox(height: 10),
               FractionallySizedBox(
                 widthFactor: 0.92,
                 child: KonekoSkeletonBox(height: 14, corner: 6),
               ),
+              SizedBox(height: 10),
               FractionallySizedBox(
                 widthFactor: 0.64,
                 child: KonekoSkeletonBox(height: 14, corner: 6),
+              ),
+              Spacer(),
+              Align(
+                alignment: AlignmentDirectional.centerEnd,
+                child: KonekoSkeletonBox(width: 52, height: 14, corner: 7),
               ),
             ],
           ),

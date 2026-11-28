@@ -2,6 +2,11 @@ import 'package:flutter/widgets.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
 import 'package:prism_ui/prism_ui.dart';
 
+/// Fixed collapsed inner height matching 3 lines of [AppTextStyle.subheadline]
+/// plus the expand action row so loading short, empty, or long synopses never
+/// causes the hero card or below-the-fold tabs to jump vertically.
+const double kSynopsisCollapsedHeight = 98.0;
+
 class SubjectSynopsis extends StatefulWidget {
   const SubjectSynopsis({super.key, required this.summary});
 
@@ -50,7 +55,7 @@ class _SubjectSynopsisState extends State<SubjectSynopsis> {
       corner: 18,
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 60),
+        constraints: const BoxConstraints(minHeight: kSynopsisCollapsedHeight),
         child: LayoutBuilder(
           builder: (context, constraints) {
           final inputs = (
