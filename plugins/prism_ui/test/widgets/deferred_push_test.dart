@@ -68,7 +68,7 @@ void main() {
     unawaited(navigatorKey.currentState!.push(route));
 
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(arrivalHoldLimit ~/ 2);
     expect(route.animation!.value, 0);
 
     ready.value = true;
@@ -161,7 +161,7 @@ void main() {
     unawaited(navigatorKey.currentState!.push(route));
 
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(arrivalHoldLimit ~/ 2);
     expect(route.animation!.value, 0);
 
     loading.value = false;
@@ -190,7 +190,7 @@ void main() {
     unawaited(navigatorKey.currentState!.push(route));
 
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(arrivalHoldLimit ~/ 2);
     expect(route.animation!.value, 0);
 
     ready.value = true;
