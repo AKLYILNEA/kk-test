@@ -3433,10 +3433,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
               : const AlwaysStoppedAnimation(0),
           builder: (context, _) {
             final (position: position, duration: duration) = _timeline.value;
-            final value = (_scrub.value?.round() ?? position).clamp(
-              0,
-              math.max(1, duration),
-            );
+            final value = (_scrub.value?.round() ?? position)
+                .clamp(0, math.max(1, duration))
+                .toInt();
             return builder(context, value, duration);
           },
         );

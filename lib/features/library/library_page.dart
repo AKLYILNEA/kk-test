@@ -8,6 +8,7 @@ import 'package:koneko/common/providers.dart';
 import 'package:koneko/features/detail/subject_detail_page.dart';
 import 'package:koneko/features/my/service_settings_page.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
+import 'package:koneko/ui/koneko_image.dart';
 import 'package:koneko/ui/koneko_polygon.dart';
 import 'package:koneko/ui/koneko_scaffold.dart';
 import 'package:koneko/ui/koneko_sheet.dart';
@@ -324,6 +325,10 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                 : width >= 600
                 ? 4
                 : 3;
+            final posterWidth = posterDecodeWidth(
+              context,
+              (width - 24 - (columns - 1) * 10) / columns,
+            );
 
             return CustomScrollView(
               slivers: [
@@ -417,22 +422,21 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                             ),
                           );
                         }
-                        return RepaintBoundary(
-                          child: UnifiedAnimeCard(
-                            subject: subject,
-                            corner: 16,
-                            compact: true,
-                            statusGlyph: konekoStatusGlyph(
-                              entry.status,
-                              forBadge: true,
-                            ),
-                            statusColor: konekoStatusColor(entry.status),
-                            statusTooltip: '修改「${subject.title}」的追番状态',
-                            onStatusTap: () => _pickStatus(subject, entry),
-                            onTap: () => BaseNavigator.push<void>(
-                              context,
-                              SubjectDetailPage(subjectId: subject.subjectId),
-                            ),
+                        return UnifiedAnimeCard(
+                          subject: subject,
+                          posterWidth: posterWidth,
+                          corner: 16,
+                          compact: true,
+                          statusGlyph: konekoStatusGlyph(
+                            entry.status,
+                            forBadge: true,
+                          ),
+                          statusColor: konekoStatusColor(entry.status),
+                          statusTooltip: '修改「${subject.title}」的追番状态',
+                          onStatusTap: () => _pickStatus(subject, entry),
+                          onTap: () => BaseNavigator.push<void>(
+                            context,
+                            SubjectDetailPage(subjectId: subject.subjectId),
                           ),
                         );
                       }, childCount: filtered.length),

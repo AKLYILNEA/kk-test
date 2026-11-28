@@ -1089,19 +1089,19 @@ class KonekoCircleButton extends StatelessWidget {
 }
 
 /// A cached network cover with a clean Kazumi/Bilibili-style little-TV placeholder.
-/// Uses a single fixed decode width ([kPosterCacheWidth]) across all pages so
-/// Flutter's synchronous memory cache hits instantly without re-loading.
 class KonekoPosterArt extends StatelessWidget {
   const KonekoPosterArt({
     super.key,
     required this.subject,
     this.borderRadius = BorderRadius.zero,
     this.overlayBadges = const [],
+    this.decodeWidth = kPosterCacheWidth,
   });
 
   final AnimeSubject subject;
   final BorderRadius borderRadius;
   final List<Widget> overlayBadges;
+  final int decodeWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -1125,7 +1125,7 @@ class KonekoPosterArt extends StatelessWidget {
         : KonekoNetworkImage(
             url: url,
             placeholder: fallback,
-            memCacheWidth: kPosterCacheWidth,
+            memCacheWidth: decodeWidth,
           );
     final content = overlayBadges.isEmpty
         ? art
@@ -1417,6 +1417,7 @@ class UnifiedAnimeCard extends StatelessWidget {
     this.showMetaLine = true,
     this.compact = false,
     this.corner = 22,
+    this.posterWidth = kPosterCacheWidth,
   });
 
   final AnimeSubject subject;
@@ -1431,6 +1432,7 @@ class UnifiedAnimeCard extends StatelessWidget {
   final bool showMetaLine;
   final bool compact;
   final double corner;
+  final int posterWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -1456,6 +1458,7 @@ class UnifiedAnimeCard extends StatelessWidget {
             Expanded(
               child: KonekoPosterArt(
                 subject: subject,
+                decodeWidth: posterWidth,
                 overlayBadges: [
                   if (showTopRank && subject.rank > 0 && subject.rank <= 3)
                     Positioned(

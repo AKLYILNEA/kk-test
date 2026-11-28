@@ -6,6 +6,7 @@ import 'package:koneko/common/catalog_page_refresh.dart';
 import 'package:koneko/common/providers.dart';
 import 'package:koneko/features/detail/subject_detail_page.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
+import 'package:koneko/ui/koneko_image.dart';
 import 'package:koneko/ui/koneko_polygon.dart';
 import 'package:koneko/ui/koneko_scaffold.dart';
 import 'package:koneko/ui/koneko_sheet.dart';
@@ -444,11 +445,24 @@ class _SchedulePageState extends ConsumerState<SchedulePage>
         child: LayoutBuilder(
           builder: (context, constraints) {
             final isWide = constraints.maxWidth >= 760;
+            Widget buildCard(BuildContext context, int index) {
+              final subject = items[index];
+              return _ScheduleCard(
+                subject: subject,
+                isWatching:
+                    statusMap[subject.subjectId] == CollectionStatus.watching,
+                onTap: () => BaseNavigator.push<void>(
+                  context,
+                  SubjectDetailPage(subjectId: subject.subjectId),
+                ),
+              );
+            }
+
             return ArrivalCacheExtentBuilder(
               builder: (context, cacheExtent) => CustomScrollView(
                 scrollCacheExtent: cacheExtent,
                 slivers: [
-                  const KonekoScrollStart(),
+                const KonekoScrollStart(),
                   SliverToBoxAdapter(
                     child: KonekoAutoScrollChipBar(
                       height: 48,
@@ -619,20 +633,7 @@ class _SchedulePageState extends ConsumerState<SchedulePage>
                                   mainAxisExtent: 124,
                                 ),
                             delegate: SliverChildBuilderDelegate(
-                              (context, index) => RepaintBoundary(
-                                child: _ScheduleCard(
-                                  subject: items[index],
-                                  isWatching:
-                                      statusMap[items[index].subjectId] ==
-                                      CollectionStatus.watching,
-                                  onTap: () => BaseNavigator.push<void>(
-                                    context,
-                                    SubjectDetailPage(
-                                      subjectId: items[index].subjectId,
-                                    ),
-                                  ),
-                                ),
-                              ),
+                              buildCard,
                               childCount: items.length,
                             ),
                           )
@@ -640,25 +641,12 @@ class _SchedulePageState extends ConsumerState<SchedulePage>
                             itemCount: items.length,
                             separatorBuilder: (_, _) =>
                                 const SizedBox(height: 12),
-                            itemBuilder: (context, index) => RepaintBoundary(
-                              child: _ScheduleCard(
-                                subject: items[index],
-                                isWatching:
-                                    statusMap[items[index].subjectId] ==
-                                    CollectionStatus.watching,
-                                onTap: () => BaseNavigator.push<void>(
-                                  context,
-                                  SubjectDetailPage(
-                                    subjectId: items[index].subjectId,
-                                  ),
-                                ),
-                              ),
-                            ),
+                            itemBuilder: buildCard,
                           ),
                   ),
-              ],
-            ),
-          );
+                ],
+              ),
+            );
           },
         ),
       ),
@@ -742,6 +730,7 @@ class _ScheduleCard extends StatelessWidget {
             height: 100,
             child: KonekoPosterArt(
               subject: subject,
+              decodeWidth: posterDecodeWidth(context, 72),
               borderRadius: AppRadius.all(16),
             ),
           ),

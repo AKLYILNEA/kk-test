@@ -4,10 +4,17 @@ import 'package:koneko/ui/koneko_polygon.dart';
 import 'package:prism_ui/prism_ui.dart';
 import 'package:prism_ui/shapes/shapes.dart' as shapes;
 
-/// Fixed quantized decode width for all anime posters so every page (Home,
-/// Schedule, Library, History, Detail, Related) hits the EXACT SAME entry in
-/// Flutter's synchronous [ImageCache] with zero re-decoding or flashing.
+/// Use shared decode sizes so small thumbnails fit in the cache alongside heroes.
 const int kPosterCacheWidth = 420;
+const int _thumbnailCacheWidth = 256;
+
+int posterDecodeWidth(BuildContext context, double logicalWidth) {
+  return logicalWidth * MediaQuery.devicePixelRatioOf(context) <=
+          _thumbnailCacheWidth
+      ? _thumbnailCacheWidth
+      : kPosterCacheWidth;
+}
+
 const int kAvatarCacheWidth = 96;
 
 /// Normalizes Bangumi & external cover URLs exactly like Kazumi:

@@ -151,6 +151,31 @@ void main() {
   );
 
   testWidgets(
+    'home carousel stays idle below the viewport and resumes at top',
+    (tester) async {
+      _setViewport(tester, const Size(420, 640));
+      await tester.pumpWidget(_testApp());
+      await tester.pumpAndSettle();
+
+      final feed = tester.widget<CustomScrollView>(
+        find.byType(CustomScrollView),
+      );
+      final position = feed.controller!.position;
+      expect(position.maxScrollExtent, greaterThan(400));
+      position.jumpTo(400);
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 6));
+      expect(tester.hasRunningAnimations, isFalse);
+
+      position.jumpTo(0);
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 6));
+      expect(tester.hasRunningAnimations, isTrue);
+      await tester.pumpAndSettle();
+    },
+  );
+
+  testWidgets(
     'schedule and library use FlClash sheets for season/filter/status selection',
     (tester) async {
       _setViewport(tester, const Size(390, 820));

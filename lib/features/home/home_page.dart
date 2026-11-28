@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui' show lerpDouble;
 
+import 'package:flutter/rendering.dart' show RenderAbstractViewport;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:koneko/common/catalog_page_refresh.dart';
@@ -9,6 +10,7 @@ import 'package:koneko/features/detail/subject_detail_page.dart';
 import 'package:koneko/features/discover/discover_page.dart';
 import 'package:koneko/features/history/history_page.dart';
 import 'package:koneko/ui/koneko_glyphs.dart';
+import 'package:koneko/ui/koneko_image.dart';
 import 'package:koneko/ui/koneko_polygon.dart';
 import 'package:koneko/ui/koneko_scaffold.dart';
 import 'package:koneko/ui/koneko_surfaces.dart';
@@ -44,7 +46,7 @@ class _HomePageState extends ConsumerState<HomePage>
 
   final ScrollController _scrollController = ScrollController();
   String _selectedTag = '全部';
-  bool _loadingMore = false;
+  final _loadingMore = ValueNotifier(false);
   final Map<String, bool> _exhausted = {};
 
   @override
@@ -58,32 +60,29 @@ class _HomePageState extends ConsumerState<HomePage>
     _scrollController
       ..removeListener(_onScroll)
       ..dispose();
+    _loadingMore.dispose();
     super.dispose();
   }
 
   void _onScroll() {
-    if (!_scrollController.hasClients || _loadingMore) return;
+    if (!_scrollController.hasClients || _loadingMore.value) return;
     final pos = _scrollController.position;
-    if (pos.pixels >= pos.maxScrollExtent - 480) {
+    if (pos.hasContentDimensions && pos.extentAfter <= 480) {
       unawaited(_loadMore(_selectedTag));
     }
   }
 
   Future<void> _loadMore(String tag) async {
-    if (_loadingMore || _exhausted[tag] == true) return;
+    if (_loadingMore.value || _exhausted[tag] == true) return;
     final online = ref.read(onlineCatalogProvider);
     if (online == null) return;
-    setState(() => _loadingMore = true);
+    _loadingMore.value = true;
     try {
-      final hasMore = await online.loadMoreTrending(tag: tag);
-      if (mounted) {
-        setState(() {
-          _loadingMore = false;
-          if (!hasMore) _exhausted[tag] = true;
-        });
-      }
+      if (!await online.loadMoreTrending(tag: tag)) _exhausted[tag] = true;
     } on Object {
-      if (mounted) setState(() => _loadingMore = false);
+      // A later pass can retry a failed page.
+    } finally {
+      if (mounted) _loadingMore.value = false;
     }
   }
 
@@ -149,6 +148,10 @@ class _HomePageState extends ConsumerState<HomePage>
               : width >= 500
               ? 3
               : 2;
+          final posterWidth = posterDecodeWidth(
+            context,
+            (width - 32 - (crossAxisCount - 1) * 12) / crossAxisCount,
+          );
 
           return ArrivalCacheExtentBuilder(
             builder: (context, cacheExtent) => CustomScrollView(
@@ -191,33 +194,33 @@ class _HomePageState extends ConsumerState<HomePage>
                 if (subjects.isEmpty)
                   SliverFillRemaining(
                     hasScrollBody: false,
-                    child: loading.isLoading || _loadingMore
-                        ? const Center(child: ActivityIndicator.page())
-                        : KonekoEmptyState(
-                            glyph: KonekoGlyphs.home,
-                            shape: loading.hasError
-                                ? KonekoPolygons.softBurst
-                                : KonekoPolygons.sunny,
-                            title: loading.hasError ? '加载失败，请稍后重试' : '暂无番剧',
-                            actions: [
-                              if (loading.hasError)
-                                KonekoRefreshChip(
-                                  label: '重新加载',
-                                  prominent: true,
-                                  onPressed: () =>
-                                      ref.invalidate(loadHomeCatalogProvider),
-                                ),
-                            ],
-                          ),
+                    child: ValueListenableBuilder(
+                      valueListenable: _loadingMore,
+                      builder: (_, loadingMore, child) =>
+                          loading.isLoading || loadingMore
+                          ? const Center(child: ActivityIndicator.page())
+                          : child!,
+                      child: KonekoEmptyState(
+                        glyph: KonekoGlyphs.home,
+                        shape: loading.hasError
+                            ? KonekoPolygons.softBurst
+                            : KonekoPolygons.sunny,
+                        title: loading.hasError ? '加载失败，请稍后重试' : '暂无番剧',
+                        actions: [
+                          if (loading.hasError)
+                            KonekoRefreshChip(
+                              label: '重新加载',
+                              prominent: true,
+                              onPressed: () =>
+                                  ref.invalidate(loadHomeCatalogProvider),
+                            ),
+                        ],
+                      ),
+                    ),
                   )
                 else ...[
                   SliverPadding(
-                    padding: EdgeInsets.fromLTRB(
-                      16,
-                      12,
-                      16,
-                      _loadingMore ? 12 : 24 + widget.bottomPadding,
-                    ),
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                     sliver: SliverGrid(
                       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: crossAxisCount,
@@ -227,29 +230,30 @@ class _HomePageState extends ConsumerState<HomePage>
                       ),
                       delegate: SliverChildBuilderDelegate((context, index) {
                         final subject = subjects[index];
-                        return RepaintBoundary(
-                          child: UnifiedAnimeCard(
-                            subject: subject,
-                            isTracking: trackingIds.contains(subject.subjectId),
-                            showTopRank: _selectedTag == '全部',
-                            onTap: () => _openDetail(subject),
-                          ),
+                        return UnifiedAnimeCard(
+                          subject: subject,
+                          posterWidth: posterWidth,
+                          isTracking: trackingIds.contains(subject.subjectId),
+                          showTopRank: _selectedTag == '全部',
+                          onTap: () => _openDetail(subject),
                         );
                       }, childCount: subjects.length),
                     ),
                   ),
-                  if (_loadingMore)
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: EdgeInsets.fromLTRB(
-                          0,
-                          8,
-                          0,
-                          28 + widget.bottomPadding,
-                        ),
-                        child: const Center(child: ActivityIndicator()),
-                      ),
+                  SliverToBoxAdapter(
+                    child: ValueListenableBuilder(
+                      valueListenable: _loadingMore,
+                      builder: (_, loadingMore, _) => loadingMore
+                          ? Padding(
+                              padding: EdgeInsets.only(
+                                top: 20,
+                                bottom: 28 + widget.bottomPadding,
+                              ),
+                              child: const Center(child: ActivityIndicator()),
+                            )
+                          : SizedBox(height: 24 + widget.bottomPadding),
                     ),
+                  ),
                 ],
               ],
             ),
@@ -297,10 +301,17 @@ class _AnimekoHeroCarouselState extends State<_AnimekoHeroCarousel>
   bool _userDragging = false;
   bool _visible = false;
   Animation<double>? _secondaryAnimation;
+  ScrollPosition? _verticalPosition;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final position = Scrollable.maybeOf(context, axis: Axis.vertical)?.position;
+    if (!identical(position, _verticalPosition)) {
+      _verticalPosition?.isScrollingNotifier.removeListener(_restartAutoPlay);
+      _verticalPosition = position;
+      position?.isScrollingNotifier.addListener(_restartAutoPlay);
+    }
     final route = ModalRoute.of(context);
     final secondary = route?.secondaryAnimation;
     if (!identical(secondary, _secondaryAnimation)) {
@@ -341,12 +352,21 @@ class _AnimekoHeroCarouselState extends State<_AnimekoHeroCarousel>
 
   void _restartAutoPlay() {
     _autoPlayTimer?.cancel();
-    if (!_visible || widget.subjects.length <= 1) return;
+    if (!_visible ||
+        _userDragging ||
+        _verticalPosition?.isScrollingNotifier.value == true ||
+        widget.subjects.length <= 1) {
+      return;
+    }
     _autoPlayTimer = Timer.periodic(_autoPlayInterval, (_) => _autoAdvance());
   }
 
   void _autoAdvance() {
     if (!mounted || _userDragging || widget.subjects.length <= 1) return;
+    if (!_isInViewport()) {
+      _autoPlayTimer?.cancel();
+      return;
+    }
     final isWide = widget.availableWidth >= 640;
     if (isWide) {
       if (!_wideController.hasClients) return;
@@ -373,6 +393,22 @@ class _AnimekoHeroCarouselState extends State<_AnimekoHeroCarousel>
     );
   }
 
+  bool _isInViewport() {
+    final position = _verticalPosition;
+    final box = context.findRenderObject();
+    if (position == null ||
+        !position.haveDimensions ||
+        box is! RenderBox ||
+        !box.hasSize) {
+      return false;
+    }
+    final viewport = RenderAbstractViewport.maybeOf(box);
+    if (viewport == null) return false;
+    final top = viewport.getOffsetToReveal(box, 0).offset;
+    return top + box.size.height > position.pixels &&
+        top < position.pixels + position.viewportDimension;
+  }
+
   void _onSnapTick() {
     final t = _snapCurve.transform(_snapController.value);
     setState(() {
@@ -396,6 +432,7 @@ class _AnimekoHeroCarouselState extends State<_AnimekoHeroCarousel>
   @override
   void dispose() {
     _secondaryAnimation?.removeStatusListener(_handleSecondaryStatus);
+    _verticalPosition?.isScrollingNotifier.removeListener(_restartAutoPlay);
     _autoPlayTimer?.cancel();
     _wideController.dispose();
     _snapController.dispose();
@@ -556,6 +593,7 @@ class _AnimekoHeroCarouselState extends State<_AnimekoHeroCarousel>
           children: [
             for (final slot in slots)
               Positioned(
+                key: ValueKey(items[slot.index].subjectId),
                 left: slot.left,
                 top: 4,
                 width: slot.width,

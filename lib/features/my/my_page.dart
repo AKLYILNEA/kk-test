@@ -41,10 +41,12 @@ class MyPage extends ConsumerWidget {
     final history = ref.watch(historyProvider);
     final library = ref.watch(libraryProvider);
     final profile = ref.watch(bangumiProfileProvider).value;
-    final offlineEntries =
-        ref.watch(offlineUpdatesProvider).value ??
-        ref.watch(offlineLibraryProvider)?.entries ??
-        const <OfflineEpisode>[];
+    final offlineCount =
+        ref.watch(
+          offlineUpdatesProvider.select((value) => value.value?.length),
+        ) ??
+        ref.watch(offlineLibraryProvider)?.entries.length ??
+        0;
 
     final enabledRules = rules.where((r) => r.enabled).length;
     final watchingCount = library
@@ -116,9 +118,7 @@ class MyPage extends ConsumerWidget {
             glyph: KonekoGlyphs.download,
             shape: KonekoPolygons.cookie4Sided,
             title: '离线缓存',
-            caption: offlineEntries.isEmpty
-                ? '管理本地下载剧集'
-                : '已缓存 ${offlineEntries.length} 话',
+            caption: offlineCount == 0 ? '管理本地下载剧集' : '已缓存 $offlineCount 话',
             accent: const Color(0xFF2B8A6E),
             onPressed: openOffline,
           );
@@ -138,168 +138,163 @@ class MyPage extends ConsumerWidget {
                   horizontalPad,
                   28 + bottomPadding,
                 ),
-                sliver: SliverToBoxAdapter(
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 1080),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          if (isWide) ...[
-                            _AdaptivePair(
-                              gap: 14,
-                              first: bangumiHero,
-                              second: statsPanel,
-                            ),
-                            const SizedBox(height: 14),
-                            _AdaptivePair(
-                              gap: 14,
-                              first: rulesHeroTile,
-                              second: toolsPair,
-                            ),
-                            const SizedBox(height: 14),
-                            _AdaptivePair(
-                              gap: 14,
-                              first: _ExpressivePrefsPanel(
-                                onTheme: openTheme,
-                                onSync: openSync,
-                                onAbout: openAbout,
-                              ),
-                              second: KonekoCard(
-                                corner: 28,
-                                padding: const EdgeInsets.all(18),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  spacing: 12,
+                sliver: SliverList.list(
+                  children: [
+                    for (final section in <Widget>[
+                      if (isWide) ...[
+                        _AdaptivePair(
+                          gap: 14,
+                          first: bangumiHero,
+                          second: statsPanel,
+                        ),
+                        const SizedBox(height: 14),
+                        _AdaptivePair(
+                          gap: 14,
+                          first: rulesHeroTile,
+                          second: toolsPair,
+                        ),
+                        const SizedBox(height: 14),
+                        _AdaptivePair(
+                          gap: 14,
+                          first: _ExpressivePrefsPanel(
+                            onTheme: openTheme,
+                            onSync: openSync,
+                            onAbout: openAbout,
+                          ),
+                          second: KonekoCard(
+                            corner: 28,
+                            padding: const EdgeInsets.all(18),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              spacing: 12,
+                              children: [
+                                Row(
+                                  spacing: 10,
                                   children: [
-                                    Row(
-                                      spacing: 10,
-                                      children: [
-                                        KonekoPolygonBadge(
-                                          glyph: KonekoGlyphs.info,
-                                          shape: KonekoPolygons.softBurst,
-                                          size: 40,
-                                          iconSize: 19,
-                                          backgroundColor: colorScheme.primary
-                                              .withValues(alpha: 0.13),
-                                          foregroundColor: colorScheme.primary,
-                                        ),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            spacing: 2,
-                                            children: [
-                                              Text(
-                                                '关于 Koneko',
-                                                style: AppTextStyle.headline
-                                                    .of(
-                                                      context,
-                                                      emphasized: true,
-                                                    )
-                                                    .copyWith(
-                                                      color:
-                                                          colorScheme.onSurface,
-                                                    ),
-                                              ),
-                                              Text(
-                                                'v$kAppVersion · 纯净追番体验',
-                                                style: AppTextStyle.caption1
-                                                    .of(context)
-                                                    .copyWith(
-                                                      color: colorScheme
-                                                          .onSurfaceVariant,
-                                                    ),
-                                              ),
-                                            ],
+                                    KonekoPolygonBadge(
+                                      glyph: KonekoGlyphs.info,
+                                      shape: KonekoPolygons.softBurst,
+                                      size: 40,
+                                      iconSize: 19,
+                                      backgroundColor: colorScheme.primary
+                                          .withValues(alpha: 0.13),
+                                      foregroundColor: colorScheme.primary,
+                                    ),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        spacing: 2,
+                                        children: [
+                                          Text(
+                                            '关于 Koneko',
+                                            style: AppTextStyle.headline
+                                                .of(context, emphasized: true)
+                                                .copyWith(
+                                                  color: colorScheme.onSurface,
+                                                ),
                                           ),
-                                        ),
-                                        KonekoChip(
-                                          label: '查看详情',
-                                          height: 30,
-                                          fontSize: 12,
-                                          onPressed: openAbout,
-                                        ),
-                                      ],
+                                          Text(
+                                            'v$kAppVersion · 纯净追番体验',
+                                            style: AppTextStyle.caption1
+                                                .of(context)
+                                                .copyWith(
+                                                  color: colorScheme
+                                                      .onSurfaceVariant,
+                                                ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    KonekoChip(
+                                      label: '查看详情',
+                                      height: 30,
+                                      fontSize: 12,
+                                      onPressed: openAbout,
                                     ),
                                   ],
                                 ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ] else ...[
+                        bangumiHero,
+                        const SizedBox(height: 12),
+                        rulesHeroTile,
+                        const SizedBox(height: 12),
+                        toolsPair,
+                        KonekoSection(
+                          title: '偏好与服务',
+                          items: [
+                            DecorationListItem(
+                              leading: KonekoPolygonBadge(
+                                glyph: KonekoGlyphs.palette,
+                                shape: KonekoPolygons.flower,
+                                size: 36,
+                                iconSize: 18,
+                                backgroundColor: colorScheme.primary.withValues(
+                                  alpha: 0.13,
+                                ),
+                                foregroundColor: colorScheme.primary,
                               ),
+                              title: const Text('外观主题'),
+                              subtitle: const Text('主题色、字体与弹幕'),
+                              trailing: const GlyphIcon(Glyphs.chevronForward),
+                              onPressed: openTheme,
                             ),
-                          ] else ...[
-                            bangumiHero,
-                            const SizedBox(height: 12),
-                            rulesHeroTile,
-                            const SizedBox(height: 12),
-                            toolsPair,
-                            KonekoSection(
-                              title: '偏好与服务',
-                              items: [
-                                DecorationListItem(
-                                  leading: KonekoPolygonBadge(
-                                    glyph: KonekoGlyphs.palette,
-                                    shape: KonekoPolygons.flower,
-                                    size: 36,
-                                    iconSize: 18,
-                                    backgroundColor: colorScheme.primary
-                                        .withValues(alpha: 0.13),
-                                    foregroundColor: colorScheme.primary,
-                                  ),
-                                  title: const Text('外观主题'),
-                                  subtitle: const Text('主题色、字体与弹幕'),
-                                  trailing: const GlyphIcon(
-                                    Glyphs.chevronForward,
-                                  ),
-                                  onPressed: openTheme,
+                            DecorationListItem(
+                              leading: KonekoPolygonBadge(
+                                glyph: KonekoGlyphs.cloud,
+                                shape: KonekoPolygons.cookie9Sided,
+                                size: 36,
+                                iconSize: 18,
+                                backgroundColor: _kBangumiRose.withValues(
+                                  alpha: 0.18,
                                 ),
-                                DecorationListItem(
-                                  leading: KonekoPolygonBadge(
-                                    glyph: KonekoGlyphs.cloud,
-                                    shape: KonekoPolygons.cookie9Sided,
-                                    size: 36,
-                                    iconSize: 18,
-                                    backgroundColor: _kBangumiRose.withValues(
-                                      alpha: 0.18,
-                                    ),
-                                    foregroundColor: _kBangumiRoseDeep,
-                                  ),
-                                  title: const Text('同步设置'),
-                                  subtitle: const Text('Bangumi / WebDAV'),
-                                  trailing: const GlyphIcon(
-                                    Glyphs.chevronForward,
-                                  ),
-                                  onPressed: openSync,
-                                ),
-                              ],
-                            ),
-                            KonekoSection(
-                              title: '关于',
-                              items: [
-                                DecorationListItem(
-                                  leading: KonekoPolygonBadge(
-                                    glyph: KonekoGlyphs.info,
-                                    shape: KonekoPolygons.softBurst,
-                                    size: 36,
-                                    iconSize: 18,
-                                    backgroundColor: colorScheme.primary
-                                        .withValues(alpha: 0.13),
-                                    foregroundColor: colorScheme.primary,
-                                  ),
-                                  title: const Text('关于 Koneko'),
-                                  subtitle: const Text('v$kAppVersion'),
-                                  trailing: const GlyphIcon(
-                                    Glyphs.chevronForward,
-                                  ),
-                                  onPressed: openAbout,
-                                ),
-                              ],
+                                foregroundColor: _kBangumiRoseDeep,
+                              ),
+                              title: const Text('同步设置'),
+                              subtitle: const Text('Bangumi / WebDAV'),
+                              trailing: const GlyphIcon(Glyphs.chevronForward),
+                              onPressed: openSync,
                             ),
                           ],
-                        ],
+                        ),
+                        KonekoSection(
+                          title: '关于',
+                          items: [
+                            DecorationListItem(
+                              leading: KonekoPolygonBadge(
+                                glyph: KonekoGlyphs.info,
+                                shape: KonekoPolygons.softBurst,
+                                size: 36,
+                                iconSize: 18,
+                                backgroundColor: colorScheme.primary.withValues(
+                                  alpha: 0.13,
+                                ),
+                                foregroundColor: colorScheme.primary,
+                              ),
+                              title: const Text('关于 Koneko'),
+                              subtitle: const Text('v$kAppVersion'),
+                              trailing: const GlyphIcon(Glyphs.chevronForward),
+                              onPressed: openAbout,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ])
+                      Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 1080),
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: section,
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
+                  ],
                 ),
               ),
             ],
@@ -373,49 +368,43 @@ class _BangumiHeroCard extends StatelessWidget {
             // 1:1 FlClash CurrentOutboundCard sweeping top-right cookie-12 motif
             Positioned.fill(
               child: IgnorePointer(
-                child: ClipPath(
-                  clipper: ShapeBorderClipper(
-                    shape: shape,
-                    textDirection: Directionality.of(context),
-                  ),
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      PositionedDirectional(
-                        end: decorationEnd,
-                        bottom: decorationBottom,
-                        child: TweenAnimationBuilder<double>(
-                          tween: Tween(end: isBound ? 1 : 0),
-                          duration: context.motionDuration(
-                            const Duration(milliseconds: 450),
-                          ),
-                          curve: Curves.easeOutBack,
-                          builder: (_, progress, _) => Transform.rotate(
-                            angle: _decorationTurn * progress,
-                            child: Transform.scale(
-                              scale: 1 + _decorationGrowth * progress,
-                              child: SizedBox.square(
-                                dimension: decorationSize,
-                                child: DecoratedBox(
-                                  decoration: ShapeDecoration(
-                                    color: Color.lerp(
-                                      Color.alphaBlend(
-                                        _kBangumiRose.withValues(
-                                          alpha: isDark ? 0.11 : 0.08,
-                                        ),
-                                        toneColor,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    PositionedDirectional(
+                      end: decorationEnd,
+                      bottom: decorationBottom,
+                      child: TweenAnimationBuilder<double>(
+                        tween: Tween(end: isBound ? 1 : 0),
+                        duration: context.motionDuration(
+                          const Duration(milliseconds: 450),
+                        ),
+                        curve: Curves.easeOutBack,
+                        builder: (_, progress, _) => Transform.rotate(
+                          angle: _decorationTurn * progress,
+                          child: Transform.scale(
+                            scale: 1 + _decorationGrowth * progress,
+                            child: SizedBox.square(
+                              dimension: decorationSize,
+                              child: DecoratedBox(
+                                decoration: ShapeDecoration(
+                                  color: Color.lerp(
+                                    Color.alphaBlend(
+                                      _kBangumiRose.withValues(
+                                        alpha: isDark ? 0.11 : 0.08,
                                       ),
-                                      Color.alphaBlend(
-                                        _kBangumiRose.withValues(
-                                          alpha: isDark ? 0.18 : 0.13,
-                                        ),
-                                        cardColor,
+                                      toneColor,
+                                    ),
+                                    Color.alphaBlend(
+                                      _kBangumiRose.withValues(
+                                        alpha: isDark ? 0.18 : 0.13,
                                       ),
-                                      progress.clamp(0, 1),
+                                      cardColor,
                                     ),
-                                    shape: KonekoPolygonBorder(
-                                      KonekoPolygons.cookie12Sided,
-                                    ),
+                                    progress.clamp(0, 1),
+                                  ),
+                                  shape: KonekoPolygonBorder(
+                                    KonekoPolygons.cookie12Sided,
                                   ),
                                 ),
                               ),
@@ -423,8 +412,8 @@ class _BangumiHeroCard extends StatelessWidget {
                           ),
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),
