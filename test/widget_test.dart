@@ -937,7 +937,8 @@ void main() {
       await tester.pump();
       expect(find.text('00:12 / 02:00', findRichText: true), findsNothing);
       await tester.tapAt(const Offset(210, 150));
-      await tester.pump();
+      // A single tap shares the recognizer arena with double-tap to pause.
+      await tester.pump(const Duration(milliseconds: 350));
       expect(find.text('00:12 / 02:00', findRichText: true), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox.shrink());

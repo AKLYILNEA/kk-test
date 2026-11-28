@@ -308,9 +308,10 @@ class _AnimekoHeroCarouselState extends State<_AnimekoHeroCarousel>
     super.didChangeDependencies();
     final position = Scrollable.maybeOf(context, axis: Axis.vertical)?.position;
     if (!identical(position, _verticalPosition)) {
-      _verticalPosition?.isScrollingNotifier.removeListener(_restartAutoPlay);
+      _detachFromVerticalScroll();
       _verticalPosition = position;
       position?.isScrollingNotifier.addListener(_restartAutoPlay);
+      position?.addListener(_handleVerticalOffset);
     }
     final route = ModalRoute.of(context);
     final secondary = route?.secondaryAnimation;
@@ -320,6 +321,19 @@ class _AnimekoHeroCarouselState extends State<_AnimekoHeroCarousel>
         ?..addStatusListener(_handleSecondaryStatus);
     }
     _syncVisibility();
+  }
+
+  void _detachFromVerticalScroll() {
+    _verticalPosition?.isScrollingNotifier.removeListener(_restartAutoPlay);
+    _verticalPosition?.removeListener(_handleVerticalOffset);
+  }
+
+  void _handleVerticalOffset() {
+    // jumpTo can move an idle position without flipping isScrollingNotifier.
+    if (_autoPlayTimer?.isActive != true &&
+        _verticalPosition?.isScrollingNotifier.value == false) {
+      _restartAutoPlay();
+    }
   }
 
   void _handleSecondaryStatus(AnimationStatus _) => _syncVisibility();
@@ -432,7 +446,7 @@ class _AnimekoHeroCarouselState extends State<_AnimekoHeroCarousel>
   @override
   void dispose() {
     _secondaryAnimation?.removeStatusListener(_handleSecondaryStatus);
-    _verticalPosition?.isScrollingNotifier.removeListener(_restartAutoPlay);
+    _detachFromVerticalScroll();
     _autoPlayTimer?.cancel();
     _wideController.dispose();
     _snapController.dispose();
